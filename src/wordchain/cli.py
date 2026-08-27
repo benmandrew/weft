@@ -199,7 +199,6 @@ def _cmd_build(args: argparse.Namespace) -> None:
         chrome=args.chrome,
         geometry=config.geometry,
     )
-    print(target)
 
 
 def main(argv: list[str] | None = None) -> None:
