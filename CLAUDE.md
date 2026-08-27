@@ -48,6 +48,9 @@ Keep the hook idempotent: direnv re-runs it on every load.
   way.
 - Edges are `Path` cubics, never sampled polylines. SVG draws cubics natively,
   so sampling costs build time, file size and accuracy at once.
+- Each edge is two cubics, split at the midpoint by `render._curve_halves`, so
+  the near half can be drawn heavier than the far half. That taper is what
+  shows direction; keep the edge hue meaning the source wedge.
 - `build` renders one file, SVG unless `--format png`. Vector is the default
   because it writes in half the time, ships at a quarter the size gzipped, and
   zooms. Keep `svg.fonttype = "path"` in `render._typeface`: naming the fonts

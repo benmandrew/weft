@@ -53,6 +53,11 @@ _LABEL_RADIUS = 1.015
 _LABEL_PT = 6.8
 _LEADING = 1.22
 
+# An edge leaves its source at full weight and arrives thinner and fainter, so
+# direction reads as flow. Each entry is (linewidth, alpha multiplier).
+_TAPER_NEAR = (0.62, 1.35)
+_TAPER_FAR = (0.26, 0.40)
+
 
 def _typeface() -> None:
     """Register the three families once, so `family=` picks up a fallback list."""
@@ -112,6 +117,25 @@ def _canvas_inches(span: float) -> float:
     arc = _LABEL_RADIUS * span
     needed = _LABEL_PT * _LEADING * (2 * _DISC_LIMIT) / (72 * arc)
     return max(9.6, min(30.0, needed))
+
+
+def _curve_halves(start: Point, end: Point, pull: float) -> tuple[Path, Path]:
+    """The edge split at its midpoint, so each half can carry its own weight.
+
+    de Casteljau at t = 1/2. Both halves are exact cubics tracing the original
+    curve, so tapering costs one extra path per edge and no accuracy at all.
+    """
+
+    def mid(a: Point, b: Point) -> Point:
+        return ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+
+    p1 = (start[0] * pull, start[1] * pull)
+    p2 = (end[0] * pull, end[1] * pull)
+    near_1, span, far_2 = mid(start, p1), mid(p1, p2), mid(p2, end)
+    near_2, far_1 = mid(near_1, span), mid(span, far_2)
+    centre = mid(near_2, far_1)
+    codes = [Path.MOVETO, Path.CURVE4, Path.CURVE4, Path.CURVE4]
+    return Path([start, near_1, near_2, centre], codes), Path([centre, far_1, far_2, end], codes)
 
 
 def _fan_key(word: Word) -> tuple[int, str]:
@@ -421,25 +445,29 @@ def words_disc(
     # axes would clip, so that path keeps the margins and the tight crop.
     fig, ax = _blank_disc(theme, size, bleed=not chrome, limit=reach)
 
-    # One collection per starting letter rather than a patch per edge: the
+    # Two collections per starting letter rather than a patch per edge: the
     # colour is constant within a bundle, and 4856 separate artists is slow to
-    # draw and slower to save.
+    # draw and slower to save. The two are the near and far halves of the same
+    # edges, which is what carries the taper.
     pull = _PULL_DENSE if crowded else _PULL
+    base = theme.edge_alpha * (0.55 if crowded else 1.0)
     for letter in live:
-        curves = [
-            _curve(placed[word.text], placed[successor.text], pull)
+        halves = [
+            _curve_halves(placed[word.text], placed[successor.text], pull)
             for word in shown
             for successor in grouped[word.tail]
             if word.head == letter and successor.text != word.text
         ]
-        if curves:
+        if not halves:
+            continue
+        for index, (width, boost) in ((0, _TAPER_NEAR), (1, _TAPER_FAR)):
             ax.add_collection(
                 PathCollection(
-                    curves,
+                    [pair[index] for pair in halves],
                     facecolors="none",
                     edgecolors=[_hue(letter, theme)],
-                    linewidths=0.5,
-                    alpha=theme.edge_alpha if not crowded else theme.edge_alpha * 0.55,
+                    linewidths=width,
+                    alpha=min(1.0, base * boost),
                     zorder=2,
                     transform=ax.transData,
                 )
