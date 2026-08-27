@@ -1,0 +1,39 @@
+# Every setting the disc geometry has, at the value it defaults to. Copy this
+# to wordchain.toml, where build finds it without a flag, or name it with
+# `build --config example.toml`. Every key is optional and anything left out
+# keeps the default, so a working file is usually two or three lines rather
+# than this one.
+
+[geometry]
+
+# How far a chord's control points sit toward the centre, as a fraction of the
+# radius. Curves leave each node heading inwards, so a chord reads as the pair
+# of letters it joins rather than as a line across the disc. Lower bows harder.
+pull = 0.32
+
+# The same for the word disc once it passes 150 words, where the wider middle
+# of pull would read as fog.
+pull_dense = 0.20
+
+# Where the word labels start, as a fraction of the dot ring.
+label_radius = 1.015
+
+# Label size in points. It also sets the canvas, because a label's length is
+# fixed in inches by the font and only a wider figure buys it room along the
+# ring, so raising this grows the figure rather than crowding it.
+label_pt = 6.8
+
+# Clear space each label demands along the ring, in multiples of its own size.
+# It decides when two neighbours count as touching, to the same effect.
+leading = 1.22
+
+# Room kept outside the labels for the wedge letter, in data units.
+wedge_band = 0.075
+
+# Mean glyph width as a fraction of the font size. It only reserves space, so
+# erring high costs a little margin and nothing else.
+glyph_width = 0.58
+
+# Half the width of the chord diagram's axes, in data units, and the conversion
+# the word disc's canvas is solved in. The word disc works out its own limit.
+disc_limit = 1.34
