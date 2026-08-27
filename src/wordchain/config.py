@@ -1,10 +1,13 @@
-"""The disc's geometry, as a dataclass and as a TOML file.
+"""The disc's geometry and its colour wheel, as dataclasses and as a TOML file.
 
 Eight numbers decide where the word disc puts things, and the good value for
 each depends on the category: 895 animals and 60 flowers do not want the same
 label size or the same curve pull. They sat in `render.py` as module constants,
 which meant editing the source to try a different figure, so they moved onto a
 frozen `Geometry` that a figure takes the way it already takes a `Theme`.
+
+The wheel that maps 26 letters to 26 hues went the same way. `[palette]` either
+names one of the presets in `palette.py` or gives the numbers for a single arc.
 """
 
 from __future__ import annotations
@@ -12,6 +15,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, fields
 from pathlib import Path
+
+from .palette import PRESETS, Arc, Wheel
 
 
 class ConfigError(Exception):
@@ -59,65 +64,137 @@ class Geometry:
 
 DEFAULT = Geometry()
 
+
+@dataclass(frozen=True)
+class Config:
+    """What a file says. A wheel of None leaves the theme's own alone."""
+
+    geometry: Geometry = DEFAULT
+    wheel: Wheel | None = None
+
+
 # The file a `build` picks up on its own, from the directory it runs in.
 FILENAME = "wordchain.toml"
 
-# One table, so the file has somewhere to grow a second one later.
-_TABLE = "geometry"
+_GEOMETRY = "geometry"
+_PALETTE = "palette"
+_TABLES = (_GEOMETRY, _PALETTE)
+
+# `hue_start` of 0 is the top of the circle and `equalise` of 0 is no
+# correction, so unlike every other setting these two mean something at zero.
+_ZERO_OK = frozenset({"hue_start", "equalise"})
 
 
-def _names() -> list[str]:
-    return [f.name for f in fields(Geometry)]
+def _names(kind: type) -> list[str]:
+    return [f.name for f in fields(kind)]
 
 
-def _suggest(key: str) -> str:
+def _suggest(key: str, names: list[str]) -> str:
     """Name the closest field, or all of them. A refusal should say what would work."""
     from difflib import get_close_matches
 
-    near = get_close_matches(key, _names(), n=1, cutoff=0.6)
+    near = get_close_matches(key, names, n=1, cutoff=0.6)
     if near:
         return f"; did you mean {near[0]}?"
-    return "; the settings are " + ", ".join(_names())
+    return "; the settings are " + ", ".join(names)
 
 
-def _number(key: str, value: object) -> float:
+def _float(table: str, key: str, value: object) -> float:
     # TOML writes 1 as an int and 1.0 as a float, and both mean the same
     # distance here. bool is an int subclass, and `pull = true` is a mistake.
     if isinstance(value, bool) or not isinstance(value, int | float):
         kind = type(value).__name__
-        raise ConfigError(f"[{_TABLE}] {key} must be a number, not a {kind}")
+        raise ConfigError(f"[{table}] {key} must be a number, not a {kind}")
     # TOML has nan and inf literals, and both survive float() into a figure
     # that draws nothing and says why nowhere.
     number = float(value)
-    if not math.isfinite(number) or number <= 0:
-        raise ConfigError(f"[{_TABLE}] {key} must be a positive number, not {value}")
+    if not math.isfinite(number):
+        raise ConfigError(f"[{table}] {key} must be a finite number, not {value}")
     return number
 
 
-def from_mapping(data: dict[str, object]) -> Geometry:
-    """Build a `Geometry` from a parsed file, rejecting anything unrecognised.
+def _number(key: str, value: object) -> float:
+    number = _float(_GEOMETRY, key, value)
+    if number <= 0:
+        raise ConfigError(f"[{_GEOMETRY}] {key} must be a positive number, not {value}")
+    return number
 
-    A key the tool ignores is worse than one it refuses: the figure comes back
-    unchanged and the file looks like it should have changed it.
-    """
-    unknown = sorted(set(data) - {_TABLE})
-    if unknown:
-        raise ConfigError(f"unknown table: {unknown[0]}; the only one is [{_TABLE}]")
 
-    table = data.get(_TABLE, {})
-    if not isinstance(table, dict):
-        raise ConfigError(f"[{_TABLE}] must be a table")
+def _fraction(key: str, value: object) -> float:
+    """A hue, a saturation, a value or a correction: all of them run 0 to 1."""
+    number = _float(_PALETTE, key, value)
+    zero_ok = key in _ZERO_OK
+    if number > 1.0 or number < 0.0 or (number == 0.0 and not zero_ok):
+        wants = "0 and 1" if zero_ok else "0 and 1, and above 0"
+        raise ConfigError(f"[{_PALETTE}] {key} must be between {wants}, not {value}")
+    return number
 
-    valid = set(_names())
+
+def _geometry(table: dict[str, object]) -> Geometry:
+    valid = _names(Geometry)
     values: dict[str, float] = {}
     for key, value in table.items():
         if key not in valid:
-            raise ConfigError(f"[{_TABLE}] has no setting called {key}{_suggest(key)}")
+            raise ConfigError(f"[{_GEOMETRY}] has no setting called {key}{_suggest(key, valid)}")
         values[key] = _number(key, value)
     return Geometry(**values)
 
 
-def load(path: Path) -> Geometry:
+def _wheel(table: dict[str, object]) -> Wheel:
+    """A preset by name, or the numbers for one arc. Never both.
+
+    A preset can hold two arcs, as `duotone` does, and there is no honest way to
+    layer one arc's worth of keys over that — so naming a preset and tuning it
+    in the same table is refused rather than half-applied.
+    """
+    valid = _names(Arc)
+    keys = set(table)
+    if "preset" in keys:
+        rest = sorted(keys - {"preset"})
+        if rest:
+            raise ConfigError(
+                f"[{_PALETTE}] preset cannot be combined with {rest[0]}; "
+                f"name a preset or give the arc's numbers, not both"
+            )
+        name = table["preset"]
+        if not isinstance(name, str):
+            kind = type(name).__name__
+            raise ConfigError(f"[{_PALETTE}] preset must be a name in quotes, not a {kind}")
+        if name not in PRESETS:
+            near = _suggest(name, list(PRESETS))
+            raise ConfigError(f"[{_PALETTE}] has no preset called {name}{near}")
+        return PRESETS[name]
+
+    values: dict[str, float] = {}
+    for key, value in table.items():
+        if key not in valid:
+            known = [*valid, "preset"]
+            raise ConfigError(f"[{_PALETTE}] has no setting called {key}{_suggest(key, known)}")
+        values[key] = _fraction(key, value)
+    return Wheel((Arc(**values),))
+
+
+def from_mapping(data: dict[str, object]) -> Config:
+    """Build a `Config` from a parsed file, rejecting anything unrecognised.
+
+    A key the tool ignores is worse than one it refuses: the figure comes back
+    unchanged and the file looks like it should have changed it.
+    """
+    unknown = sorted(set(data) - set(_TABLES))
+    if unknown:
+        tables = " and ".join(f"[{name}]" for name in _TABLES)
+        raise ConfigError(f"unknown table: {unknown[0]}; the tables are {tables}")
+
+    for name in _TABLES:
+        if name in data and not isinstance(data[name], dict):
+            raise ConfigError(f"[{name}] must be a table")
+
+    geometry = _geometry(data.get(_GEOMETRY, {}))  # type: ignore[arg-type]
+    palette = data.get(_PALETTE)
+    return Config(geometry, _wheel(palette) if isinstance(palette, dict) else None)
+
+
+def load(path: Path) -> Config:
     """Read one TOML file. Every error carries the path, since a build names none."""
     # tomllib is 5 ms to import and only `build` reads a config, so it stays
     # here rather than at module load, for the same reason nltk does.
@@ -135,8 +212,8 @@ def load(path: Path) -> Geometry:
         raise ConfigError(f"{path}: {err}") from err
 
 
-def resolve(explicit: str | None, root: Path | None = None) -> Geometry:
-    """The geometry a command should draw with.
+def resolve(explicit: str | None, root: Path | None = None) -> Config:
+    """The geometry and wheel a command should draw with.
 
     A named file has to exist, because a `--config` that silently falls back to
     the defaults is a typo that costs a render to notice. The one found by
@@ -145,4 +222,4 @@ def resolve(explicit: str | None, root: Path | None = None) -> Geometry:
     if explicit is not None:
         return load(Path(explicit))
     found = (root or Path.cwd()) / FILENAME
-    return load(found) if found.is_file() else DEFAULT
+    return load(found) if found.is_file() else Config()

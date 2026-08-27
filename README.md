@@ -90,7 +90,7 @@ Eight numbers decide where the disc puts things, and the good value for each dep
 | `glyph_width` | 0.58 | mean glyph width, used to reserve label room |
 | `disc_limit` | 1.34 | axis half-width for the chord diagram, and the inches-to-data-units conversion the word disc's canvas is solved in |
 
-The file holds one `[geometry]` table of flat keys, in Tom's Obvious Minimal Language (TOML). Every key is optional, and anything absent keeps its default.
+The file holds two tables of flat keys, `[geometry]` and `[palette]`, in Tom's Obvious Minimal Language (TOML). Every key is optional, and anything absent keeps its default.
 
 ```toml
 [geometry]
@@ -103,6 +103,37 @@ pull_dense = 0.1
 Validation refuses rather than ignores. An unknown table, an unknown key, a value that is not a number, a bool, and anything not strictly positive and finite each stop the build. A key the tool ignores is worse than one it refuses: the figure comes back unchanged and the file looks like it should have changed it. An unrecognised key is answered with the closest setting name from `difflib`, or with the full list of eight when nothing is close, and every message carries the file path, since a build otherwise names no file.
 
 `tomllib` and `difflib` are imported at the point of use rather than at module load, for the same reason nltk and matplotlib are. tomllib costs 5 ms to import and only `build` ever reads a config, so `stats` still runs in 0.18 s and imports none of the three. Rendering with no config file present writes bytes identical to the output before any of this existed, once matplotlib's random per-run element ids are normalised.
+
+## Choosing the letter colours
+
+The disc colours each word's curve by the letter it starts on, one collection per starting letter. The wheel that maps 26 letters to 26 hues therefore decides what the whole figure looks like. It was hardcoded in `palette.py` as `LETTERS.index(letter) / 26`, a full turn of the circle with no offset. It is now an *arc* on a frozen `Wheel`, which `Theme` carries as a field the way it already carries its other colours. An arc is a hue start, a hue span, a saturation and a value, and a wheel holds one arc or several.
+
+`[palette]` either names a preset or gives the numbers for a single arc. Naming both is refused rather than half-applied: a preset can hold two arcs, as `duotone` does, and there is no honest way to layer one arc's worth of keys over that.
+
+| preset | hue arc (start + span) | saturation, value | *luma* spread |
+| --- | --- | --- | --- |
+| `spectrum` | 0.00 + 1.00 | 0.55 / 0.88 | 1.86x |
+| `even` | 0.00 + 0.92 | 0.58 / 0.82 | 1.38x |
+| `ember` | 0.94 + 0.26 | 0.68 / 0.92 | 2.04x |
+| `tide` | 0.42 + 0.32 | 0.62 / 0.92 | 2.03x |
+| `duotone` | 0.95 + 0.16, then 0.46 + 0.22 | 0.66 / 0.90, then 0.60 / 0.92 | 1.92x |
+
+Luma spread is the ratio of the brightest letter to the dimmest, by Recommendation 709 (Rec. 709) luminance. It matters because every bundle is drawn at one alpha, so a bright hue overwhelms a dim one at equal weight.
+
+`spectrum` is what the tool has always drawn. A span of exactly 1.0 closes the circle, which puts A and Z one step apart and makes them read as the same red, so `even` drops the span to 0.92 to separate them. `even` also pulls each letter's value 0.65 of the way towards the arc's geometric mean luma, which cuts the spread from 1.86x to 1.38x. Correction can only take brightness away, so full correction sends the greens olive; 0.65 is as far as they stay green.
+
+`ember` and `tide` are quarter turns. Twenty-six letters across a quarter of the circle puts adjacent hues 0.01 apart, so mid-alphabet wedges stop being separable and what survives is the sweep across the disc. `duotone` is two short arcs instead, warm for A–M and cool for N–Z, so every curve crossing between the halves of the alphabet is visible as a crossing. Arcs divide the alphabet evenly between them.
+
+```toml
+[palette]
+preset = "duotone"
+```
+
+Presets are tuned against the dark ground, which is what `build` draws on by default. On `--theme light` the same wheel is drawn with saturation up 0.07 and value down 0.28, the offsets that already separate the two built-in themes, so the light `spectrum` wheel is byte-identical to what it was before any of this.
+
+Validation matches `[geometry]`. An unknown key, an unknown preset name, a value outside 0 to 1 and a bool each stop the build, each answered with the closest name from `difflib`. `hue_start` and `equalise` are the two settings that mean something at zero, and every other one is refused at zero.
+
+Rendering with no `[palette]` table writes the same colours as before the feature existed, verified by comparing the distinct stroke colours in the saved SVG.
 
 ## Choosing the words
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from .config import FILENAME, ConfigError, resolve
 from .graph import LETTERS, letter_stats, summary
 from .lexicon import CATEGORIES, UnknownCategory, Word, catalogue, members
-from .palette import THEMES
+from .palette import THEMES, with_wheel
 
 
 def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> None:
@@ -171,9 +171,15 @@ def _cmd_build(args: argparse.Namespace) -> None:
     from . import render
 
     try:
-        geometry = resolve(args.config)
+        config = resolve(args.config)
     except ConfigError as err:
         sys.exit(str(err))
+
+    # A [palette] table replaces the wheel the theme brought; without one the
+    # theme's own stands, so a file that only sets geometry changes no colour.
+    theme = THEMES[args.theme]
+    if config.wheel is not None:
+        theme = with_wheel(theme, config.wheel)
 
     words = _load(args)
     if not words:
@@ -189,9 +195,9 @@ def _cmd_build(args: argparse.Namespace) -> None:
         target,
         f"{name} — the word graph",
         limit=args.limit,
-        theme=THEMES[args.theme],
+        theme=theme,
         chrome=args.chrome,
-        geometry=geometry,
+        geometry=config.geometry,
     )
     print(target)
 

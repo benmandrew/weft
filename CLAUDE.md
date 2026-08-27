@@ -66,6 +66,14 @@ Keep the hook idempotent: direnv re-runs it on every load.
   must exist. Unknown keys and values that are not positive numbers are refused
   rather than ignored, since an ignored key redraws the same figure. Import
   tomllib and difflib at the point of use.
+- The letter colours are a `palette.Wheel` of one or more `Arc`s, carried on the
+  `Theme` and read from the same file's `[palette]` table. A preset name and the
+  arc's numbers are mutually exclusive, because a preset may hold two arcs and
+  one arc's worth of keys cannot be layered over that. Presets are tuned on the
+  dark ground; `palette.with_wheel` shifts them for the light one by
+  `LIGHT_SHIFT`, which is the offset already separating `LIGHT` from `DARK`, so
+  the built-in wheels come out unchanged. `hue_start` and `equalise` are the two
+  settings that mean something at zero.
 
 ## Shape
 

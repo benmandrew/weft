@@ -1,4 +1,4 @@
-# Every setting the disc geometry has, at the value it defaults to. Copy this
+# Every setting the disc has, at the value it defaults to. Copy this
 # to wordchain.toml, where build finds it without a flag, or name it with
 # `build --config example.toml`. Every key is optional and anything left out
 # keeps the default, so a working file is usually two or three lines rather
@@ -37,3 +37,37 @@ glyph_width = 0.58
 # Half the width of the chord diagram's axes, in data units, and the conversion
 # the word disc's canvas is solved in. The word disc works out its own limit.
 disc_limit = 1.34
+
+
+# The wheel that maps 26 letters to 26 hues. Leave the whole table out and the
+# theme keeps its own, which is what the keys below spell out. Every preset is
+# tuned against the dark ground; on --theme light the same wheel is drawn with
+# saturation up 0.07 and value down 0.28, the offsets that already separate the
+# two built-in themes.
+
+[palette]
+
+# Name one of spectrum, even, ember, tide or duotone and stop there. A preset
+# can hold two arcs, as duotone does, so it cannot be combined with the keys
+# below and naming both is refused rather than half-applied.
+# preset = "duotone"
+
+# Where the letters start on the colour circle, and how much of it they cover.
+# A span of exactly 1 closes the circle, which puts A and Z one step apart and
+# makes them read as the same hue; a little under 1 separates them. A quarter
+# turn gives up telling adjacent letters apart and buys a disc that reads as
+# one object.
+hue_start = 0.0
+hue_span = 1.0
+
+# Saturation and value, fixed across the wheel so all 26 letters stay equally
+# visible against the ground.
+saturation = 0.55
+value = 0.88
+
+# How far each letter's value is pulled towards a common brightness, from 0 for
+# none to 1 for equal. A fixed-saturation wheel spans about 1.9x in luma, and
+# every bundle is drawn at one alpha, so a yellow overwhelms a blue at equal
+# weight. Correction can only take brightness away, so 1 sends the greens olive
+# and 0.65 is about as far as they stay green.
+equalise = 0.0
