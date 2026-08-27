@@ -38,6 +38,22 @@ _PULL = 0.32
 # is tighter than _PULL because 4856 curves through a wide middle read as fog.
 _PULL_DENSE = 0.20
 
+# Half the width of a disc's axes, in data units, for the figures whose content
+# reaches a known radius. words_disc solves for its own.
+_DISC_LIMIT = 1.34
+
+# Room beyond the word labels for the wedge letter, in data units, and the mean
+# glyph width as a fraction of the font size. The second only reserves space, so
+# erring high costs a little margin and nothing else.
+_WEDGE_BAND = 0.075
+_GLYPH_WIDTH = 0.58
+
+# Word labels: the radius they start at, their size in points, and the leading
+# that decides when two neighbours are touching.
+_LABEL_RADIUS = 1.015
+_LABEL_PT = 6.8
+_LEADING = 1.22
+
 
 def _typeface() -> None:
     """Register the three families once, so `family=` picks up a fallback list."""
@@ -67,6 +83,36 @@ def _ring(count: int, radius: float = 1.0) -> list[Point]:
         )
         for i in range(count)
     ]
+
+
+def _disc_limit(size_in: float, longest: int) -> float:
+    """The axis limit that exactly contains the labels and the wedge letters.
+
+    A label's length is fixed in inches by the font, but the axis limit is what
+    converts inches into data units, so the limit appears on both sides and the
+    two are related by one equation rather than a measurement. Solving it is
+    what lets the axes fill the figure, and a figure with no margin is a figure
+    matplotlib does not have to draw twice to find out where to crop.
+    """
+    label_in = longest * _LABEL_PT * _GLYPH_WIDTH / 72
+    crowding = 1 - 2 * label_in / size_in
+    return (_LABEL_RADIUS + _WEDGE_BAND) / max(crowding, 0.4)
+
+
+def _canvas_inches(span: float) -> float:
+    """How wide the disc has to be for adjacent labels to clear each other.
+
+    A label sits at a fixed radius in data units while its font size is in
+    points, so the only thing that buys it room along the ring is a larger
+    canvas. Solving for the size that gives every label a full line of leading
+    is what lets all 364 words share one radius.
+
+    Sizing up is close to free in vector output, which is priced by element
+    count rather than dimensions, and a reader zooms rather than squints.
+    """
+    arc = _LABEL_RADIUS * span
+    needed = _LABEL_PT * _LEADING * (2 * _DISC_LIMIT) / (72 * arc)
+    return max(9.6, min(30.0, needed))
 
 
 def _by_tail(word: Word) -> str:
@@ -117,13 +163,23 @@ def _chord(
     ax.add_patch(PathPatch(path, fc="none", ec=colour, lw=width, alpha=alpha, zorder=2))
 
 
-def _blank_disc(theme: Theme, size: float = 8.4) -> tuple[Figure, Axes]:
+def _blank_disc(
+    theme: Theme,
+    size: float = 8.4,
+    bleed: bool = False,
+    limit: float = _DISC_LIMIT,
+) -> tuple[Figure, Axes]:
     _typeface()
-    fig, ax = plt.subplots(figsize=(size, size), facecolor=theme.ground)
+    fig = plt.figure(figsize=(size, size), facecolor=theme.ground)
+    # The axes already frames the disc through its own limits, so letting it
+    # fill the figure leaves no margin for bbox_inches="tight" to crop. That
+    # matters because trimming means measuring, and measuring means drawing all
+    # 4856 curves a second time, for 110 ms of the save.
+    ax = fig.add_axes((0.0, 0.0, 1.0, 1.0)) if bleed else fig.add_subplot()
     ax.set_facecolor(theme.ground)
     ax.set_aspect("equal")
-    ax.set_xlim(-1.34, 1.34)
-    ax.set_ylim(-1.34, 1.34)
+    ax.set_xlim(-limit, limit)
+    ax.set_ylim(-limit, limit)
     ax.axis("off")
     return fig, ax
 
@@ -343,7 +399,6 @@ def words_disc(
 
     angle = math.pi / 2
     placed: dict[str, tuple[float, float]] = {}
-    order: dict[str, int] = {}
     wedge_mid: dict[str, float] = {}
     for letter in live:
         block = sorted(grouped[letter], key=_by_tail)
@@ -351,15 +406,16 @@ def words_disc(
         for word in block:
             angle -= span
             placed[word.text] = (math.cos(angle + span / 2), math.sin(angle + span / 2))
-            order[word.text] = len(order)
         wedge_mid[letter] = (start + angle) / 2
         angle -= gap
 
-    # Labels sit at a fixed radius in data coordinates while their font size is
-    # in points, so the only way to fit more of them is a larger canvas. Below
-    # about 110 words the default disc has room to spare.
     crowded = len(shown) > 150
-    fig, ax = _blank_disc(theme, min(20.0, 9.6 + max(0, len(shown) - 110) * 0.022))
+    size = _canvas_inches(span)
+    # `limit` is already the word count, so the axis half-width is `reach`.
+    reach = _disc_limit(size, max(len(w.text) for w in shown))
+    # Chrome hangs a title and a caption outside the axes, which a full-bleed
+    # axes would clip, so that path keeps the margins and the tight crop.
+    fig, ax = _blank_disc(theme, size, bleed=not chrome, limit=reach)
 
     # One LineCollection per starting letter rather than a patch per edge: the
     # colour is constant within a bundle, and 4856 separate artists is slow to
@@ -383,31 +439,27 @@ def words_disc(
                 )
             )
 
+    # One call for all 364 dots. A scatter per word builds the same picture out
+    # of 364 PathCollections, which costs twice: once assembling them and again
+    # when the renderer walks the list.
+    ax.scatter(
+        [placed[w.text][0] for w in shown],
+        [placed[w.text][1] for w in shown],
+        s=6,
+        c=[_hue(w.head, theme) for w in shown],
+        zorder=3,
+        lw=0,
+    )
+
     for word in shown:
         x, y = placed[word.text]
-        ax.scatter([x], [y], s=6, color=_hue(word.head, theme), zorder=3, lw=0)
-
-        # Adjacent labels collide at their inner ends, where the circumference
-        # is smallest. Alternating two radii doubles the room each one has
-        # against its same-tier neighbours, and a leader line keeps the outer
-        # tier attached to the dot it belongs to.
-        tier = order[word.text] % 2 if crowded else 0
-        radius = 1.015 + tier * 0.058
-        if tier:
-            ax.plot(
-                [x * 1.005, x * (radius - 0.004)],
-                [y * 1.005, y * (radius - 0.004)],
-                color=theme.faint,
-                lw=0.4,
-                zorder=1,
-            )
         degrees = math.degrees(math.atan2(y, x))
         flip = 90 < degrees % 360 < 270
         ax.text(
-            x * radius,
-            y * radius,
+            x * _LABEL_RADIUS,
+            y * _LABEL_RADIUS,
             word.text,
-            fontsize=6.2 if crowded else 6.8,
+            fontsize=_LABEL_PT,
             color=theme.ink,
             rotation=degrees + 180 if flip else degrees,
             rotation_mode="anchor",
@@ -416,10 +468,11 @@ def words_disc(
             zorder=4,
         )
 
+    ring = reach - _WEDGE_BAND / 2
     for letter, mid in wedge_mid.items():
         ax.text(
-            math.cos(mid) * 1.255,
-            math.sin(mid) * 1.255,
+            math.cos(mid) * ring,
+            math.sin(mid) * ring,
             letter.upper(),
             ha="center",
             va="center",
@@ -436,6 +489,6 @@ def words_disc(
         note = f"{len(shown)} commonest words shown"
         if dropped:
             note += f", {dropped} omitted"
-        ax.text(0, -1.31, note, ha="center", fontsize=8.5, color=theme.muted)
-    fig.savefig(out, dpi=190, facecolor=theme.ground, bbox_inches="tight")
+        ax.text(0, -reach * 0.98, note, ha="center", fontsize=8.5, color=theme.muted)
+    fig.savefig(out, dpi=190, facecolor=theme.ground, bbox_inches="tight" if chrome else None)
     plt.close(fig)

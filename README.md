@@ -31,7 +31,7 @@ python -m wordchain words animal     # the word list with Zipf frequencies
 python -m wordchain build animal     # render the word graph
 ```
 
-`build` writes `out/<category>/words.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`) and `--limit N` (words in the disc, default 110). All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
+`build` writes `out/<category>/words.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`) and `--limit N` (words in the disc, default 110). Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
 ## Outputs
 
@@ -43,11 +43,25 @@ The file holds around 5,000 alpha-blended paths and 2,400 glyph references. Brow
 
 `render` and `web` carry four more views that the command line no longer reaches: a 26-letter chord diagram, the 26×26 first/last grid, the supply-against-demand bars, and two interactive pyvis pages where hovering a node lights its edges. The pyvis pages are self-contained, with vis-network inlined and the Bootstrap content delivery network (CDN) tags stripped — pyvis emits those regardless of `cdn_resources="in_line"`.
 
+## Speed
+
+A warm `build animal --limit 400` runs in 1.0 s, against 4.5 s before any of this was measured. Three changes got it there.
+
+Resolved word lists are cached under `.cache/wordchain`, keyed on the category, every filter argument, and the nix store path the WordNet corpus resolves to — a path that changes whenever the corpus does, and costs a stat to read rather than the 1.3 s that asking nltk for its version would. A hit turns the whole lexicon stage into a single file read.
+
+nltk, wordfreq, networkx and matplotlib are all imported at the point of use rather than at module load. A cache hit never imports the first three at all, and `stats`, `words` and `categories` never import matplotlib, which alone is 290 ms.
+
+The disc's axes fills its figure, so `bbox_inches="tight"` is gone from the default path. Trimming means measuring, and measuring means drawing all 4,856 curves a second time.
+
+What remains is 290 ms of matplotlib import and 480 ms of drawing and writing the SVG. Neither has an obvious next step: replacing pyplot with the object-oriented API saves 4 ms, because matplotlib's core import is the cost and pyplot is a rounding error on top of it.
+
 ## Reading the disc
 
 Wedges run alphabetically round the ring, and within a wedge the words are sorted on their *last* letter rather than the second onwards. Every word in a wedge already shares a first letter, so ordinary alphabetical order sorts them on something the game does not care about. Sorting on the letter each word hands over puts all the words leading to T side by side, and their curves leave the wedge as a single bundle instead of crossing each other on the way out.
 
-Above about 150 words the labels alternate between two radii, with a leader line tying the outer tier back to its dot. Adjacent labels collide at their inner ends, where the circumference is smallest, and staggering doubles the room each one has against its same-tier neighbour. Vector output makes this survivable rather than unnecessary: zooming reaches any single label, and the stagger is what keeps the ring legible without zooming.
+Every label sits at one radius. Adjacent labels collide at their inner ends, where the circumference is smallest, and the fix is the canvas rather than the layout: `_canvas_inches` solves for the width at which each label gets a full line of leading along the ring, which comes to 23 inches for 364 animals. Sizing up costs nothing in vector output, priced as it is by element count rather than dimensions.
+
+The axis limit is solved too, by `_disc_limit`. A label's length is fixed in inches by the font while the axis limit is what converts inches to data units, so the limit appears on both sides of one equation. Solving it lets the axes fill the figure exactly, and a figure with no margin is one matplotlib never has to draw twice to work out where to crop.
 
 Figures come from three families: Iowan Old Style for titles, Avenir for labels, Menlo for letters and counts, each with a fallback ending in a face matplotlib bundles itself. Images carry the graph and nothing else — no title, caption, legend or summary block. `build --chrome` adds all four back for a figure that has to stand on its own. Figures render dark by default, because 4,856 faint curves read as light against a dark ground and as smudge against a pale one. Both themes are complete palettes rather than an inversion of each other: the dark one lifts the letter wheel's value from 0.60 to 0.88 and drops its saturation, so all 26 hues stay separable either way.
 

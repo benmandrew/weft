@@ -12,9 +12,11 @@ import math
 import string
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import networkx as nx
+if TYPE_CHECKING:
+    import networkx as nx
+
 import numpy as np
 
 from .lexicon import Word
@@ -33,6 +35,8 @@ def letter_matrix(words: list[Word]) -> np.ndarray:
 
 def letter_graph(words: list[Word]) -> nx.DiGraph:
     """26 nodes, one weighted edge per letter pair some word bridges."""
+    import networkx as nx
+
     graph = nx.DiGraph()
     graph.add_nodes_from(LETTERS)
     counts = letter_matrix(words)
@@ -45,6 +49,8 @@ def letter_graph(words: list[Word]) -> nx.DiGraph:
 
 def word_graph(words: list[Word]) -> nx.DiGraph:
     """One node per word, an edge wherever one word can follow another."""
+    import networkx as nx
+
     graph = nx.DiGraph()
     for word in words:
         graph.add_node(word.text, zipf=word.zipf)
@@ -99,6 +105,8 @@ def core(graph: nx.DiGraph) -> set[str]:
     Play inside it can continue indefinitely. A letter outside it is somewhere
     the game can arrive and never leave, which is what ends a round.
     """
+    import networkx as nx
+
     components = list(nx.strongly_connected_components(graph))
     return max(components, key=len) if components else set()
 

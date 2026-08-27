@@ -6,7 +6,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import render
 from .graph import LETTERS, letter_stats, summary
 from .lexicon import CATEGORIES, UnknownCategory, Word, catalogue, members
 from .palette import THEMES
@@ -51,6 +50,11 @@ def _selection_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="keep entries like 'polar bear', chained on their outer letters",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="resolve the words from WordNet even if a cached list exists",
+    )
 
 
 def _load(args: argparse.Namespace) -> list[Word]:
@@ -62,6 +66,7 @@ def _load(args: argparse.Namespace) -> list[Word]:
             max_rank=args.max_rank,
             min_depth=args.min_depth,
             allow_multiword=args.multiword,
+            cache=not args.no_cache,
         )
     except UnknownCategory:
         sys.exit(f"no such category: {args.category}\ntry one of: {', '.join(catalogue())}")
@@ -124,6 +129,10 @@ def _cmd_words(args: argparse.Namespace) -> None:
 
 
 def _cmd_build(args: argparse.Namespace) -> None:
+    # matplotlib costs about 290 ms to import and only `build` draws anything,
+    # so `stats`, `words` and `categories` should never pay for it.
+    from . import render
+
     words = _load(args)
     if not words:
         sys.exit(f"{args.category} came back empty; try a lower --min-zipf")

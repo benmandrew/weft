@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, TypeAlias
-
-from nltk.corpus import wordnet
-from wordfreq import zipf_frequency
 
 # Each category names the WordNet synsets whose hyponym closure defines it.
 # Several need more than one root because WordNet splits the sense along a line
@@ -60,6 +61,21 @@ _PLAYABLE = re.compile(r"[a-z]+(?: [a-z]+)*")
 # says which Any is meant rather than leaving a bare one at every boundary.
 Synset: TypeAlias = Any
 
+# Bump when the cached shape changes; old files then miss rather than mislead.
+_CACHE_FORMAT = 1
+
+
+def _wordnet() -> Any:
+    """nltk, imported at the point of use.
+
+    Parsing the WordNet database costs 1.3 s, and a cache hit needs none of it.
+    Keeping the import inside the call means a hit never pays for nltk at all,
+    not even the 170 ms the module itself takes.
+    """
+    from nltk.corpus import wordnet
+
+    return wordnet
+
 
 class UnknownCategory(KeyError):
     """Raised for a category name that has no synset roots."""
@@ -100,6 +116,7 @@ def _closure(roots: tuple[str, ...], min_depth: int) -> set[Synset]:
     whose lemmas are the category name: "animal" is not a playable answer in a
     game of animals, and neither is "vehicle" in a game of vehicles.
     """
+    wordnet = _wordnet()
     depth: dict[Synset, int] = {}
     frontier: list[Synset] = []
     for root in roots:
@@ -141,6 +158,7 @@ def _in_category(
     has no counts, sense order stands in: WordNet lists senses commonest first,
     so a category sense buried at position seven is not the everyday meaning.
     """
+    wordnet = _wordnet()
     senses = wordnet.synsets(text.replace(" ", "_"), pos=wordnet.NOUN)
 
     tagged = matched = 0
@@ -159,31 +177,62 @@ def _in_category(
     return first is not None and first <= max_rank
 
 
-def members(
-    category: str,
-    *,
-    min_zipf: float = 3.0,
-    min_dominance: float = 0.2,
-    max_rank: int = 2,
-    min_depth: int = 1,
-    allow_multiword: bool = False,
-) -> list[Word]:
-    """The words of a category, commonest first.
+def _fingerprint() -> str:
+    """Something that changes when the WordNet database does, without loading it.
 
-    min_zipf is on wordfreq's Zipf scale, where 3.0 is about one occurrence per
-    million words. WordNet's tail holds several thousand animals nobody has
-    heard of, and they would swamp the graph, so the frequency cut stands in for
-    "a word a player might actually produce". min_dominance and max_rank control
-    the polysemy filter described on _in_category, and min_depth the
-    shallow-layer cut described on _closure.
+    The dev shell symlinks the corpus at a nix store path, and that path carries
+    the version, so resolving the link is a stat. Asking nltk for its version
+    would parse the database instead — the exact cost the cache exists to avoid.
     """
-    try:
-        roots = CATEGORIES[category]
-    except KeyError:
-        raise UnknownCategory(category) from None
+    root = os.environ.get("NLTK_DATA")
+    if not root:
+        return "unpinned"
+    return os.path.realpath(Path(root) / "corpora" / "wordnet")
 
-    senses = _closure(roots, min_depth)
-    words: list[Word] = []
+
+def _cache_file(category: str, params: dict[str, Any]) -> Path:
+    key = json.dumps([_CACHE_FORMAT, category, params, _fingerprint()], sort_keys=True)
+    digest = hashlib.sha256(key.encode()).hexdigest()[:16]
+    root = Path(os.environ.get("WORDCHAIN_CACHE", ".cache/wordchain"))
+    return root / f"{category}-{digest}.json"
+
+
+def _read_cache(path: Path) -> list[Word] | None:
+    try:
+        rows = json.loads(path.read_text())
+    except (OSError, ValueError):
+        # A missing file and a half-written one both mean the same thing: work
+        # the cache cannot save. Recomputing rewrites it.
+        return None
+    return [Word(row["t"], row["z"]) for row in rows]
+
+
+def _write_cache(path: Path, words: list[Word]) -> None:
+    payload = json.dumps([{"t": w.text, "z": w.zipf} for w in words])
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Write and rename, so a reader never sees a partial file and two
+        # processes racing on the same category leave one intact result.
+        scratch = path.with_suffix(f".{os.getpid()}.tmp")
+        scratch.write_text(payload)
+        scratch.replace(path)
+    except OSError:
+        pass  # a read-only checkout is a reason to be slow, not to fail
+
+
+def _resolve(
+    category: str,
+    min_zipf: float,
+    min_dominance: float,
+    max_rank: int,
+    min_depth: int,
+    allow_multiword: bool,
+) -> list[Word]:
+    """The uncached path: WordNet closure, then the three filters."""
+    from wordfreq import zipf_frequency
+
+    senses = _closure(CATEGORIES[category], min_depth)
+    words = []
     for text in _lemma_names(senses):
         if len(text) < 2 or not _PLAYABLE.fullmatch(text):
             continue
@@ -197,3 +246,48 @@ def members(
         words.append(Word(text, zipf))
 
     return sorted(words, key=lambda w: (-w.zipf, w.text))
+
+
+def members(
+    category: str,
+    *,
+    min_zipf: float = 3.0,
+    min_dominance: float = 0.2,
+    max_rank: int = 2,
+    min_depth: int = 1,
+    allow_multiword: bool = False,
+    cache: bool = True,
+) -> list[Word]:
+    """The words of a category, commonest first.
+
+    min_zipf is on wordfreq's Zipf scale, where 3.0 is about one occurrence per
+    million words. WordNet's tail holds several thousand animals nobody has
+    heard of, and they would swamp the graph, so the frequency cut stands in for
+    "a word a player might actually produce". min_dominance and max_rank control
+    the polysemy filter described on _in_category, and min_depth the
+    shallow-layer cut described on _closure.
+
+    The result is cached on disk against the category, every argument above, and
+    the WordNet build it came from. A hit skips the 1.3 s the database takes to
+    parse, which is the single largest cost in the whole tool.
+    """
+    if category not in CATEGORIES:
+        raise UnknownCategory(category)
+
+    params = {
+        "min_zipf": min_zipf,
+        "min_dominance": min_dominance,
+        "max_rank": max_rank,
+        "min_depth": min_depth,
+        "allow_multiword": allow_multiword,
+    }
+    path = _cache_file(category, params)
+    if cache:
+        hit = _read_cache(path)
+        if hit is not None:
+            return hit
+
+    words = _resolve(category, min_zipf, min_dominance, max_rank, min_depth, allow_multiword)
+    if cache:
+        _write_cache(path, words)
+    return words

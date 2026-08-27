@@ -28,6 +28,13 @@ Keep the hook idempotent: direnv re-runs it on every load.
   `web._CDN_TAG` strips the Bootstrap links pyvis emits regardless of
   `cdn_resources="in_line"`.
 - `out/` is generated and gitignored. Nothing reads from it.
+- Import nltk, wordfreq, networkx and matplotlib at the point of use, never at
+  module load. A cache hit must not import the first three, and `stats`,
+  `words` and `categories` must not import matplotlib. Moving any of these to
+  the top of a file costs 100-300 ms on every invocation that does not need it.
+- `.cache/wordchain` holds resolved word lists keyed on the category, the
+  filter arguments and the corpus store path. Bump `lexicon._CACHE_FORMAT` when
+  the stored shape changes, so stale files miss rather than mislead.
 - `build` renders one file, SVG unless `--format png`. Vector is the default
   because it writes in half the time, ships at a quarter the size gzipped, and
   zooms. Keep `svg.fonttype = "path"` in `render._typeface`: naming the fonts
