@@ -62,7 +62,7 @@ _PLAYABLE = re.compile(r"[a-z]+(?: [a-z]+)*")
 Synset: TypeAlias = Any
 
 # Bump when the cached shape changes; old files then miss rather than mislead.
-_CACHE_FORMAT = 2
+_CACHE_FORMAT = 3
 
 
 _READER: Any = None
@@ -277,6 +277,13 @@ def _resolve(
         if " " in text and not allow_multiword:
             continue
         zipf = zipf_frequency(text, "en")
+        # A Zipf of exactly zero means wordfreq has never seen the word in any
+        # of its corpora. That is where WordNet stops listing words and starts
+        # listing taxonomy: 879 of animal's 2461 candidates score zero, and they
+        # read aegyptopithecus, acanthocephalan, abrocome. Structural, so it
+        # holds however low the threshold below is set.
+        if zipf <= 0.0:
+            continue
         if zipf < floor:
             continue
         if not _in_category(text, senses, min_dominance, max_rank):
@@ -291,21 +298,21 @@ def _resolve(
 def members(
     category: str,
     *,
-    min_zipf: float = 3.0,
+    min_zipf: float = 2.0,
     min_dominance: float = 0.2,
     max_rank: int = 2,
     min_depth: int = 1,
     allow_multiword: bool = False,
     target: int = 60,
-    zipf_floor: float = 1.8,
+    zipf_floor: float = 0.0,
     cache: bool = True,
 ) -> list[Word]:
     """The words of a category, commonest first.
 
-    min_zipf is on wordfreq's Zipf scale, where 3.0 is about one occurrence per
-    million words. WordNet's tail holds several thousand animals nobody has
-    heard of, and they would swamp the graph, so the frequency cut stands in for
-    "a word a player might actually produce". min_dominance and max_rank control
+    min_zipf is on wordfreq's Zipf scale, where 2.0 is about one occurrence per
+    ten million words. Words wordfreq scores at zero are dropped outright,
+    whatever the threshold: that is the line between WordNet's vocabulary and
+    its taxonomy. min_dominance and max_rank control
     the polysemy filter described on _in_category, min_depth the shallow-layer
     cut described on _closure, and target with zipf_floor the sliding cut
     described on _resolve.

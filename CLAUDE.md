@@ -78,11 +78,14 @@ word graph is the line graph of that one. Keep analysis there rather than in
 
 ## Known limits
 
-The frequency cut slides: `--min-zipf` is the preferred threshold, but a
+A Zipf of exactly zero is dropped unconditionally in `_resolve`. That is the
+line between WordNet's vocabulary and its taxonomy, and it is structural rather
+than a tuned threshold — keep it independent of `--min-zipf`.
+
+The frequency cut then slides: `--min-zipf` is the preferred threshold, but a
 category yielding fewer than `--target` words relaxes down its own frequency
 order to `--zipf-floor`. A single absolute cut is calibrated for the common
-categories and guts the rest — flower had 9 words at 3.0 and has 47 now. Do not
-replace it with a lower global default; that fills animal and food with junk.
+categories and guts the rest — flower had 9 words at 3.0 and has 60 now.
 
 WordNet is a lexical database, not a game word list. The filters in `lexicon.py`
 cut most of the polysemy noise, and residue survives ("entire" and "royal" are
