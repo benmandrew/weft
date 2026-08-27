@@ -25,13 +25,13 @@ nltk normally downloads the WordNet corpus into `~/nltk_data` at runtime. `pkgs.
 ## Commands
 
 ```
-python -m wordchain categories       # the 33 categories, with word counts
+python -m wordchain categories       # the 37 categories, with word counts
 python -m wordchain stats animal     # the letter analysis
 python -m wordchain words animal     # the word list with Zipf frequencies
 python -m wordchain build animal     # render the word graph
 ```
 
-`categories` takes `--headers` for a header row, and the same filter arguments as the other commands, so its counts match what they would build. Counting means resolving all 33, which is 3.2 s against a cold cache and 0.23 s once they are in it.
+`categories` takes `--headers` for a header row, and the same filter arguments as the other commands, so its counts match what they would build. Counting means resolving all 37, which is 3.2 s against a cold cache and 0.23 s once they are in it.
 
 `build` writes `out/<category>/words.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`) and `--limit N` (words in the disc, default 110). Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
@@ -94,7 +94,7 @@ WordNet is a lexical database, not a game word list, and some residue always sur
 
 ## Categories
 
-animal, bird, body-part, building, city, clothing, colour, country, dog, drink, drug, element, fabric, fish, flower, food, fruit, furniture, game, insect, instrument, job, language, mammal, metal, plant, sport, tool, toy, tree, vegetable, vehicle, weapon.
+animal, bird, body-part, building, city, clothing, colour, country, disease, dog, drink, drug, element, fabric, fish, flower, food, fruit, furniture, game, insect, instrument, job, language, mammal, metal, mineral, plant, reptile, river, sport, tool, toy, tree, vegetable, vehicle, weapon.
 
 ## Layout
 
