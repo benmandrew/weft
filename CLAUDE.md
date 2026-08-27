@@ -34,7 +34,14 @@ Keep the hook idempotent: direnv re-runs it on every load.
   the top of a file costs 100-300 ms on every invocation that does not need it.
 - `.cache/wordchain` holds resolved word lists keyed on the category, the
   filter arguments and the corpus store path. Bump `lexicon._CACHE_FORMAT` when
-  the stored shape changes, so stale files miss rather than mislead.
+  the stored shape changes, so stale files miss rather than mislead. Every
+  command that resolves a category writes the file and every command reads it,
+  so there is nothing to warm by hand and no `warm` subcommand to add.
+- `lexicon._wordnet` overrides `map_wn` to skip nltk's multilingual sense-key
+  mapping, which is two thirds of the corpus load and unused here. Keep the
+  override; the word lists are identical with and without it.
+- Edges are `Path` cubics, never sampled polylines. SVG draws cubics natively,
+  so sampling costs build time, file size and accuracy at once.
 - `build` renders one file, SVG unless `--format png`. Vector is the default
   because it writes in half the time, ships at a quarter the size gzipped, and
   zooms. Keep `svg.fonttype = "path"` in `render._typeface`: naming the fonts

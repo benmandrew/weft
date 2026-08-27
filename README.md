@@ -45,15 +45,19 @@ The file holds around 5,000 alpha-blended paths and 2,400 glyph references. Brow
 
 ## Speed
 
-A warm `build animal --limit 400` runs in 1.0 s, against 4.5 s before any of this was measured. Three changes got it there.
+`build animal --limit 400` takes 2.0 s the first time and 0.93 s after, against 4.5 s before any of this was measured. `stats` is 0.35 s and `words` 0.22 s.
 
-Resolved word lists are cached under `.cache/wordchain`, keyed on the category, every filter argument, and the nix store path the WordNet corpus resolves to — a path that changes whenever the corpus does, and costs a stat to read rather than the 1.3 s that asking nltk for its version would. A hit turns the whole lexicon stage into a single file read.
+Resolved word lists are cached under `.cache/wordchain`, keyed on the category, every filter argument, and the nix store path the WordNet corpus resolves to — a path that changes whenever the corpus does, and costs a stat to read where asking nltk for its version would cost a second. There is no command to populate it: whichever command first asks for a category writes the file, and every later run of any command reads it, because the key is the category and the filters rather than the caller.
+
+`WordNetCorpusReader.__init__` ends by calling `map_wn()`, which guards its work with `get_version() == version` against a default of the string `"wordnet"` — a corpus name, not a version, so the comparison never holds and the mapping always runs. It parses the 7 MB `index.sense` twice to build a sense-key table for the multilingual API, which nothing here calls. Declining to build it takes the corpus load from 1280 ms to 512 ms and leaves every word list byte-identical.
+
+Edges are cubic path segments rather than sampled polylines. SVG has cubics natively, so the curve is exact instead of approximated by 24 points, the figure builds in 50 ms instead of 131, and the file holds 1.4 MB instead of 3.8 MB.
 
 nltk, wordfreq, networkx and matplotlib are all imported at the point of use rather than at module load. A cache hit never imports the first three at all, and `stats`, `words` and `categories` never import matplotlib, which alone is 290 ms.
 
-The disc's axes fills its figure, so `bbox_inches="tight"` is gone from the default path. Trimming means measuring, and measuring means drawing all 4,856 curves a second time.
+The disc's axes fills its figure, so `bbox_inches="tight"` is gone from the default path. Trimming means measuring, and measuring means drawing every curve a second time.
 
-What remains is 290 ms of matplotlib import and 480 ms of drawing and writing the SVG. Neither has an obvious next step: replacing pyplot with the object-oriented API saves 4 ms, because matplotlib's core import is the cost and pyplot is a rounding error on top of it.
+Three things were measured and left alone. Replacing pyplot with the object-oriented API saves 4 ms, because matplotlib's core import is the cost and pyplot is a rounding error on it. `svg.fonttype = "none"` saves nothing at all, so the font-independent `"path"` is free. Restricting the corpus reader to nouns raises `KeyError: 'a'`, because satellite adjectives need the adjective index.
 
 ## Reading the disc
 

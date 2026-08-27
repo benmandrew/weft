@@ -65,16 +65,39 @@ Synset: TypeAlias = Any
 _CACHE_FORMAT = 1
 
 
+_READER: Any = None
+
+
 def _wordnet() -> Any:
-    """nltk, imported at the point of use.
+    """A WordNet reader, built at the point of use and kept for the process.
 
-    Parsing the WordNet database costs 1.3 s, and a cache hit needs none of it.
-    Keeping the import inside the call means a hit never pays for nltk at all,
-    not even the 170 ms the module itself takes.
+    Parsing the database costs over a second, and a cache hit needs none of it,
+    so nothing here runs until something actually asks WordNet a question.
+
+    Two thirds of that cost is avoidable. `WordNetCorpusReader.__init__` ends by
+    calling `map_wn()`, which guards its work with `get_version() == version`
+    against a default of the string "wordnet" — a corpus name, not a version, so
+    the comparison never holds and the mapping always runs. It parses the 7 MB
+    index.sense twice to build a sense-key table for the multilingual API, which
+    nothing here calls. Declining to build it takes the load from 1280 ms to
+    512 ms and leaves every word list identical.
     """
-    from nltk.corpus import wordnet
+    global _READER
+    if _READER is None:
+        import warnings
 
-    return wordnet
+        import nltk.data
+        from nltk.corpus.reader.wordnet import WordNetCorpusReader
+
+        class _Reader(WordNetCorpusReader):  # type: ignore[misc]
+            def map_wn(self, version: str = "wordnet") -> None:
+                return None
+
+        with warnings.catch_warnings():
+            # Passing no omw_reader is the point; the warning about it is not.
+            warnings.simplefilter("ignore")
+            _READER = _Reader(nltk.data.find("corpora/wordnet"), None)
+    return _READER
 
 
 class UnknownCategory(KeyError):

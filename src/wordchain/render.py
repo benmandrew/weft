@@ -14,9 +14,8 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
-import numpy.typing as npt
 from matplotlib.axes import Axes
-from matplotlib.collections import LineCollection
+from matplotlib.collections import PathCollection
 from matplotlib.figure import Figure
 from matplotlib.patches import Circle, PathPatch
 from matplotlib.path import Path
@@ -128,16 +127,17 @@ def _by_tail(word: Word) -> str:
     return word.text[::-1]
 
 
-def _bezier(start: Point, end: Point, pull: float, steps: int = 24) -> npt.NDArray[np.float64]:
-    """A cubic curve from start to end, bowed towards the centre."""
-    t = np.linspace(0.0, 1.0, steps).reshape(-1, 1)
-    p0 = np.asarray(start, dtype=np.float64)
-    p3 = np.asarray(end, dtype=np.float64)
-    c0, c1 = p0 * pull, p3 * pull
-    curve: npt.NDArray[np.float64] = (
-        (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * c0 + 3 * (1 - t) * t**2 * c1 + t**3 * p3
+def _curve(start: Point, end: Point, pull: float) -> Path:
+    """A cubic from start to end, bowed towards the centre.
+
+    Four control points rather than a sampled polyline. SVG has cubics natively,
+    so the curve is exact instead of approximated, the file holds a sixth of the
+    coordinates, and nothing has to evaluate the curve to draw it.
+    """
+    return Path(
+        [start, (start[0] * pull, start[1] * pull), (end[0] * pull, end[1] * pull), end],
+        [Path.MOVETO, Path.CURVE4, Path.CURVE4, Path.CURVE4],
     )
-    return curve
 
 
 def _chord(
@@ -156,11 +156,9 @@ def _chord(
         centre = (start[0] / norm * 1.075, start[1] / norm * 1.075)
         ax.add_patch(Circle(centre, 0.035, fill=False, ec=colour, lw=width, alpha=alpha, zorder=2))
         return
-    path = Path(
-        [start, (start[0] * pull, start[1] * pull), (end[0] * pull, end[1] * pull), end],
-        [Path.MOVETO, Path.CURVE4, Path.CURVE4, Path.CURVE4],
+    ax.add_patch(
+        PathPatch(_curve(start, end, pull), fc="none", ec=colour, lw=width, alpha=alpha, zorder=2)
     )
-    ax.add_patch(PathPatch(path, fc="none", ec=colour, lw=width, alpha=alpha, zorder=2))
 
 
 def _blank_disc(
@@ -417,25 +415,27 @@ def words_disc(
     # axes would clip, so that path keeps the margins and the tight crop.
     fig, ax = _blank_disc(theme, size, bleed=not chrome, limit=reach)
 
-    # One LineCollection per starting letter rather than a patch per edge: the
+    # One collection per starting letter rather than a patch per edge: the
     # colour is constant within a bundle, and 4856 separate artists is slow to
     # draw and slower to save.
     pull = _PULL_DENSE if crowded else _PULL
     for letter in live:
-        segments = [
-            _bezier(placed[word.text], placed[successor.text], pull)
+        curves = [
+            _curve(placed[word.text], placed[successor.text], pull)
             for word in shown
             for successor in grouped[word.tail]
             if word.head == letter and successor.text != word.text
         ]
-        if segments:
+        if curves:
             ax.add_collection(
-                LineCollection(
-                    segments,
-                    colors=[_hue(letter, theme)],
+                PathCollection(
+                    curves,
+                    facecolors="none",
+                    edgecolors=[_hue(letter, theme)],
                     linewidths=0.5,
                     alpha=theme.edge_alpha if not crowded else theme.edge_alpha * 0.55,
                     zorder=2,
+                    transform=ax.transData,
                 )
             )
 
