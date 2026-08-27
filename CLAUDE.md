@@ -66,6 +66,10 @@ Keep the hook idempotent: direnv re-runs it on every load.
   must exist. Unknown keys and values that are not positive numbers are refused
   rather than ignored, since an ignored key redraws the same figure. Import
   tomllib and difflib at the point of use.
+- The Makefile's `all` renders one SVG per category and takes its parallelism
+  from make's own `-j`, never from a `MAKEFLAGS` line in the file. Its target
+  list comes from `wordchain categories` at parse time, so every invocation pays
+  for that, `make clean` included.
 - The letter colours are a `palette.Wheel` of one or more `Arc`s, carried on the
   `Theme` and read from the same file's `[palette]` table. A preset name and the
   arc's numbers are mutually exclusive, because a preset may hold two arcs and
