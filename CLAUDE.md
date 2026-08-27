@@ -69,7 +69,10 @@ Keep the hook idempotent: direnv re-runs it on every load.
 - The Makefile's `all` renders one SVG per category and takes its parallelism
   from make's own `-j`, never from a `MAKEFLAGS` line in the file. Its target
   list comes from `wordchain categories` at parse time, so every invocation pays
-  for that, `make clean` included.
+  for that, `make clean` included. A config file reaches it through `CONFIG=`,
+  never through a `--config` hardcoded on the recipe line: the variable is both
+  the `--config` argument and the prerequisite, and hardcoding the flag as well
+  passes it twice.
 - The letter colours are a `palette.Wheel` of one or more `Arc`s, carried on the
   `Theme` and read from the same file's `[palette]` table. A preset name and the
   arc's numbers are mutually exclusive, because a preset may hold two arcs and

@@ -35,7 +35,7 @@ python -m wordchain build animal     # render the word graph
 
 `build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`), `--limit N` (words in the disc, default 110) and `--config FILE`. Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
-`make -j all` renders every category, and `make -j` on its own does the same since `all` is the default goal. Each file depends on the modules under `src/wordchain/` and on `wordchain.toml`, so a run against an untouched tree redraws nothing and a run after editing one module redraws all 37. That sweep takes 18.0 s serially and 5.1 s across eight cores. `make clean` removes the output directory, and `OUT=` moves it.
+`make -j all` renders every category, and `make -j` on its own does the same since `all` is the default goal. Each file depends on the modules under `src/wordchain/` and on `wordchain.toml`, so a run against an untouched tree redraws nothing and a run after editing one module redraws all 37. That sweep takes 18.0 s serially and 5.1 s across eight cores. `make clean` removes the output directory, and `OUT=` moves it. `CONFIG=` names a config file, which both passes `--config` and makes that file a prerequisite, so `make CONFIG=example.toml -j` redraws when it changes; with no `CONFIG` it picks up a `wordchain.toml` sitting in the directory, which is the file `build` would have discovered anyway.
 
 ## Outputs
 

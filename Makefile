@@ -6,7 +6,13 @@
 # redraws none. `make -B` forces the lot.
 
 OUT ?= out
-BUILD ?= python -m wordchain build
+
+# The config file build actually reads. Empty by default unless a
+# wordchain.toml is sitting there, which is the one build would discover on its
+# own. Naming another with CONFIG= makes it both a prerequisite and a --config
+# flag, so `make CONFIG=example.toml` redraws when that file changes.
+CONFIG ?= $(wildcard wordchain.toml)
+BUILD ?= python -m wordchain build $(if $(CONFIG),--config $(CONFIG))
 
 # `categories` resolves all 37 word lists to count them, which is 0.23 s
 # against a warm cache and 3.2 s against a cold one. It runs on every make
@@ -14,9 +20,9 @@ BUILD ?= python -m wordchain build
 CATEGORIES := $(shell python -m wordchain categories | awk '{print $$1}')
 SVGS := $(patsubst %,$(OUT)/%.svg,$(CATEGORIES))
 
-# Anything that changes what a disc looks like. A missing wordchain.toml
-# contributes nothing to the wildcard, so the dependency simply is not there.
-SOURCES := $(wildcard src/wordchain/*.py) $(wildcard wordchain.toml)
+# Anything that changes what a disc looks like. With no config in play CONFIG
+# is empty and the dependency simply is not there.
+SOURCES := $(wildcard src/wordchain/*.py) $(CONFIG)
 
 .PHONY: all clean list
 
