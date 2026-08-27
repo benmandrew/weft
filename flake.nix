@@ -32,7 +32,7 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          name = "chain";
+          name = "wordchain";
 
           packages = [
             (pythonEnv pkgs)

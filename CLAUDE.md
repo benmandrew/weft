@@ -1,4 +1,4 @@
-# chain
+# wordchain
 
 Connection graphs for the word chain game: words from a category, each starting
 with the letter the previous one ended on. See @README.md for usage.

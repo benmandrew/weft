@@ -1,6 +1,6 @@
-# chain
+# wordchain
 
-`chain` visualises the connection graph of the word chain game. Players take turns naming words from a category, and each word must start with the letter the previous word ended on: *cat*, *tiger*, *rat*, *toad*. The tool pulls a category word list out of WordNet, builds the graph of legal moves, and renders it.
+`wordchain` visualises the connection graph of the word chain game. Players take turns naming words from a category, and each word must start with the letter the previous word ended on: *cat*, *tiger*, *rat*, *toad*. The tool pulls a category word list out of WordNet, builds the graph of legal moves, and renders it.
 
 A word runs from its first letter to its last, and the next word must start where the previous one ended. Every word is therefore an edge between two of 26 letters, and the whole game lives on a 26-node graph no matter how large the vocabulary gets. The word-level graph is the *line graph* of that small one: its nodes are the edges of the letter graph, joined wherever one word's last letter is another's first.
 
