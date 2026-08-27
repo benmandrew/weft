@@ -14,14 +14,21 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
+from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection
-from matplotlib.patches import PathPatch
+from matplotlib.figure import Figure
+from matplotlib.patches import Circle, PathPatch
 from matplotlib.path import Path
 
 from . import palette
 from .graph import LETTERS, letter_matrix, letter_stats, summary
 from .lexicon import Word
 from .palette import DARK, Theme
+
+# A point on the unit disc, and a colour as matplotlib wants one.
+Point = tuple[float, float]
+RGB = tuple[float, float, float]
 
 # Curves leave each node heading for the centre, so a chord's shape reads as the
 # pair of letters it joins rather than as a straight line crossing the disc.
@@ -40,11 +47,11 @@ def _typeface() -> None:
     plt.rcParams["font.family"] = "sans-serif"
 
 
-def _hue(letter: str, theme: Theme) -> tuple:
+def _hue(letter: str, theme: Theme) -> RGB:
     return palette.rgb(letter, theme)
 
 
-def _ring(count: int, radius: float = 1.0) -> list[tuple[float, float]]:
+def _ring(count: int, radius: float = 1.0) -> list[Point]:
     """Positions clockwise from the top, which is how a reader scans a dial."""
     return [
         (
@@ -55,7 +62,7 @@ def _ring(count: int, radius: float = 1.0) -> list[tuple[float, float]]:
     ]
 
 
-def _by_tail(word: Word):
+def _by_tail(word: Word) -> str:
     """Sort key placing words that hand over to the same letter side by side.
 
     Ordinary alphabetical order sorts a wedge on its second letter onwards,
@@ -68,29 +75,33 @@ def _by_tail(word: Word):
     return word.text[::-1]
 
 
-def _bezier(start, end, pull: float, steps: int = 24) -> np.ndarray:
+def _bezier(start: Point, end: Point, pull: float, steps: int = 24) -> npt.NDArray[np.float64]:
     """A cubic curve from start to end, bowed towards the centre."""
-    c0 = (start[0] * pull, start[1] * pull)
-    c1 = (end[0] * pull, end[1] * pull)
-    t = np.linspace(0, 1, steps).reshape(-1, 1)
-    p0, p3 = np.array(start), np.array(end)
-    return (
-        (1 - t) ** 3 * p0
-        + 3 * (1 - t) ** 2 * t * np.array(c0)
-        + 3 * (1 - t) * t**2 * np.array(c1)
-        + t**3 * p3
+    t = np.linspace(0.0, 1.0, steps).reshape(-1, 1)
+    p0 = np.asarray(start, dtype=np.float64)
+    p3 = np.asarray(end, dtype=np.float64)
+    c0, c1 = p0 * pull, p3 * pull
+    curve: npt.NDArray[np.float64] = (
+        (1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * c0 + 3 * (1 - t) * t**2 * c1 + t**3 * p3
     )
+    return curve
 
 
-def _chord(ax, start, end, colour, width, alpha, pull: float = _PULL):
+def _chord(
+    ax: Axes,
+    start: Point,
+    end: Point,
+    colour: RGB,
+    width: float,
+    alpha: float,
+    pull: float = _PULL,
+) -> None:
     if start == end:
         # A self-loop has no chord to draw, so it becomes a bubble sitting just
         # outside its own node.
         norm = math.hypot(*start) or 1.0
         centre = (start[0] / norm * 1.075, start[1] / norm * 1.075)
-        ax.add_patch(
-            plt.Circle(centre, 0.035, fill=False, ec=colour, lw=width, alpha=alpha, zorder=2)
-        )
+        ax.add_patch(Circle(centre, 0.035, fill=False, ec=colour, lw=width, alpha=alpha, zorder=2))
         return
     path = Path(
         [start, (start[0] * pull, start[1] * pull), (end[0] * pull, end[1] * pull), end],
@@ -99,7 +110,7 @@ def _chord(ax, start, end, colour, width, alpha, pull: float = _PULL):
     ax.add_patch(PathPatch(path, fc="none", ec=colour, lw=width, alpha=alpha, zorder=2))
 
 
-def _blank_disc(theme: Theme, size: float = 8.4):
+def _blank_disc(theme: Theme, size: float = 8.4) -> tuple[Figure, Axes]:
     _typeface()
     fig, ax = plt.subplots(figsize=(size, size), facecolor=theme.ground)
     ax.set_facecolor(theme.ground)
@@ -110,7 +121,7 @@ def _blank_disc(theme: Theme, size: float = 8.4):
     return fig, ax
 
 
-def _headline(ax, words: list[Word], theme: Theme) -> None:
+def _headline(ax: Axes, words: list[Word], theme: Theme) -> None:
     """The masthead figures, set into the disc's empty bottom-left corner."""
     facts = summary(words)
     worst = next(((letter, p) for letter, _, s, p in facts["traps"] if s), None)
@@ -140,7 +151,9 @@ def _headline(ax, words: list[Word], theme: Theme) -> None:
         y -= 0.145
 
 
-def chord(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) -> None:
+def chord(
+    words: list[Word], out: FilePath, title: str, theme: Theme = DARK, chrome: bool = False
+) -> None:
     """The whole game on 26 nodes: one ribbon per letter pair, weighted by words."""
     counts = letter_matrix(words)
     points = _ring(26)
@@ -183,20 +196,23 @@ def chord(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) -> 
             fontweight="bold" if stat.is_dead_end else "normal",
         )
 
-    ax.set_title(title, fontsize=19, family="serif", color=theme.ink, pad=18)
-    ax.text(
-        0,
-        -1.30,
-        "ribbon width = words carrying that first/last pair · red = nothing starts here",
-        ha="center",
-        fontsize=8.5,
-        color=theme.muted,
-    )
+    if chrome:
+        ax.set_title(title, fontsize=19, family="serif", color=theme.ink, pad=18)
+        ax.text(
+            0,
+            -1.30,
+            "ribbon width = words carrying that first/last pair · red = nothing starts here",
+            ha="center",
+            fontsize=8.5,
+            color=theme.muted,
+        )
     fig.savefig(out, dpi=180, facecolor=theme.ground, bbox_inches="tight")
     plt.close(fig)
 
 
-def matrix(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) -> None:
+def matrix(
+    words: list[Word], out: FilePath, title: str, theme: Theme = DARK, chrome: bool = False
+) -> None:
     """The same counts as a grid, where exact numbers are readable."""
     _typeface()
     counts = letter_matrix(words)
@@ -208,13 +224,14 @@ def matrix(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) ->
 
     ax.set_xticks(range(26), [c.upper() for c in LETTERS], fontsize=9, family="monospace")
     ax.set_yticks(range(26), [c.upper() for c in LETTERS], fontsize=9, family="monospace")
-    ax.set_xlabel(
-        "last letter — where the word hands over", fontsize=11, color=theme.ink, labelpad=10
-    )
-    ax.set_ylabel(
-        "first letter — where the word picks up", fontsize=11, color=theme.ink, labelpad=10
-    )
-    ax.set_title(title, fontsize=19, family="serif", color=theme.ink, pad=18)
+    if chrome:
+        ax.set_xlabel(
+            "last letter — where the word hands over", fontsize=11, color=theme.ink, labelpad=10
+        )
+        ax.set_ylabel(
+            "first letter — where the word picks up", fontsize=11, color=theme.ink, labelpad=10
+        )
+        ax.set_title(title, fontsize=19, family="serif", color=theme.ink, pad=18)
 
     peak = counts.max() or 1
     for i in range(26):
@@ -237,7 +254,9 @@ def matrix(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) ->
     plt.close(fig)
 
 
-def pressure(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) -> None:
+def pressure(
+    words: list[Word], out: FilePath, title: str, theme: Theme = DARK, chrome: bool = False
+) -> None:
     """Supply against demand per letter, which is where the traps show up."""
     _typeface()
     stats = letter_stats(words)
@@ -269,19 +288,21 @@ def pressure(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) 
             label.set_color(theme.dead)
             label.set_fontweight("bold")
 
-    ax.set_ylabel("words", fontsize=11, color=theme.ink)
-    ax.set_title(title, fontsize=19, family="serif", color=theme.ink, pad=16)
-    legend = ax.legend(frameon=False, fontsize=9.5, loc="upper right")
-    for text in legend.get_texts():
-        text.set_color(theme.ink)
-    ax.text(
-        0,
-        -0.13,
-        "a letter in red has words ending on it and none starting with it: the round stops there",
-        transform=ax.transAxes,
-        fontsize=9,
-        color=theme.muted,
-    )
+    if chrome:
+        ax.set_ylabel("words", fontsize=11, color=theme.ink)
+        ax.set_title(title, fontsize=19, family="serif", color=theme.ink, pad=16)
+        legend = ax.legend(frameon=False, fontsize=9.5, loc="upper right")
+        for text in legend.get_texts():
+            text.set_color(theme.ink)
+        ax.text(
+            0,
+            -0.13,
+            "a letter in red has words ending on it and none starting with it: "
+            "the round stops there",
+            transform=ax.transAxes,
+            fontsize=9,
+            color=theme.muted,
+        )
     ax.spines[["top", "right"]].set_visible(False)
     ax.spines[["left", "bottom"]].set_color(theme.faint)
     ax.tick_params(length=0, colors=theme.ink)
@@ -295,6 +316,7 @@ def words_disc(
     title: str,
     limit: int = 110,
     theme: Theme = DARK,
+    chrome: bool = False,
 ) -> None:
     """The word graph, laid out in wedges by first letter.
 
@@ -400,12 +422,13 @@ def words_disc(
             color=_hue(letter, theme),
         )
 
-    ax.set_title(title, fontsize=21, family="serif", color=theme.ink, pad=20)
-    _headline(ax, words, theme)
-    dropped = len(words) - len(shown)
-    note = f"{len(shown)} commonest words shown"
-    if dropped:
-        note += f", {dropped} omitted"
-    ax.text(0, -1.31, note, ha="center", fontsize=8.5, color=theme.muted)
+    if chrome:
+        ax.set_title(title, fontsize=21, family="serif", color=theme.ink, pad=20)
+        _headline(ax, words, theme)
+        dropped = len(words) - len(shown)
+        note = f"{len(shown)} commonest words shown"
+        if dropped:
+            note += f", {dropped} omitted"
+        ax.text(0, -1.31, note, ha="center", fontsize=8.5, color=theme.muted)
     fig.savefig(out, dpi=190, facecolor=theme.ground, bbox_inches="tight")
     plt.close(fig)

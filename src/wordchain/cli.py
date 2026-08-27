@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import render, web
 from .graph import LETTERS, letter_stats, summary
-from .lexicon import CATEGORIES, UnknownCategory, catalogue, members
+from .lexicon import CATEGORIES, UnknownCategory, Word, catalogue, members
 from .palette import THEMES
 
 
@@ -53,7 +53,7 @@ def _selection_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _load(args: argparse.Namespace):
+def _load(args: argparse.Namespace) -> list[Word]:
     try:
         return members(
             args.category,
@@ -67,7 +67,7 @@ def _load(args: argparse.Namespace):
         sys.exit(f"no such category: {args.category}\ntry one of: {', '.join(catalogue())}")
 
 
-def _report(category: str, words) -> str:
+def _report(category: str, words: list[Word]) -> str:
     facts = summary(words)
     stats = {s.letter: s for s in letter_stats(words)}
     lines = [
@@ -133,11 +133,21 @@ def _cmd_build(args: argparse.Namespace) -> None:
     name = args.category.replace("-", " ")
     theme = THEMES[args.theme]
 
-    render.chord(words, out / "letters.png", f"{name} — the game on 26 letters", theme=theme)
-    render.matrix(words, out / "matrix.png", f"{name} — first and last letter counts", theme=theme)
-    render.pressure(words, out / "pressure.png", f"{name} — where the letters run dry", theme=theme)
+    chrome = args.chrome
+    render.chord(words, out / "letters.png", f"{name} — the game on 26 letters", theme, chrome)
+    render.matrix(
+        words, out / "matrix.png", f"{name} — first and last letter counts", theme, chrome
+    )
+    render.pressure(
+        words, out / "pressure.png", f"{name} — where the letters run dry", theme, chrome
+    )
     render.words_disc(
-        words, out / "words.png", f"{name} — the word graph", limit=args.limit, theme=theme
+        words,
+        out / "words.png",
+        f"{name} — the word graph",
+        limit=args.limit,
+        theme=theme,
+        chrome=chrome,
     )
     web.letters_page(words, out / "letters.html", f"{name} — the game on 26 letters", theme=theme)
     web.words_page(
@@ -178,6 +188,11 @@ def main(argv: list[str] | None = None) -> None:
     build = sub.add_parser("build", help="write every figure, page and table")
     _selection_args(build)
     build.add_argument("--out", default="out", metavar="DIR", help="output root (default out)")
+    build.add_argument(
+        "--chrome",
+        action="store_true",
+        help="add the title, caption, legend and headline figures to each image",
+    )
     build.add_argument(
         "--theme",
         choices=sorted(THEMES),

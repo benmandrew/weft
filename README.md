@@ -16,7 +16,7 @@ Y is the worst genuine trap, at 17.0 landings per available reply: 34 animals en
 
 ## Setup
 
-The project uses a Nix flake. `direnv allow` activates it on entering the directory, and `nix develop` gives the same shell by hand. Python and its packages (nltk, networkx, matplotlib, numpy, pyvis, wordfreq) come from nixpkgs. There is no virtualenv, no pip, and no lockfile beyond `flake.lock`.
+The project uses a Nix flake. `direnv allow` activates it on entering the directory, and `nix develop` gives the same shell by hand. `ruff check src/` and `mypy` both pass, the latter in strict mode. Python and its packages (nltk, networkx, matplotlib, numpy, pyvis, wordfreq) come from nixpkgs. There is no virtualenv, no pip, and no lockfile beyond `flake.lock`.
 
 One direnv wrinkle is worth knowing about. nix-direnv caches the output of `nix print-dev-env`, which defines `shellHook` as a variable without ever running it, so a flake that does real work in its hook silently does none of it under direnv. Both the `PYTHONPATH` entry and the WordNet symlink below live in that hook, so `.envrc` runs it explicitly with `eval "$shellHook"` rather than keeping a second copy that drifts.
 
@@ -52,7 +52,7 @@ Wedges run alphabetically round the ring, and within a wedge the words are sorte
 
 Above about 150 words the labels alternate between two radii, with a leader line tying the outer tier back to its dot. Adjacent labels collide at their inner ends, where the circumference is smallest, and staggering doubles the room each one has against its same-tier neighbour.
 
-Figures come from three families: Iowan Old Style for titles, Avenir for labels, Menlo for letters and counts, each with a fallback ending in a face matplotlib bundles itself. Figures render dark by default, because 4,856 faint curves read as light against a dark ground and as smudge against a pale one. Both themes are complete palettes rather than an inversion of each other: the dark one lifts the letter wheel's value from 0.60 to 0.88 and drops its saturation, so all 26 hues stay separable either way.
+Figures come from three families: Iowan Old Style for titles, Avenir for labels, Menlo for letters and counts, each with a fallback ending in a face matplotlib bundles itself. Images carry the graph and nothing else — no title, caption, legend or summary block. `build --chrome` adds all four back for a figure that has to stand on its own. Figures render dark by default, because 4,856 faint curves read as light against a dark ground and as smudge against a pale one. Both themes are complete palettes rather than an inversion of each other: the dark one lifts the letter wheel's value from 0.60 to 0.88 and drops its saturation, so all 26 hues stay separable either way.
 
 ## Choosing the words
 

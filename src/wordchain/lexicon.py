@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any, TypeAlias
 
 from nltk.corpus import wordnet
 from wordfreq import zipf_frequency
@@ -54,6 +56,11 @@ CATEGORIES: dict[str, tuple[str, ...]] = {
 _PLAYABLE = re.compile(r"[a-z]+(?: [a-z]+)*")
 
 
+# nltk ships no type information, so a WordNet synset is opaque here. The alias
+# says which Any is meant rather than leaving a bare one at every boundary.
+Synset: TypeAlias = Any
+
+
 class UnknownCategory(KeyError):
     """Raised for a category name that has no synset roots."""
 
@@ -79,21 +86,22 @@ def catalogue() -> list[str]:
     return sorted(CATEGORIES)
 
 
-def _descend(synset):
+def _descend(synset: Synset) -> list[Synset]:
     # instance_hyponyms carries the proper nouns: without it `country` returns
     # nothing, because France is an instance of a country rather than a kind.
-    return synset.hyponyms() + synset.instance_hyponyms()
+    children: list[Synset] = [*synset.hyponyms(), *synset.instance_hyponyms()]
+    return children
 
 
-def _closure(roots: tuple[str, ...], min_depth: int) -> set:
+def _closure(roots: tuple[str, ...], min_depth: int) -> set[Synset]:
     """Every synset below the category roots, by breadth-first hop count.
 
     min_depth drops the shallow layers. At depth zero sit the roots themselves,
     whose lemmas are the category name: "animal" is not a playable answer in a
     game of animals, and neither is "vehicle" in a game of vehicles.
     """
-    depth = {}
-    frontier = []
+    depth: dict[Synset, int] = {}
+    frontier: list[Synset] = []
     for root in roots:
         synset = wordnet.synset(root)
         if synset not in depth:
@@ -101,7 +109,7 @@ def _closure(roots: tuple[str, ...], min_depth: int) -> set:
             frontier.append(synset)
 
     while frontier:
-        nxt = []
+        nxt: list[Synset] = []
         for synset in frontier:
             for child in _descend(synset):
                 if child not in depth:
@@ -112,13 +120,15 @@ def _closure(roots: tuple[str, ...], min_depth: int) -> set:
     return {synset for synset, d in depth.items() if d >= min_depth}
 
 
-def _lemma_names(synsets) -> set[str]:
+def _lemma_names(synsets: Iterable[Synset]) -> set[str]:
     return {
         lemma.name().replace("_", " ").lower() for synset in synsets for lemma in synset.lemmas()
     }
 
 
-def _in_category(text: str, category_senses: set, min_dominance: float, max_rank: int) -> bool:
+def _in_category(
+    text: str, category_senses: set[Synset], min_dominance: float, max_rank: int
+) -> bool:
     """Whether the category is what somebody hearing the bare word would think of.
 
     The closure is generous: `animal.n.01` contains a sense of "world" and a
@@ -173,7 +183,7 @@ def members(
         raise UnknownCategory(category) from None
 
     senses = _closure(roots, min_depth)
-    words = []
+    words: list[Word] = []
     for text in _lemma_names(senses):
         if len(text) < 2 or not _PLAYABLE.fullmatch(text):
             continue

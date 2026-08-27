@@ -20,6 +20,7 @@
           ps.nltk
           ps.networkx
           ps.matplotlib
+          ps.mypy
           ps.numpy
           ps.pyvis
           ps.wordfreq

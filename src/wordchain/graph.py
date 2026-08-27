@@ -12,6 +12,7 @@ import math
 import string
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -108,7 +109,7 @@ def traps(words: list[Word], limit: int = 6) -> list[LetterStat]:
     return sorted(reachable, key=lambda s: (-s.pressure, -s.demand))[:limit]
 
 
-def summary(words: list[Word]) -> dict:
+def summary(words: list[Word]) -> dict[str, Any]:
     """Every scalar the report and the web page need."""
     graph = letter_graph(words)
     stats = letter_stats(words)

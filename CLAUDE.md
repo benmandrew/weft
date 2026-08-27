@@ -51,6 +51,15 @@ cut most of the polysemy noise, and residue survives ("entire" and "royal" are
 genuine WordNet animal terms). Tighten via `--min-dominance` / `--max-rank`
 rather than by adding a stop-list.
 
+## Checks
+
+`ruff check src/`, `ruff format src/` and `mypy` must all pass before a commit.
+mypy runs in strict mode over `src/wordchain`. nltk, wordfreq, pyvis and
+networkx ship no type information and have no stubs in nixpkgs, so they are
+declared as untyped imports in `mypy.ini` and the values crossing those
+boundaries are annotated by hand — `lexicon.Synset` is the alias that names the
+opaque WordNet type rather than leaving a bare `Any` at each call site.
+
 ## Style
 
 Both themes in `palette.py` are complete palettes, never an inversion of each
