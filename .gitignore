@@ -1,0 +1,7 @@
+out/
+__pycache__/
+*.pyc
+.direnv/
+result
+.nltk_data/
+.cache/
