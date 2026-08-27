@@ -114,7 +114,7 @@ def words_page(
     angle = math.pi / 2
     for letter in present:
         for word in sorted(
-            grouped[letter], key=lambda w: ((ord(w.tail) - ord(w.head) - 1) % 26, w.text)
+            grouped[letter], key=lambda w: ((ord(w.head) - ord(w.tail) - 1) % 26, w.text)
         ):
             angle -= span
             successors = len(grouped.get(word.tail, ()))

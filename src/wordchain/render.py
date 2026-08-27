@@ -123,12 +123,14 @@ def _fan_key(word: Word) -> tuple[int, str]:
     the S wedge it drops the destinations nearest to S into the middle of the
     block and sends the bundle back across itself.
 
-    Rotating the alphabet to begin just after the wedge's own letter puts the
-    destinations in the order the ring actually visits them. S then runs T, U,
-    V through Z, wraps to A, and finishes on R, and the curves leave in one
-    sweep instead of doubling back.
+    Rotating the alphabet to begin just before the wedge's own letter puts the
+    destinations in the order the ring visits them, counted against the way the
+    words themselves are placed. S then runs R, Q, P back to A, wraps to Z, and
+    finishes on T. Two chords from one wedge avoid crossing when the nearer
+    origin takes the farther destination, so the sequence has to run opposite to
+    the placement, and the bundle leaves in one sweep.
     """
-    return (ord(word.tail) - ord(word.head) - 1) % 26, word.text
+    return (ord(word.head) - ord(word.tail) - 1) % 26, word.text
 
 
 def _curve(start: Point, end: Point, pull: float) -> Path:

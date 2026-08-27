@@ -41,8 +41,11 @@ Keep the hook idempotent: direnv re-runs it on every load.
   mapping, which is two thirds of the corpus load and unused here. Keep the
   override; the word lists are identical with and without it.
 - Wedge order is `render._fan_key`: the tail letter, rotated to start just
-  after the wedge's own letter. Plain tail-letter order starts every wedge at A
-  and makes the bundle cross itself. `web.py` sorts the same way.
+  before the wedge's own letter and running backwards. Plain tail-letter order
+  starts every wedge at A and makes the bundle cross itself; the direction is
+  opposite to the placement because two chords from one wedge avoid crossing
+  when the nearer origin takes the farther destination. `web.py` sorts the same
+  way.
 - Edges are `Path` cubics, never sampled polylines. SVG draws cubics natively,
   so sampling costs build time, file size and accuracy at once.
 - `build` renders one file, SVG unless `--format png`. Vector is the default
