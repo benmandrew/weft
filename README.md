@@ -31,7 +31,7 @@ python -m wordchain words animal     # the word list with Zipf frequencies
 python -m wordchain build animal     # render the word graph
 ```
 
-`build` writes `out/<category>/words.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`) and `--limit N` (words in the disc, default 110). Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
+`build` writes `out/<category>/words.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`), `--limit N` (words in the disc, default 110) and `--config FILE`. Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
 ## Outputs
 
@@ -73,6 +73,35 @@ The axis limit is solved too, by `_disc_limit`. A label's length is fixed in inc
 
 Figures come from three families: Iowan Old Style for titles, Avenir for labels, Menlo for letters and counts, each with a fallback ending in a face matplotlib bundles itself. Images carry the graph and nothing else — no title, caption, legend or summary block. `build --chrome` adds all four back for a figure that has to stand on its own. Figures render dark by default, because 4,856 faint curves read as light against a dark ground and as smudge against a pale one. Both themes are complete palettes rather than an inversion of each other: the dark one lifts the letter wheel's value from 0.60 to 0.88 and drops its saturation, so all 26 hues stay separable either way.
 
+## Configuring the geometry
+
+Eight numbers decide where the disc puts things, and the good value for each depends on the category; 364 animals and 24 flowers do not want the same label size or the same curve pull. They were module constants in `render.py`, so trying a different figure meant editing the source. They are now fields on a frozen *dataclass*, `Geometry` in `config.py`, and `render.chord` and `render.words_disc` take one as an argument the way they already take a `Theme`.
+
+| setting | default | what it sets |
+| --- | --- | --- |
+| `pull` | 0.32 | how far the chord diagram's curves bow towards the centre |
+| `pull_dense` | 0.20 | the same for the word disc, above 150 words |
+| `label_radius` | 1.015 | where labels start, as a fraction of the dot ring |
+| `label_pt` | 6.8 | label size, which also drives the canvas through `_canvas_inches` |
+| `leading` | 1.22 | how much clear space each label demands, to the same effect |
+| `wedge_band` | 0.075 | room reserved outside the labels for the wedge letter |
+| `glyph_width` | 0.58 | mean glyph width, used to reserve label room |
+| `disc_limit` | 1.34 | axis half-width for the chord diagram, and the inches-to-data-units conversion the word disc's canvas is solved in |
+
+The file holds one `[geometry]` table of flat keys, in Tom's Obvious Minimal Language (TOML). Every key is optional, and anything absent keeps its default.
+
+```toml
+[geometry]
+label_pt = 9.0
+pull_dense = 0.1
+```
+
+`build` takes `--config FILE`. With no flag it loads `./wordchain.toml` when that file exists, and uses the built-in defaults otherwise. A file named with `--config` has to exist, because a `--config` that silently falls back to the defaults is a typo that costs a render to notice. The discovered one does not have to, since the whole point is that most runs have no file.
+
+Validation refuses rather than ignores. An unknown table, an unknown key, a value that is not a number, a bool, and anything not strictly positive and finite each stop the build. A key the tool ignores is worse than one it refuses: the figure comes back unchanged and the file looks like it should have changed it. An unrecognised key is answered with the closest setting name from `difflib`, or with the full list of eight when nothing is close, and every message carries the file path, since a build otherwise names no file.
+
+`tomllib` and `difflib` are imported at the point of use rather than at module load, for the same reason nltk and matplotlib are. tomllib costs 5 ms to import and only `build` ever reads a config, so `stats` still runs in 0.18 s and imports none of the three. Rendering with no config file present writes bytes identical to the output before any of this existed, once matplotlib's random per-run element ids are normalised.
+
 ## Choosing the words
 
 Word lists come from the hyponym closure of one or more WordNet synset roots. `animal` is `animal.n.01`; `fruit` needs both `edible_fruit.n.01` and `fruit.n.01`, because WordNet splits the botanical and the edible senses.
@@ -92,6 +121,6 @@ animal, bird, body-part, building, city, clothing, colour, country, dog, drink, 
 
 ## Layout
 
-`src/wordchain/` holds `lexicon.py` (WordNet extraction and filtering), `graph.py` (letter matrix, word graph, trap analysis), `render.py` (matplotlib figures), `web.py` (pyvis pages), `palette.py` (per-letter colours) and `cli.py`.
+`src/wordchain/` holds `lexicon.py` (WordNet extraction and filtering), `graph.py` (letter matrix, word graph, trap analysis), `render.py` (matplotlib figures), `web.py` (pyvis pages), `palette.py` (per-letter colours), `config.py` (the geometry and its file) and `cli.py`.
 
 The 26-node graph was fixed before any word list existed, and a category only decides which of its edges are populated and how heavily. Everything the tool draws is a way of asking which letters are worth steering an opponent towards.

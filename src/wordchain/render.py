@@ -21,6 +21,7 @@ from matplotlib.patches import Circle, PathPatch
 from matplotlib.path import Path
 
 from . import palette
+from .config import DEFAULT, Geometry
 from .graph import LETTERS, letter_matrix, letter_stats, summary
 from .lexicon import Word
 from .palette import DARK, Theme
@@ -29,29 +30,9 @@ from .palette import DARK, Theme
 Point = tuple[float, float]
 RGB = tuple[float, float, float]
 
-# Curves leave each node heading for the centre, so a chord's shape reads as the
-# pair of letters it joins rather than as a straight line crossing the disc.
-_PULL = 0.32
-
-# Bezier control points sit this fraction of the way in for the word graph. It
-# is tighter than _PULL because 4856 curves through a wide middle read as fog.
-_PULL_DENSE = 0.20
-
-# Half the width of a disc's axes, in data units, for the figures whose content
-# reaches a known radius. words_disc solves for its own.
-_DISC_LIMIT = 1.34
-
-# Room beyond the word labels for the wedge letter, in data units, and the mean
-# glyph width as a fraction of the font size. The second only reserves space, so
-# erring high costs a little margin and nothing else.
-_WEDGE_BAND = 0.075
-_GLYPH_WIDTH = 0.58
-
-# Word labels: the radius they start at, their size in points, and the leading
-# that decides when two neighbours are touching.
-_LABEL_RADIUS = 1.015
-_LABEL_PT = 6.8
-_LEADING = 1.22
+# Every distance and size the disc figures need is a field on config.Geometry,
+# which a figure takes the way it takes a Theme. DEFAULT holds the values they
+# were tuned at, and a wordchain.toml overrides any of them.
 
 
 _SVG_NS = "http://www.w3.org/2000/svg"
@@ -87,7 +68,7 @@ def _ring(count: int, radius: float = 1.0) -> list[Point]:
     ]
 
 
-def _disc_limit(size_in: float, longest: int) -> float:
+def _disc_limit(size_in: float, longest: int, geo: Geometry) -> float:
     """The axis limit that exactly contains the labels and the wedge letters.
 
     A label's length is fixed in inches by the font, but the axis limit is what
@@ -96,12 +77,12 @@ def _disc_limit(size_in: float, longest: int) -> float:
     what lets the axes fill the figure, and a figure with no margin is a figure
     matplotlib does not have to draw twice to find out where to crop.
     """
-    label_in = longest * _LABEL_PT * _GLYPH_WIDTH / 72
+    label_in = longest * geo.label_pt * geo.glyph_width / 72
     crowding = 1 - 2 * label_in / size_in
-    return (_LABEL_RADIUS + _WEDGE_BAND) / max(crowding, 0.4)
+    return (geo.label_radius + geo.wedge_band) / max(crowding, 0.4)
 
 
-def _canvas_inches(span: float) -> float:
+def _canvas_inches(span: float, geo: Geometry) -> float:
     """How wide the disc has to be for adjacent labels to clear each other.
 
     A label sits at a fixed radius in data units while its font size is in
@@ -112,8 +93,8 @@ def _canvas_inches(span: float) -> float:
     Sizing up is close to free in vector output, which is priced by element
     count rather than dimensions, and a reader zooms rather than squints.
     """
-    arc = _LABEL_RADIUS * span
-    needed = _LABEL_PT * _LEADING * (2 * _DISC_LIMIT) / (72 * arc)
+    arc = geo.label_radius * span
+    needed = geo.label_pt * geo.leading * (2 * geo.disc_limit) / (72 * arc)
     return max(9.6, min(30.0, needed))
 
 
@@ -194,7 +175,7 @@ def _chord(
     colour: RGB,
     width: float,
     alpha: float,
-    pull: float = _PULL,
+    pull: float,
 ) -> None:
     if start == end:
         # A self-loop has no chord to draw, so it becomes a bubble sitting just
@@ -212,7 +193,7 @@ def _blank_disc(
     theme: Theme,
     size: float = 8.4,
     bleed: bool = False,
-    limit: float = _DISC_LIMIT,
+    limit: float = DEFAULT.disc_limit,
 ) -> tuple[Figure, Axes]:
     _typeface()
     fig = plt.figure(figsize=(size, size), facecolor=theme.ground)
@@ -260,14 +241,19 @@ def _headline(ax: Axes, words: list[Word], theme: Theme) -> None:
 
 
 def chord(
-    words: list[Word], out: FilePath, title: str, theme: Theme = DARK, chrome: bool = False
+    words: list[Word],
+    out: FilePath,
+    title: str,
+    theme: Theme = DARK,
+    chrome: bool = False,
+    geometry: Geometry = DEFAULT,
 ) -> None:
     """The whole game on 26 nodes: one ribbon per letter pair, weighted by words."""
     counts = letter_matrix(words)
     points = _ring(26)
     peak = counts.max() or 1
 
-    fig, ax = _blank_disc(theme)
+    fig, ax = _blank_disc(theme, limit=geometry.disc_limit)
     for i, head in enumerate(LETTERS):
         for j, tail in enumerate(LETTERS):
             weight = counts[i, j]
@@ -275,7 +261,13 @@ def chord(
                 continue
             share = math.sqrt(weight / peak)
             _chord(
-                ax, points[i], points[j], _hue(head, theme), 0.4 + 4.0 * share, 0.20 + 0.45 * share
+                ax,
+                points[i],
+                points[j],
+                _hue(head, theme),
+                0.4 + 4.0 * share,
+                0.20 + 0.45 * share,
+                geometry.pull,
             )
 
     stats = {s.letter: s for s in letter_stats(words)}
@@ -425,6 +417,7 @@ def words_disc(
     limit: int = 110,
     theme: Theme = DARK,
     chrome: bool = False,
+    geometry: Geometry = DEFAULT,
 ) -> None:
     """The word graph, laid out in wedges by first letter.
 
@@ -455,9 +448,9 @@ def words_disc(
         angle -= gap
 
     crowded = len(shown) > 150
-    size = _canvas_inches(span)
+    size = _canvas_inches(span, geometry)
     # `limit` is already the word count, so the axis half-width is `reach`.
-    reach = _disc_limit(size, max(len(w.text) for w in shown))
+    reach = _disc_limit(size, max(len(w.text) for w in shown), geometry)
     # Chrome hangs a title and a caption outside the axes, which a full-bleed
     # axes would clip, so that path keeps the margins and the tight crop.
     fig, ax = _blank_disc(theme, size, bleed=not chrome, limit=reach)
@@ -465,7 +458,7 @@ def words_disc(
     # One collection per starting letter rather than a patch per edge: the
     # colour is constant within a bundle, and 4856 separate artists is slow to
     # draw and slower to save.
-    pull = _PULL_DENSE if crowded else _PULL
+    pull = geometry.pull_dense if crowded else geometry.pull
     for letter in live:
         curves = [
             _curve(placed[word.text], placed[successor.text], pull)
@@ -503,10 +496,10 @@ def words_disc(
         degrees = math.degrees(math.atan2(y, x))
         flip = 90 < degrees % 360 < 270
         ax.text(
-            x * _LABEL_RADIUS,
-            y * _LABEL_RADIUS,
+            x * geometry.label_radius,
+            y * geometry.label_radius,
             word.text,
-            fontsize=_LABEL_PT,
+            fontsize=geometry.label_pt,
             color=theme.ink,
             rotation=degrees + 180 if flip else degrees,
             rotation_mode="anchor",
@@ -515,7 +508,7 @@ def words_disc(
             zorder=4,
         )
 
-    ring = reach - _WEDGE_BAND / 2
+    ring = reach - geometry.wedge_band / 2
     for letter, mid in wedge_mid.items():
         ax.text(
             math.cos(mid) * ring,

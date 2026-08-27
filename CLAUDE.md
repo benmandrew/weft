@@ -60,6 +60,12 @@ Keep the hook idempotent: direnv re-runs it on every load.
 - `build` renders the word disc and nothing else. The other views in `render.py`
   and the pages in `web.py` are library-only; do not wire them back into the
   command line without asking.
+- The disc's geometry lives on `config.Geometry`, which a figure takes as an
+  argument the way it takes a `Theme`, never as a module constant. It is read
+  from `./wordchain.toml` or from the file `--config` names, and a named file
+  must exist. Unknown keys and values that are not positive numbers are refused
+  rather than ignored, since an ignored key redraws the same figure. Import
+  tomllib and difflib at the point of use.
 
 ## Shape
 
@@ -69,6 +75,7 @@ Keep the hook idempotent: direnv re-runs it on every load.
       render.py    matplotlib figures
       web.py       pyvis pages
       palette.py   Theme tokens, the letter wheel, the font stacks
+      config.py    Geometry, the TOML file, its validation
       cli.py       argparse entry point, the text report
 
 `graph.py` holds the structural claim the whole project rests on: a word is an

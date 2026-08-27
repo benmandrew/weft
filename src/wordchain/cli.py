@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .config import FILENAME, ConfigError, resolve
 from .graph import LETTERS, letter_stats, summary
 from .lexicon import CATEGORIES, UnknownCategory, Word, catalogue, members
 from .palette import THEMES
@@ -133,6 +134,11 @@ def _cmd_build(args: argparse.Namespace) -> None:
     # so `stats`, `words` and `categories` should never pay for it.
     from . import render
 
+    try:
+        geometry = resolve(args.config)
+    except ConfigError as err:
+        sys.exit(str(err))
+
     words = _load(args)
     if not words:
         sys.exit(f"{args.category} came back empty; try a lower --min-zipf")
@@ -149,6 +155,7 @@ def _cmd_build(args: argparse.Namespace) -> None:
         limit=args.limit,
         theme=THEMES[args.theme],
         chrome=args.chrome,
+        geometry=geometry,
     )
     print(target)
 
@@ -196,6 +203,12 @@ def main(argv: list[str] | None = None) -> None:
     )
     build.add_argument(
         "--limit", type=int, default=110, metavar="N", help="words in the disc (default 110)"
+    )
+    build.add_argument(
+        "--config",
+        metavar="FILE",
+        help=f"TOML file of disc geometry; without it, ./{FILENAME} is used when "
+        "it exists and the built-in defaults otherwise",
     )
     build.set_defaults(func=_cmd_build)
 
