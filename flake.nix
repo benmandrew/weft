@@ -44,7 +44,12 @@
           };
 
           shellHook = ''
-            export PYTHONPATH="$PWD/src''${PYTHONPATH:+:$PYTHONPATH}"
+            # direnv runs this hook on every load, and a nested `nix develop`
+            # runs it again, so appending unconditionally stacks duplicates.
+            case ":''${PYTHONPATH:-}:" in
+              *":$PWD/src:"*) ;;
+              *) export PYTHONPATH="$PWD/src''${PYTHONPATH:+:$PYTHONPATH}" ;;
+            esac
 
             # nltk downloads the WordNet corpus into ~/nltk_data and refuses to
             # start without it. pkgs.wordnet is the Princeton 3.0 distribution

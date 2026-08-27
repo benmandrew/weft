@@ -5,11 +5,16 @@ with the letter the previous one ended on. See @README.md for usage.
 
 ## Setup
 
-`nix develop`. Python comes from nixpkgs — no venv, no pip, no uv. Add a
-dependency by editing the `pythonEnv` list in `flake.nix`.
+`direnv allow`, or `nix develop` by hand. Python comes from nixpkgs — no venv,
+no pip, no uv. Add a dependency by editing the `pythonEnv` list in `flake.nix`.
 
 `src/` is on `PYTHONPATH` via the shellHook, so `python -m wordchain` works from
 the project root without an install step.
+
+Anything the shell needs at load time goes in `shellHook`, and `.envrc` runs it
+with `eval "$shellHook"`. nix-direnv caches `nix print-dev-env`, which defines
+that variable without executing it, so a hook left to direnv alone never runs.
+Keep the hook idempotent: direnv re-runs it on every load.
 
 ## Constraints
 

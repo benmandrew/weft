@@ -16,7 +16,9 @@ Y is the worst genuine trap, at 17.0 landings per available reply: 34 animals en
 
 ## Setup
 
-The project uses a Nix flake, and `nix develop` gives a shell with everything in it. Python and its packages (nltk, networkx, matplotlib, numpy, pyvis, wordfreq) come from nixpkgs. There is no virtualenv, no pip, and no lockfile beyond `flake.lock`.
+The project uses a Nix flake. `direnv allow` activates it on entering the directory, and `nix develop` gives the same shell by hand. Python and its packages (nltk, networkx, matplotlib, numpy, pyvis, wordfreq) come from nixpkgs. There is no virtualenv, no pip, and no lockfile beyond `flake.lock`.
+
+One direnv wrinkle is worth knowing about. nix-direnv caches the output of `nix print-dev-env`, which defines `shellHook` as a variable without ever running it, so a flake that does real work in its hook silently does none of it under direnv. Both the `PYTHONPATH` entry and the WordNet symlink below live in that hook, so `.envrc` runs it explicitly with `eval "$shellHook"` rather than keeping a second copy that drifts.
 
 nltk normally downloads the WordNet corpus into `~/nltk_data` at runtime. `pkgs.wordnet` is the Princeton 3.0 distribution and its `dict/` directory holds the same WNdb files nltk parses, so the shellHook symlinks the store path into `$PWD/.nltk_data/corpora/wordnet` and exports `NLTK_DATA`. Nothing is fetched over the network and the corpus version is pinned along with everything else. It has to be the directory layout rather than pointing a `WordNetCorpusReader` at the store path directly, because the reader falls back to the global lazy corpus when it resolves sense keys, and that fallback ignores the root it was given.
 
