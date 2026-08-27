@@ -114,17 +114,21 @@ def _canvas_inches(span: float) -> float:
     return max(9.6, min(30.0, needed))
 
 
-def _by_tail(word: Word) -> str:
-    """Sort key placing words that hand over to the same letter side by side.
+def _fan_key(word: Word) -> tuple[int, str]:
+    """Sort key laying a wedge out so its curves leave as a fan.
 
-    Ordinary alphabetical order sorts a wedge on its second letter onwards,
-    which is arbitrary here: every word in the wedge already shares a first
-    letter, and the letter that matters is the one it ends on. Reversing the
-    word sorts on the last letter first, so all the words leading to T sit
-    together and their curves leave the wedge as one bundle instead of crossing
-    each other on the way out.
+    Every word in a wedge already shares a first letter, so the letter that
+    matters is the one it hands over on. Sorting on that alone starts every
+    wedge at A, which is arbitrary once the wedges themselves are a ring: for
+    the S wedge it drops the destinations nearest to S into the middle of the
+    block and sends the bundle back across itself.
+
+    Rotating the alphabet to begin just after the wedge's own letter puts the
+    destinations in the order the ring actually visits them. S then runs T, U,
+    V through Z, wraps to A, and finishes on R, and the curves leave in one
+    sweep instead of doubling back.
     """
-    return word.text[::-1]
+    return (ord(word.tail) - ord(word.head) - 1) % 26, word.text
 
 
 def _curve(start: Point, end: Point, pull: float) -> Path:
@@ -399,7 +403,7 @@ def words_disc(
     placed: dict[str, tuple[float, float]] = {}
     wedge_mid: dict[str, float] = {}
     for letter in live:
-        block = sorted(grouped[letter], key=_by_tail)
+        block = sorted(grouped[letter], key=_fan_key)
         start = angle
         for word in block:
             angle -= span
