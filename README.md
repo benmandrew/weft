@@ -28,23 +28,16 @@ nltk normally downloads the WordNet corpus into `~/nltk_data` at runtime. `pkgs.
 python -m wordchain categories       # the 33 categories and their WordNet roots
 python -m wordchain stats animal     # the letter analysis
 python -m wordchain words animal     # the word list with Zipf frequencies
-python -m wordchain build animal     # every figure, page and table
+python -m wordchain build animal     # render the word graph
 ```
 
-`build` writes to `out/<category>/` and takes `--out DIR` (default `out`), `--theme light|dark` (default `dark`), `--limit N` (words in the static disc, default 110) and `--web-limit N` (words in the interactive page, default 260). All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
+`build` writes `out/<category>/words.png` and takes `--out DIR` (default `out`), `--theme light|dark` (default `dark`) and `--limit N` (words in the disc, default 110). All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
 ## Outputs
 
-`build` writes seven files into `out/<category>/`:
+`build` writes one file, `out/<category>/words.png`: the word graph in wedges by first letter, the 110 commonest words by default. The analysis that used to accompany it is still a command away — `stats` prints it and `words` prints the list.
 
-- `letters.png` — chord diagram, 26 letters round a circle, ribbon width by word count, dead ends in red
-- `matrix.png` — the 26×26 first/last counts as a grid
-- `pressure.png` — words starting with each letter against words ending with it
-- `words.png` — the word graph in wedges by first letter, 110 commonest words by default
-- `letters.html`, `words.html` — interactive pyvis pages; hover a node to light its edges
-- `report.txt`, `words.csv` — the analysis as text and the word list as comma-separated values
-
-The pyvis pages are self-contained. vis-network is inlined, and the tool strips the Bootstrap content delivery network (CDN) tags that pyvis emits regardless of `cdn_resources="in_line"`.
+`render` and `web` carry four more views that the command line no longer reaches: a 26-letter chord diagram, the 26×26 first/last grid, the supply-against-demand bars, and two interactive pyvis pages where hovering a node lights its edges. The pyvis pages are self-contained, with vis-network inlined and the Bootstrap content delivery network (CDN) tags stripped — pyvis emits those regardless of `cdn_resources="in_line"`.
 
 ## Reading the disc
 

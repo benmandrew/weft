@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import render, web
+from . import render
 from .graph import LETTERS, letter_stats, summary
 from .lexicon import CATEGORIES, UnknownCategory, Word, catalogue, members
 from .palette import THEMES
@@ -131,38 +131,17 @@ def _cmd_build(args: argparse.Namespace) -> None:
     out = Path(args.out) / args.category
     out.mkdir(parents=True, exist_ok=True)
     name = args.category.replace("-", " ")
-    theme = THEMES[args.theme]
 
-    chrome = args.chrome
-    render.chord(words, out / "letters.png", f"{name} — the game on 26 letters", theme, chrome)
-    render.matrix(
-        words, out / "matrix.png", f"{name} — first and last letter counts", theme, chrome
-    )
-    render.pressure(
-        words, out / "pressure.png", f"{name} — where the letters run dry", theme, chrome
-    )
+    target = out / "words.png"
     render.words_disc(
         words,
-        out / "words.png",
+        target,
         f"{name} — the word graph",
         limit=args.limit,
-        theme=theme,
-        chrome=chrome,
+        theme=THEMES[args.theme],
+        chrome=args.chrome,
     )
-    web.letters_page(words, out / "letters.html", f"{name} — the game on 26 letters", theme=theme)
-    web.words_page(
-        words, out / "words.html", f"{name} — the word graph", limit=args.web_limit, theme=theme
-    )
-
-    report = _report(args.category, words)
-    (out / "report.txt").write_text(report + "\n")
-    (out / "words.csv").write_text(
-        "word,zipf,first,last\n"
-        + "".join(f"{w.text},{w.zipf:.2f},{w.head},{w.tail}\n" for w in words)
-    )
-
-    print(report)
-    print(f"\nwritten to {out}/")
+    print(target)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -185,29 +164,22 @@ def main(argv: list[str] | None = None) -> None:
     _selection_args(listing)
     listing.set_defaults(func=_cmd_words)
 
-    build = sub.add_parser("build", help="write every figure, page and table")
+    build = sub.add_parser("build", help="render the word graph")
     _selection_args(build)
     build.add_argument("--out", default="out", metavar="DIR", help="output root (default out)")
     build.add_argument(
         "--chrome",
         action="store_true",
-        help="add the title, caption, legend and headline figures to each image",
+        help="add the title, caption and headline figures to the image",
     )
     build.add_argument(
         "--theme",
         choices=sorted(THEMES),
         default="dark",
-        help="palette for every figure and page (default dark)",
+        help="palette for the figure (default dark)",
     )
     build.add_argument(
-        "--limit", type=int, default=110, metavar="N", help="words in the static disc (default 110)"
-    )
-    build.add_argument(
-        "--web-limit",
-        type=int,
-        default=260,
-        metavar="N",
-        help="words in the interactive page (default 260)",
+        "--limit", type=int, default=110, metavar="N", help="words in the disc (default 110)"
     )
     build.set_defaults(func=_cmd_build)
 

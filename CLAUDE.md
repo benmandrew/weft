@@ -28,6 +28,9 @@ Keep the hook idempotent: direnv re-runs it on every load.
   `web._CDN_TAG` strips the Bootstrap links pyvis emits regardless of
   `cdn_resources="in_line"`.
 - `out/` is generated and gitignored. Nothing reads from it.
+- `build` renders `words.png` and nothing else. The other views in `render.py`
+  and the pages in `web.py` are library-only; do not wire them back into the
+  command line without asking.
 
 ## Shape
 
