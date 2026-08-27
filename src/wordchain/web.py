@@ -17,7 +17,7 @@ from pyvis.network import Network
 
 from .graph import LETTERS, letter_stats, live_letters
 from .lexicon import Word
-from .palette import LIGHT, Theme, hex_of
+from .palette import DARK, Theme, hex_of
 
 # pyvis defaults to pulling vis-network from a CDN. Inlining it costs about
 # 700 kB per page and buys a file that works offline and inside a sandbox that
@@ -44,7 +44,7 @@ def _canvas(theme: Theme, height: str = "820px") -> Network:
     return net
 
 
-def letters_page(words: list[Word], out: Path, title: str, theme: Theme = LIGHT) -> None:
+def letters_page(words: list[Word], out: Path, title: str, theme: Theme = DARK) -> None:
     """26 letter nodes on a ring, one edge per first/last pair."""
     stats = {s.letter: s for s in letter_stats(words)}
     live = live_letters(words)
@@ -92,7 +92,7 @@ def letters_page(words: list[Word], out: Path, title: str, theme: Theme = LIGHT)
 
 
 def words_page(
-    words: list[Word], out: Path, title: str, limit: int = 260, theme: Theme = LIGHT
+    words: list[Word], out: Path, title: str, limit: int = 260, theme: Theme = DARK
 ) -> None:
     """One node per word, grouped into wedges by first letter.
 

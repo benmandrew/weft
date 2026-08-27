@@ -21,7 +21,7 @@ from matplotlib.path import Path
 from . import palette
 from .graph import LETTERS, letter_matrix, letter_stats, summary
 from .lexicon import Word
-from .palette import LIGHT, Theme
+from .palette import DARK, Theme
 
 # Curves leave each node heading for the centre, so a chord's shape reads as the
 # pair of letters it joins rather than as a straight line crossing the disc.
@@ -140,7 +140,7 @@ def _headline(ax, words: list[Word], theme: Theme) -> None:
         y -= 0.145
 
 
-def chord(words: list[Word], out: FilePath, title: str, theme: Theme = LIGHT) -> None:
+def chord(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) -> None:
     """The whole game on 26 nodes: one ribbon per letter pair, weighted by words."""
     counts = letter_matrix(words)
     points = _ring(26)
@@ -196,7 +196,7 @@ def chord(words: list[Word], out: FilePath, title: str, theme: Theme = LIGHT) ->
     plt.close(fig)
 
 
-def matrix(words: list[Word], out: FilePath, title: str, theme: Theme = LIGHT) -> None:
+def matrix(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) -> None:
     """The same counts as a grid, where exact numbers are readable."""
     _typeface()
     counts = letter_matrix(words)
@@ -237,7 +237,7 @@ def matrix(words: list[Word], out: FilePath, title: str, theme: Theme = LIGHT) -
     plt.close(fig)
 
 
-def pressure(words: list[Word], out: FilePath, title: str, theme: Theme = LIGHT) -> None:
+def pressure(words: list[Word], out: FilePath, title: str, theme: Theme = DARK) -> None:
     """Supply against demand per letter, which is where the traps show up."""
     _typeface()
     stats = letter_stats(words)
@@ -294,7 +294,7 @@ def words_disc(
     out: FilePath,
     title: str,
     limit: int = 110,
-    theme: Theme = LIGHT,
+    theme: Theme = DARK,
 ) -> None:
     """The word graph, laid out in wedges by first letter.
 

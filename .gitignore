@@ -4,4 +4,5 @@ __pycache__/
 .direnv/
 result
 .nltk_data/
+.ruff_cache/
 .cache/

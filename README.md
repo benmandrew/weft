@@ -31,7 +31,7 @@ python -m wordchain words animal     # the word list with Zipf frequencies
 python -m wordchain build animal     # every figure, page and table
 ```
 
-`build` writes to `out/<category>/` and takes `--out DIR` (default `out`), `--theme light|dark`, `--limit N` (words in the static disc, default 110) and `--web-limit N` (words in the interactive page, default 260). All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
+`build` writes to `out/<category>/` and takes `--out DIR` (default `out`), `--theme light|dark` (default `dark`), `--limit N` (words in the static disc, default 110) and `--web-limit N` (words in the interactive page, default 260). All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
 ## Outputs
 
@@ -52,7 +52,7 @@ Wedges run alphabetically round the ring, and within a wedge the words are sorte
 
 Above about 150 words the labels alternate between two radii, with a leader line tying the outer tier back to its dot. Adjacent labels collide at their inner ends, where the circumference is smallest, and staggering doubles the room each one has against its same-tier neighbour.
 
-Figures come from three families: Iowan Old Style for titles, Avenir for labels, Menlo for letters and counts, each with a fallback ending in a face matplotlib bundles itself. Both themes are complete palettes rather than an inversion — the dark one lifts the letter wheel's value from 0.60 to 0.88 and drops its saturation, so all 26 hues stay separable on either ground.
+Figures come from three families: Iowan Old Style for titles, Avenir for labels, Menlo for letters and counts, each with a fallback ending in a face matplotlib bundles itself. Figures render dark by default, because 4,856 faint curves read as light against a dark ground and as smudge against a pale one. Both themes are complete palettes rather than an inversion of each other: the dark one lifts the letter wheel's value from 0.60 to 0.88 and drops its saturation, so all 26 hues stay separable either way.
 
 ## Choosing the words
 

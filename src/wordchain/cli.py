@@ -181,8 +181,8 @@ def main(argv: list[str] | None = None) -> None:
     build.add_argument(
         "--theme",
         choices=sorted(THEMES),
-        default="light",
-        help="palette for every figure and page (default light)",
+        default="dark",
+        help="palette for every figure and page (default dark)",
     )
     build.add_argument(
         "--limit", type=int, default=110, metavar="N", help="words in the static disc (default 110)"
