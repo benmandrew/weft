@@ -53,10 +53,8 @@ _LABEL_RADIUS = 1.015
 _LABEL_PT = 6.8
 _LEADING = 1.22
 
-# An edge leaves its source at full weight and arrives thinner and fainter, so
-# direction reads as flow. Each entry is (linewidth, alpha multiplier).
-_TAPER_NEAR = (0.62, 1.35)
-_TAPER_FAR = (0.26, 0.40)
+
+_SVG_NS = "http://www.w3.org/2000/svg"
 
 
 def _typeface() -> None:
@@ -119,23 +117,42 @@ def _canvas_inches(span: float) -> float:
     return max(9.6, min(30.0, needed))
 
 
-def _curve_halves(start: Point, end: Point, pull: float) -> tuple[Path, Path]:
-    """The edge split at its midpoint, so each half can carry its own weight.
+def _hoist_shared_attributes(out: FilePath) -> None:
+    """Lift style and clip-path off the paths in a group and onto the group.
 
-    de Casteljau at t = 1/2. Both halves are exact cubics tracing the original
-    curve, so tapering costs one extra path per edge and no accuracy at all.
+    matplotlib stamps both onto every path element, even though a collection's
+    paths share them by construction: a 364-word disc carries 49 distinct style
+    strings and one clip across 9713 elements, which is 35% of the file spent on
+    identical bytes. Every property involved is inherited in SVG, and clipping a
+    group is the same as clipping each of its children by the same path, so the
+    rendered result does not change.
     """
+    path = FilePath(out)
+    if path.suffix.lower() != ".svg":
+        return
 
-    def mid(a: Point, b: Point) -> Point:
-        return ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+    import xml.etree.ElementTree as ET
 
-    p1 = (start[0] * pull, start[1] * pull)
-    p2 = (end[0] * pull, end[1] * pull)
-    near_1, span, far_2 = mid(start, p1), mid(p1, p2), mid(p2, end)
-    near_2, far_1 = mid(near_1, span), mid(span, far_2)
-    centre = mid(near_2, far_1)
-    codes = [Path.MOVETO, Path.CURVE4, Path.CURVE4, Path.CURVE4]
-    return Path([start, near_1, near_2, centre], codes), Path([centre, far_1, far_2, end], codes)
+    ET.register_namespace("", _SVG_NS)
+    ET.register_namespace("xlink", "http://www.w3.org/1999/xlink")
+    tree = ET.parse(path)
+    for group in tree.getroot().iter(f"{{{_SVG_NS}}}g"):
+        children = list(group)
+        if len(children) < 2:
+            continue
+        for attribute in ("style", "clip-path"):
+            if attribute in group.attrib:
+                continue
+            shared = {child.get(attribute) for child in children}
+            if len(shared) != 1:
+                continue
+            value = shared.pop()
+            if value is None:
+                continue
+            group.set(attribute, value)
+            for child in children:
+                del child.attrib[attribute]
+    tree.write(path, encoding="utf-8", xml_declaration=True)
 
 
 def _fan_key(word: Word) -> tuple[int, str]:
@@ -445,29 +462,25 @@ def words_disc(
     # axes would clip, so that path keeps the margins and the tight crop.
     fig, ax = _blank_disc(theme, size, bleed=not chrome, limit=reach)
 
-    # Two collections per starting letter rather than a patch per edge: the
+    # One collection per starting letter rather than a patch per edge: the
     # colour is constant within a bundle, and 4856 separate artists is slow to
-    # draw and slower to save. The two are the near and far halves of the same
-    # edges, which is what carries the taper.
+    # draw and slower to save.
     pull = _PULL_DENSE if crowded else _PULL
-    base = theme.edge_alpha * (0.55 if crowded else 1.0)
     for letter in live:
-        halves = [
-            _curve_halves(placed[word.text], placed[successor.text], pull)
+        curves = [
+            _curve(placed[word.text], placed[successor.text], pull)
             for word in shown
             for successor in grouped[word.tail]
             if word.head == letter and successor.text != word.text
         ]
-        if not halves:
-            continue
-        for index, (width, boost) in ((0, _TAPER_NEAR), (1, _TAPER_FAR)):
+        if curves:
             ax.add_collection(
                 PathCollection(
-                    [pair[index] for pair in halves],
+                    curves,
                     facecolors="none",
                     edgecolors=[_hue(letter, theme)],
-                    linewidths=width,
-                    alpha=min(1.0, base * boost),
+                    linewidths=0.5,
+                    alpha=theme.edge_alpha if not crowded else theme.edge_alpha * 0.55,
                     zorder=2,
                     transform=ax.transData,
                 )
@@ -526,3 +539,4 @@ def words_disc(
         ax.text(0, -reach * 0.98, note, ha="center", fontsize=8.5, color=theme.muted)
     fig.savefig(out, dpi=190, facecolor=theme.ground, bbox_inches="tight" if chrome else None)
     plt.close(fig)
+    _hoist_shared_attributes(out)

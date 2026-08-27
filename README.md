@@ -53,6 +53,8 @@ Resolved word lists are cached under `.cache/wordchain`, keyed on the category, 
 
 Edges are cubic path segments rather than sampled polylines. SVG has cubics natively, so the curve is exact instead of approximated by 24 points, the figure builds in 50 ms instead of 131, and the file holds 1.4 MB instead of 3.8 MB.
 
+The saved file is then rewritten to hoist shared attributes onto their groups. matplotlib stamps `style` and `clip-path` onto every path element even though a collection's paths share them by construction — 49 distinct style strings and one clip across 9,700 elements, or 35% of the file spent on identical bytes. Every property involved is inherited in SVG and clipping a group is the same as clipping each child by the same path, so 1.36 MB becomes 846 kB for a render verified pixel-identical through librsvg. It costs 140 ms.
+
 nltk, wordfreq, networkx and matplotlib are all imported at the point of use rather than at module load. A cache hit never imports the first three at all, and `stats`, `words` and `categories` never import matplotlib, which alone is 290 ms.
 
 The disc's axes fills its figure, so `bbox_inches="tight"` is gone from the default path. Trimming means measuring, and measuring means drawing every curve a second time.
@@ -64,8 +66,6 @@ Three things were measured and left alone. Replacing pyplot with the object-orie
 Wedges run alphabetically round the ring, and within a wedge the words are sorted on their *last* letter rather than the second onwards. Every word in a wedge already shares a first letter, so ordinary alphabetical order sorts them on something the game does not care about, while the letter each word hands over is the one that decides where its curve goes.
 
 That ordering is rotated per wedge, and it runs against the direction the words are placed. Sorting on the tail letter alone starts every wedge at A, which is arbitrary once the wedges are themselves a ring: for the S wedge it drops the destinations nearest to S into the middle of the block and sends the bundle back across itself. Two chords leaving one wedge avoid crossing when the nearer origin takes the farther destination, so S runs R, Q, P back to A, wraps to Z and finishes on T. The curves then leave in a single sweep.
-
-Edges taper. Each one is split at its midpoint by de Casteljau into two exact cubics, and the half leaving the source is drawn thicker and at full alpha while the half arriving is thinner and fainter. Direction then reads as flow, which is the only way to show it on 4,856 curves — an arrowhead on each would be noise, and a colour gradient would cost the meaning the edge hue already carries, that it names the wedge the edge left. It costs one extra path per edge: 1.4 MB becomes 2.5 MB and a warm build 0.93 s becomes 1.16 s.
 
 Every label sits at one radius. Adjacent labels collide at their inner ends, where the circumference is smallest, and the fix is the canvas rather than the layout: `_canvas_inches` solves for the width at which each label gets a full line of leading along the ring, which comes to 23 inches for 364 animals. Sizing up costs nothing in vector output, priced as it is by element count rather than dimensions.
 
