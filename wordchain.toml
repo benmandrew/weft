@@ -1,8 +1,7 @@
-# Every setting the disc has, at the value it defaults to. Copy this
-# to wordchain.toml, where build finds it without a flag, or name it with
-# `build --config example.toml`. Every key is optional and anything left out
-# keeps the default, so a working file is usually two or three lines rather
-# than this one.
+# Every setting the disc has, at the value it defaults to. build reads this file
+# without a flag, so editing a number here changes the next render. Every key is
+# optional and anything left out keeps the default, which is why a file written
+# from scratch is usually two or three lines rather than this one.
 
 [geometry]
 
@@ -21,7 +20,7 @@ label_radius = 1.015
 # Label size in points. It also sets the canvas, because a label's length is
 # fixed in inches by the font and only a wider figure buys it room along the
 # ring, so raising this grows the figure rather than crowding it.
-label_pt = 6.8
+label_pt = 9.8
 
 # Clear space each label demands along the ring, in multiples of its own size.
 # It decides when two neighbours count as touching, to the same effect.

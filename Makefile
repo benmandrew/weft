@@ -7,10 +7,10 @@
 
 OUT ?= out
 
-# The config file build actually reads. Empty by default unless a
-# wordchain.toml is sitting there, which is the one build would discover on its
-# own. Naming another with CONFIG= makes it both a prerequisite and a --config
-# flag, so `make CONFIG=example.toml` redraws when that file changes.
+# The config file build actually reads. It defaults to the wordchain.toml in
+# this directory, which is the one build would discover on its own, and CONFIG=
+# names another. Either way it is both the --config argument and a prerequisite,
+# so editing the file redraws.
 CONFIG ?= $(wildcard wordchain.toml)
 BUILD ?= python -m wordchain build $(if $(CONFIG),--config $(CONFIG))
 

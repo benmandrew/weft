@@ -35,7 +35,7 @@ python -m wordchain build animal     # render the word graph
 
 `build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`), `--limit N` (words in the disc, default 110) and `--config FILE`. Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
-`make -j all` renders every category, and `make -j` on its own does the same since `all` is the default goal. Each file depends on the modules under `src/wordchain/` and on `wordchain.toml`, so a run against an untouched tree redraws nothing and a run after editing one module redraws all 37. That sweep takes 18.0 s serially and 5.1 s across eight cores. `make clean` removes the output directory, and `OUT=` moves it. `CONFIG=` names a config file, which both passes `--config` and makes that file a prerequisite, so `make CONFIG=example.toml -j` redraws when it changes; with no `CONFIG` it picks up a `wordchain.toml` sitting in the directory, which is the file `build` would have discovered anyway.
+`make -j all` renders every category, and `make -j` on its own does the same since `all` is the default goal. Each file depends on the modules under `src/wordchain/` and on `wordchain.toml`, so a run against an untouched tree redraws nothing and a run after editing one module redraws all 37. That sweep takes 18.0 s serially and 5.1 s across eight cores. `make clean` removes the output directory, and `OUT=` moves it. `CONFIG=` names a config file, which both passes `--config` and makes that file a prerequisite, so editing it redraws. It defaults to the `wordchain.toml` in the directory, which is the file `build` would have discovered anyway.
 
 ## Outputs
 
@@ -100,7 +100,7 @@ label_pt = 9.0
 pull_dense = 0.1
 ```
 
-`build` takes `--config FILE`. With no flag it loads `./wordchain.toml` when that file exists, and uses the built-in defaults otherwise. A file named with `--config` has to exist, because a `--config` that silently falls back to the defaults is a typo that costs a render to notice. The discovered one does not have to, since the whole point is that most runs have no file.
+`build` takes `--config FILE`. With no flag it loads `./wordchain.toml` when that file exists, and uses the built-in defaults otherwise. A file named with `--config` has to exist, because a `--config` that silently falls back to the defaults is a typo that costs a render to notice. The discovered one does not have to, since a checkout without one still has to draw. The repository ships a `wordchain.toml` spelling out every setting at its default, so `build` picks it up and renders exactly what it renders with no file at all.
 
 Validation refuses rather than ignores. An unknown table, an unknown key, a value that is not a number, a bool, and anything not strictly positive and finite each stop the build. A key the tool ignores is worse than one it refuses: the figure comes back unchanged and the file looks like it should have changed it. An unrecognised key is answered with the closest setting name from `difflib`, or with the full list of eight when nothing is close, and every message carries the file path, since a build otherwise names no file.
 

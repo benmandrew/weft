@@ -217,7 +217,7 @@ def resolve(explicit: str | None, root: Path | None = None) -> Config:
 
     A named file has to exist, because a `--config` that silently falls back to
     the defaults is a typo that costs a render to notice. The one found by
-    looking does not, since the whole point is that most runs have no file.
+    looking does not, since a checkout without one still has to draw.
     """
     if explicit is not None:
         return load(Path(explicit))
