@@ -31,11 +31,15 @@ python -m wordchain words animal     # the word list with Zipf frequencies
 python -m wordchain build animal     # render the word graph
 ```
 
-`build` writes `out/<category>/words.png` and takes `--out DIR` (default `out`), `--theme light|dark` (default `dark`) and `--limit N` (words in the disc, default 110). All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
+`build` writes `out/<category>/words.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`) and `--limit N` (words in the disc, default 110). All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
 ## Outputs
 
-`build` writes one file, `out/<category>/words.png`: the word graph in wedges by first letter, the 110 commonest words by default. The analysis that used to accompany it is still a command away — `stats` prints it and `words` prints the list.
+`build` writes one file, `out/<category>/words.svg`: the word graph in wedges by first letter, the 110 commonest words by default. The analysis that used to accompany it is still a command away — `stats` prints it and `words` prints the list.
+
+Vector is the default because it wins on every axis that matters here. A 364-word disc takes 0.48 s to write against 1.16 s as a 190 dpi PNG, ships at 1.3 MB gzipped against 4.6 MB, and zooms, so a label too small to read on screen is one gesture away. `--format png` still renders the raster.
+
+The file holds around 5,000 alpha-blended paths and 2,400 glyph references. Browsers draw it without complaint; Preview and Inkscape can be slow with that many. Glyphs are embedded as outlines rather than named, under `svg.fonttype = "path"`, so the figure renders identically on a machine with none of Iowan Old Style, Avenir or Menlo installed.
 
 `render` and `web` carry four more views that the command line no longer reaches: a 26-letter chord diagram, the 26×26 first/last grid, the supply-against-demand bars, and two interactive pyvis pages where hovering a node lights its edges. The pyvis pages are self-contained, with vis-network inlined and the Bootstrap content delivery network (CDN) tags stripped — pyvis emits those regardless of `cdn_resources="in_line"`.
 
@@ -43,7 +47,7 @@ python -m wordchain build animal     # render the word graph
 
 Wedges run alphabetically round the ring, and within a wedge the words are sorted on their *last* letter rather than the second onwards. Every word in a wedge already shares a first letter, so ordinary alphabetical order sorts them on something the game does not care about. Sorting on the letter each word hands over puts all the words leading to T side by side, and their curves leave the wedge as a single bundle instead of crossing each other on the way out.
 
-Above about 150 words the labels alternate between two radii, with a leader line tying the outer tier back to its dot. Adjacent labels collide at their inner ends, where the circumference is smallest, and staggering doubles the room each one has against its same-tier neighbour.
+Above about 150 words the labels alternate between two radii, with a leader line tying the outer tier back to its dot. Adjacent labels collide at their inner ends, where the circumference is smallest, and staggering doubles the room each one has against its same-tier neighbour. Vector output makes this survivable rather than unnecessary: zooming reaches any single label, and the stagger is what keeps the ring legible without zooming.
 
 Figures come from three families: Iowan Old Style for titles, Avenir for labels, Menlo for letters and counts, each with a fallback ending in a face matplotlib bundles itself. Images carry the graph and nothing else — no title, caption, legend or summary block. `build --chrome` adds all four back for a figure that has to stand on its own. Figures render dark by default, because 4,856 faint curves read as light against a dark ground and as smudge against a pale one. Both themes are complete palettes rather than an inversion of each other: the dark one lifts the letter wheel's value from 0.60 to 0.88 and drops its saturation, so all 26 hues stay separable either way.
 

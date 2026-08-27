@@ -46,6 +46,13 @@ def _typeface() -> None:
     plt.rcParams["font.monospace"] = palette.DATA
     plt.rcParams["font.family"] = "sans-serif"
 
+    # SVG output embeds each glyph as an outline rather than naming the font.
+    # It costs a little size against `svg.fonttype = "none"`, and it means the
+    # figure renders the same on a machine that has none of Iowan Old Style,
+    # Avenir or Menlo installed — which, given how much of the design rests on
+    # those three, is worth more than selectable text.
+    plt.rcParams["svg.fonttype"] = "path"
+
 
 def _hue(letter: str, theme: Theme) -> RGB:
     return palette.rgb(letter, theme)

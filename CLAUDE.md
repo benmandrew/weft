@@ -28,7 +28,12 @@ Keep the hook idempotent: direnv re-runs it on every load.
   `web._CDN_TAG` strips the Bootstrap links pyvis emits regardless of
   `cdn_resources="in_line"`.
 - `out/` is generated and gitignored. Nothing reads from it.
-- `build` renders `words.png` and nothing else. The other views in `render.py`
+- `build` renders one file, SVG unless `--format png`. Vector is the default
+  because it writes in half the time, ships at a quarter the size gzipped, and
+  zooms. Keep `svg.fonttype = "path"` in `render._typeface`: naming the fonts
+  instead would silently substitute a face on any machine without Iowan Old
+  Style, Avenir and Menlo.
+- `build` renders the word disc and nothing else. The other views in `render.py`
   and the pages in `web.py` are library-only; do not wire them back into the
   command line without asking.
 

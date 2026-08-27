@@ -132,7 +132,7 @@ def _cmd_build(args: argparse.Namespace) -> None:
     out.mkdir(parents=True, exist_ok=True)
     name = args.category.replace("-", " ")
 
-    target = out / "words.png"
+    target = out / f"words.{args.format}"
     render.words_disc(
         words,
         target,
@@ -167,6 +167,13 @@ def main(argv: list[str] | None = None) -> None:
     build = sub.add_parser("build", help="render the word graph")
     _selection_args(build)
     build.add_argument("--out", default="out", metavar="DIR", help="output root (default out)")
+    build.add_argument(
+        "--format",
+        choices=("svg", "png"),
+        default="svg",
+        help="vector or raster (default svg, which is faster to write, smaller "
+        "over the wire, and zoomable)",
+    )
     build.add_argument(
         "--chrome",
         action="store_true",
