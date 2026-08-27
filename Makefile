@@ -24,10 +24,10 @@ all: $(SVGS)
 
 # build creates the directory itself, so there is no order-only rule for it.
 $(OUT)/%.svg: $(SOURCES)
-	$(BUILD) $* --out $(OUT)
+	@$(BUILD) $* --out $(OUT)
 
 list:
 	@printf '%s\n' $(CATEGORIES)
 
 clean:
-	rm -rf $(OUT)
+	@rm -rf $(OUT)
