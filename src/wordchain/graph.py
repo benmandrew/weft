@@ -33,7 +33,7 @@ def letter_matrix(words: list[Word]) -> np.ndarray:
     return counts
 
 
-def letter_graph(words: list[Word]) -> nx.DiGraph:
+def letter_graph(words: list[Word]) -> nx.DiGraph[str]:
     """26 nodes, one weighted edge per letter pair some word bridges."""
     import networkx as nx
 
@@ -47,7 +47,7 @@ def letter_graph(words: list[Word]) -> nx.DiGraph:
     return graph
 
 
-def word_graph(words: list[Word]) -> nx.DiGraph:
+def word_graph(words: list[Word]) -> nx.DiGraph[str]:
     """One node per word, an edge wherever one word can follow another."""
     import networkx as nx
 
@@ -99,7 +99,7 @@ def live_letters(words: list[Word]) -> set[str]:
     return {word.head for word in words} | {word.tail for word in words}
 
 
-def core(graph: nx.DiGraph) -> set[str]:
+def core(graph: nx.DiGraph[str]) -> set[str]:
     """The largest strongly connected set of letters.
 
     Play inside it can continue indefinitely. A letter outside it is somewhere

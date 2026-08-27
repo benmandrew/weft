@@ -255,7 +255,7 @@ def chord(
 
     fig, ax = _blank_disc(theme, limit=geometry.disc_limit)
     for i, head in enumerate(LETTERS):
-        for j, tail in enumerate(LETTERS):
+        for j in range(len(LETTERS)):
             weight = counts[i, j]
             if not weight:
                 continue

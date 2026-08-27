@@ -37,7 +37,10 @@ def _canvas(theme: Theme, height: str = "820px") -> Network:
         width="100%",
         directed=True,
         bgcolor=theme.ground,
-        font_color=theme.ink,
+        # pyvis defaults font_color to False and is annotated to match, then
+        # writes whatever it is handed into the options JSON. mypy never sees
+        # this, since pyvis has no stubs and is declared untyped in mypy.ini.
+        font_color=theme.ink,  # pyright: ignore[reportArgumentType]
         cdn_resources=_RESOURCES,
     )
     net.set_options(json.dumps(_PHYSICS_OFF))

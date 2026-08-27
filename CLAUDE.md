@@ -116,6 +116,12 @@ declared as untyped imports in `mypy.ini` and the values crossing those
 boundaries are annotated by hand — `lexicon.Synset` is the alias that names the
 opaque WordNet type rather than leaving a bare `Any` at each call site.
 
+Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
+`src/` on the path, and the tree is clean under it. The pyright CLI is not in
+the flake, so that check happens in the editor. Strict mode leaves 65 findings,
+every one of them `reportUnknown*` or a missing stub for the four untyped
+libraries; clearing those means writing stubs, not annotating this code.
+
 ## Style
 
 Both themes in `palette.py` are complete palettes, never an inversion of each

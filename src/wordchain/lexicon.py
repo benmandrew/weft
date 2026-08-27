@@ -69,7 +69,7 @@ Synset: TypeAlias = Any
 _CACHE_FORMAT = 3
 
 
-_READER: Any = None
+_reader: Any = None
 
 
 def _wordnet() -> Any:
@@ -86,8 +86,8 @@ def _wordnet() -> Any:
     nothing here calls. Declining to build it takes the load from 1280 ms to
     512 ms and leaves every word list identical.
     """
-    global _READER
-    if _READER is None:
+    global _reader
+    if _reader is None:
         import warnings
 
         import nltk.data
@@ -100,8 +100,8 @@ def _wordnet() -> Any:
         with warnings.catch_warnings():
             # Passing no omw_reader is the point; the warning about it is not.
             warnings.simplefilter("ignore")
-            _READER = _Reader(nltk.data.find("corpora/wordnet"), None)
-    return _READER
+            _reader = _Reader(nltk.data.find("corpora/wordnet"), None)
+    return _reader
 
 
 class UnknownCategory(KeyError):
@@ -189,7 +189,7 @@ def _in_category(
     senses = wordnet.synsets(text.replace(" ", "_"), pos=wordnet.NOUN)
 
     tagged = matched = 0
-    for rank, sense in enumerate(senses):
+    for sense in senses:
         for lemma in sense.lemmas():
             if lemma.name().replace("_", " ").lower() != text:
                 continue
