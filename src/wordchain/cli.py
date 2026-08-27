@@ -179,11 +179,11 @@ def _cmd_build(args: argparse.Namespace) -> None:
     if not words:
         sys.exit(f"{args.category} came back empty; try a lower --min-zipf")
 
-    out = Path(args.out) / args.category
+    out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     name = args.category.replace("-", " ")
 
-    target = out / f"words.{args.format}"
+    target = out / f"{args.category}.{args.format}"
     render.words_disc(
         words,
         target,
@@ -221,7 +221,7 @@ def main(argv: list[str] | None = None) -> None:
 
     build = sub.add_parser("build", help="render the word graph")
     _selection_args(build)
-    build.add_argument("--out", default="out", metavar="DIR", help="output root (default out)")
+    build.add_argument("--out", default="out", metavar="DIR", help="output directory (default out)")
     build.add_argument(
         "--format",
         choices=("svg", "png"),

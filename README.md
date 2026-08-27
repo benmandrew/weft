@@ -33,11 +33,11 @@ python -m wordchain build animal     # render the word graph
 
 `categories` takes `--headers` for a header row, and the same filter arguments as the other commands, so its counts match what they would build. Counting means resolving all 37, which is 3.2 s against a cold cache and 0.23 s once they are in it.
 
-`build` writes `out/<category>/words.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`), `--limit N` (words in the disc, default 110) and `--config FILE`. Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
+`build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`), `--limit N` (words in the disc, default 110) and `--config FILE`. Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
 ## Outputs
 
-`build` writes one file, `out/<category>/words.svg`: the word graph in wedges by first letter, the 110 commonest words by default. The analysis that used to accompany it is still a command away — `stats` prints it and `words` prints the list.
+`build` writes one file, `out/<category>.svg`: the word graph in wedges by first letter, the 110 commonest words by default. The analysis that used to accompany it is still a command away — `stats` prints it and `words` prints the list.
 
 Vector is the default because it wins on every axis that matters here. A 364-word disc takes 0.48 s to write against 1.16 s as a 190 dpi PNG, ships at 1.3 MB gzipped against 4.6 MB, and zooms, so a label too small to read on screen is one gesture away. `--format png` still renders the raster.
 
