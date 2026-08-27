@@ -62,7 +62,7 @@ _PLAYABLE = re.compile(r"[a-z]+(?: [a-z]+)*")
 Synset: TypeAlias = Any
 
 # Bump when the cached shape changes; old files then miss rather than mislead.
-_CACHE_FORMAT = 1
+_CACHE_FORMAT = 2
 
 
 _READER: Any = None
@@ -250,25 +250,42 @@ def _resolve(
     max_rank: int,
     min_depth: int,
     allow_multiword: bool,
+    target: int,
+    zipf_floor: float,
 ) -> list[Word]:
-    """The uncached path: WordNet closure, then the three filters."""
+    """The uncached path: WordNet closure, then the filters.
+
+    One absolute frequency cut suits some categories and guts others. At a Zipf
+    of 3.0 animal keeps 364 words and flower keeps 9, not because English has
+    nine flowers but because flower names sit lower in the frequency table than
+    animal names as a class. The cut is calibrated for the common categories and
+    silently deletes the rest.
+
+    So the cut adapts. Everything above min_zipf is kept; if that leaves fewer
+    than `target` words, the threshold slides down the category's own frequency
+    order until it has that many, and stops at zipf_floor whatever happens.
+    Categories with plenty of common words never notice.
+    """
     from wordfreq import zipf_frequency
 
     senses = _closure(CATEGORIES[category], min_depth)
-    words = []
+    floor = min(zipf_floor, min_zipf)
+    candidates = []
     for text in _lemma_names(senses):
         if len(text) < 2 or not _PLAYABLE.fullmatch(text):
             continue
         if " " in text and not allow_multiword:
             continue
         zipf = zipf_frequency(text, "en")
-        if zipf < min_zipf:
+        if zipf < floor:
             continue
         if not _in_category(text, senses, min_dominance, max_rank):
             continue
-        words.append(Word(text, zipf))
+        candidates.append(Word(text, zipf))
 
-    return sorted(words, key=lambda w: (-w.zipf, w.text))
+    candidates.sort(key=lambda w: (-w.zipf, w.text))
+    common = [word for word in candidates if word.zipf >= min_zipf]
+    return common if len(common) >= target else candidates[:target]
 
 
 def members(
@@ -279,6 +296,8 @@ def members(
     max_rank: int = 2,
     min_depth: int = 1,
     allow_multiword: bool = False,
+    target: int = 60,
+    zipf_floor: float = 1.8,
     cache: bool = True,
 ) -> list[Word]:
     """The words of a category, commonest first.
@@ -287,8 +306,9 @@ def members(
     million words. WordNet's tail holds several thousand animals nobody has
     heard of, and they would swamp the graph, so the frequency cut stands in for
     "a word a player might actually produce". min_dominance and max_rank control
-    the polysemy filter described on _in_category, and min_depth the
-    shallow-layer cut described on _closure.
+    the polysemy filter described on _in_category, min_depth the shallow-layer
+    cut described on _closure, and target with zipf_floor the sliding cut
+    described on _resolve.
 
     The result is cached on disk against the category, every argument above, and
     the WordNet build it came from. A hit skips the 1.3 s the database takes to
@@ -303,6 +323,8 @@ def members(
         "max_rank": max_rank,
         "min_depth": min_depth,
         "allow_multiword": allow_multiword,
+        "target": target,
+        "zipf_floor": zipf_floor,
     }
     path = _cache_file(category, params)
     if cache:
@@ -310,7 +332,16 @@ def members(
         if hit is not None:
             return hit
 
-    words = _resolve(category, min_zipf, min_dominance, max_rank, min_depth, allow_multiword)
+    words = _resolve(
+        category,
+        min_zipf,
+        min_dominance,
+        max_rank,
+        min_depth,
+        allow_multiword,
+        target,
+        zipf_floor,
+    )
     if cache:
         _write_cache(path, words)
     return words

@@ -47,6 +47,21 @@ def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> N
         "own name (default 1)",
     )
     parser.add_argument(
+        "--target",
+        type=int,
+        default=60,
+        metavar="N",
+        help="relax --min-zipf until the category yields this many words "
+        "(default 60); categories with more common words than this ignore it",
+    )
+    parser.add_argument(
+        "--zipf-floor",
+        type=float,
+        default=1.8,
+        metavar="Z",
+        help="never relax past this, however few words a category has (default 1.8)",
+    )
+    parser.add_argument(
         "--multiword",
         action="store_true",
         help="keep entries like 'polar bear', chained on their outer letters",
@@ -72,6 +87,8 @@ def _load(args: argparse.Namespace) -> list[Word]:
             max_rank=args.max_rank,
             min_depth=args.min_depth,
             allow_multiword=args.multiword,
+            target=args.target,
+            zipf_floor=args.zipf_floor,
             cache=not args.no_cache,
         )
     except UnknownCategory:

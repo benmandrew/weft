@@ -82,11 +82,14 @@ Word lists come from the hyponym closure of one or more WordNet synset roots. `a
 The closure is generous. `animal.n.01` contains a sense of *world* and a sense of *blue*. Four filters cut it down to something playable:
 
 - `--min-zipf` (default 3.0) drops rare words on wordfreq's Zipf scale, where 3.0 is about one occurrence per million words. WordNet's tail holds thousands of animals nobody has heard of.
+- `--target` (default 60) makes that cut adapt. One absolute threshold suits some categories and guts others: at 3.0, animal keeps 364 words and flower keeps 9, not because English has nine flowers but because flower names sit lower in the frequency table than animal names as a class. Everything above `--min-zipf` is kept, and if that leaves fewer than the target the threshold slides down the category's own frequency order until it has enough. `--zipf-floor` (default 1.8) is where it stops regardless.
+
+  Categories with plenty of common words never notice — animal and food still cut at exactly 3.0. Flower reaches 47 and stops at the floor, gaining carnation, dahlia, marigold, peony, petunia and snapdragon; instrument reaches 60, gaining guitar, piano, violin, cello, banjo, clarinet and trombone.
 - `--min-dominance` (default 0.2) uses WordNet's sense-tagged counts: for a word tagged in the annotated corpus, the share of its noun uses that falls inside the category. This is what removes *date* and *key* from fruit.
 - `--max-rank` (default 2) is the fallback for untagged words. WordNet lists senses commonest first, so a category sense buried at position seven is not the everyday meaning.
 - `--min-depth` (default 1) drops the category's own name, since *animal* is not a playable answer in a game of animals.
 
-WordNet is a lexical database, not a game word list, and some residue always survives: *entire* and *royal* are genuine WordNet animal terms nobody would play. The flags exist to be tuned per category. Thin categories want looser settings — `python -m wordchain words flower --min-zipf 2.5 --max-rank 5 --min-dominance 0.05` takes flowers from 9 words to 24.
+WordNet is a lexical database, not a game word list, and some residue always survives: *entire* and *royal* are genuine WordNet animal terms nobody would play. The flags exist to be tuned per category.
 
 ## Categories
 
