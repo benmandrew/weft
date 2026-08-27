@@ -25,11 +25,13 @@ nltk normally downloads the WordNet corpus into `~/nltk_data` at runtime. `pkgs.
 ## Commands
 
 ```
-python -m wordchain categories       # the 33 categories and their WordNet roots
+python -m wordchain categories       # the 37 categories, with word counts
 python -m wordchain stats animal     # the letter analysis
 python -m wordchain words animal     # the word list with Zipf frequencies
 python -m wordchain build animal     # render the word graph
 ```
+
+`categories` takes `--headers` for a header row, and the same filter arguments as the other commands, so its counts match what they would build. Counting means resolving all 37, which is 3.2 s against a cold cache and 0.23 s once they are in it.
 
 `build` writes `out/<category>/words.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`), `--limit N` (words in the disc, default 110) and `--config FILE`. Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
@@ -75,7 +77,7 @@ Figures come from three families: Iowan Old Style for titles, Avenir for labels,
 
 ## Configuring the geometry
 
-Eight numbers decide where the disc puts things, and the good value for each depends on the category; 364 animals and 24 flowers do not want the same label size or the same curve pull. They were module constants in `render.py`, so trying a different figure meant editing the source. They are now fields on a frozen *dataclass*, `Geometry` in `config.py`, and `render.chord` and `render.words_disc` take one as an argument the way they already take a `Theme`.
+Eight numbers decide where the disc puts things, and the good value for each depends on the category; 895 animals and 60 flowers do not want the same label size or the same curve pull. They were module constants in `render.py`, so trying a different figure meant editing the source. They are now fields on a frozen *dataclass*, `Geometry` in `config.py`, and `render.chord` and `render.words_disc` take one as an argument the way they already take a `Theme`.
 
 | setting | default | what it sets |
 | --- | --- | --- |
@@ -108,16 +110,20 @@ Word lists come from the hyponym closure of one or more WordNet synset roots. `a
 
 The closure is generous. `animal.n.01` contains a sense of *world* and a sense of *blue*. Four filters cut it down to something playable:
 
-- `--min-zipf` (default 3.0) drops rare words on wordfreq's Zipf scale, where 3.0 is about one occurrence per million words. WordNet's tail holds thousands of animals nobody has heard of.
+- Words wordfreq scores at exactly zero are dropped whatever the settings. A zero means the word appears in none of its corpora, and that is precisely where WordNet stops listing vocabulary and starts listing taxonomy: 879 of animal's 2,461 candidates score zero, and they read *aegyptopithecus*, *acanthocephalan*, *abrocome*. Excluding them is structural rather than a threshold guess, which is what lets the threshold below sit low.
+- `--min-zipf` (default 2.0) drops rare words on wordfreq's Zipf scale, where 2.0 is about one occurrence per ten million words.
+- `--target` (default 60) makes that cut adapt. One absolute threshold suits some categories and guts others: at 3.0, animal keeps 364 words and flower keeps 9, not because English has nine flowers but because flower names sit lower in the frequency table than animal names as a class. Everything above `--min-zipf` is kept, and if that leaves fewer than the target the threshold slides down the category's own frequency order until it has enough. `--zipf-floor` (default 0.0) is where it stops regardless, which is to say any word wordfreq knows at all.
+
+  Categories with plenty of common words never notice — animal and food cut at exactly 2.0. Flower relaxes to 60 and instrument stops at 74; toy runs out at 29, which is a fair claim about how many single-word toys English has.
 - `--min-dominance` (default 0.2) uses WordNet's sense-tagged counts: for a word tagged in the annotated corpus, the share of its noun uses that falls inside the category. This is what removes *date* and *key* from fruit.
 - `--max-rank` (default 2) is the fallback for untagged words. WordNet lists senses commonest first, so a category sense buried at position seven is not the everyday meaning.
 - `--min-depth` (default 1) drops the category's own name, since *animal* is not a playable answer in a game of animals.
 
-WordNet is a lexical database, not a game word list, and some residue always survives: *entire* and *royal* are genuine WordNet animal terms nobody would play. The flags exist to be tuned per category. Thin categories want looser settings — `python -m wordchain words flower --min-zipf 2.5 --max-rank 5 --min-dominance 0.05` takes flowers from 9 words to 24.
+WordNet is a lexical database, not a game word list, and some residue always survives: *entire* and *royal* are genuine WordNet animal terms nobody would play. The flags exist to be tuned per category.
 
 ## Categories
 
-animal, bird, body-part, building, city, clothing, colour, country, dog, drink, drug, element, fabric, fish, flower, food, fruit, furniture, game, insect, instrument, job, language, mammal, metal, plant, sport, tool, toy, tree, vegetable, vehicle, weapon.
+animal, bird, body-part, building, city, clothing, colour, country, disease, dog, drink, drug, element, fabric, fish, flower, food, fruit, furniture, game, insect, instrument, job, language, mammal, metal, mineral, plant, reptile, river, sport, tool, toy, tree, vegetable, vehicle, weapon.
 
 ## Layout
 

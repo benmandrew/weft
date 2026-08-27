@@ -6,3 +6,4 @@ result
 .nltk_data/
 .ruff_cache/
 .cache/
+.claude/worktrees/

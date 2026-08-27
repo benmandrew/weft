@@ -1,7 +1,7 @@
 """The disc's geometry, as a dataclass and as a TOML file.
 
 Eight numbers decide where the word disc puts things, and the good value for
-each depends on the category: 364 animals and 24 flowers do not want the same
+each depends on the category: 895 animals and 60 flowers do not want the same
 label size or the same curve pull. They sat in `render.py` as module constants,
 which meant editing the source to try a different figure, so they moved onto a
 frozen `Geometry` that a figure takes the way it already takes a `Theme`.
