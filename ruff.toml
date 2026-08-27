@@ -1,6 +1,4 @@
 line-length = 100
 
 [lint]
-# E402 is on because render.py has to call matplotlib.use("Agg") before
-# importing pyplot, and the noqa comments marking that should mean something.
 select = ["E", "F", "W", "I", "UP", "RUF"]

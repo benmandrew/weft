@@ -36,7 +36,7 @@ Keep the hook idempotent: direnv re-runs it on every load.
       graph.py     letter matrix, letter graph, word graph, trap analysis
       render.py    matplotlib figures
       web.py       pyvis pages
-      palette.py   one colour per letter, shared by render and web
+      palette.py   Theme tokens, the letter wheel, the font stacks
       cli.py       argparse entry point, the text report
 
 `graph.py` holds the structural claim the whole project rests on: a word is an
@@ -52,6 +52,10 @@ genuine WordNet animal terms). Tighten via `--min-dominance` / `--max-rank`
 rather than by adding a stop-list.
 
 ## Style
+
+Both themes in `palette.py` are complete palettes, never an inversion of each
+other. A figure takes a `Theme` argument rather than reading a global, and every
+colour in `render.py` and `web.py` comes off that object.
 
 Ruff for Python, `nix fmt` for the flake. Comments explain why a choice was
 forced, not what a line does.

@@ -7,8 +7,9 @@ import sys
 from pathlib import Path
 
 from . import render, web
-from .graph import letter_stats, summary
+from .graph import LETTERS, letter_stats, summary
 from .lexicon import CATEGORIES, UnknownCategory, catalogue, members
+from .palette import THEMES
 
 
 def _selection_args(parser: argparse.ArgumentParser) -> None:
@@ -99,7 +100,7 @@ def _report(category: str, words) -> str:
 
     unused = [
         letter.upper()
-        for letter in "abcdefghijklmnopqrstuvwxyz"
+        for letter in LETTERS
         if stats[letter].supply == 0 and stats[letter].demand == 0
     ]
     if unused:
@@ -130,13 +131,18 @@ def _cmd_build(args: argparse.Namespace) -> None:
     out = Path(args.out) / args.category
     out.mkdir(parents=True, exist_ok=True)
     name = args.category.replace("-", " ")
+    theme = THEMES[args.theme]
 
-    render.chord(words, out / "letters.png", f"{name} — the game on 26 letters")
-    render.matrix(words, out / "matrix.png", f"{name} — first and last letter counts")
-    render.pressure(words, out / "pressure.png", f"{name} — where the letters run dry")
-    render.words_disc(words, out / "words.png", f"{name} — the word graph", limit=args.limit)
-    web.letters_page(words, out / "letters.html", f"{name} — the game on 26 letters")
-    web.words_page(words, out / "words.html", f"{name} — the word graph", limit=args.web_limit)
+    render.chord(words, out / "letters.png", f"{name} — the game on 26 letters", theme=theme)
+    render.matrix(words, out / "matrix.png", f"{name} — first and last letter counts", theme=theme)
+    render.pressure(words, out / "pressure.png", f"{name} — where the letters run dry", theme=theme)
+    render.words_disc(
+        words, out / "words.png", f"{name} — the word graph", limit=args.limit, theme=theme
+    )
+    web.letters_page(words, out / "letters.html", f"{name} — the game on 26 letters", theme=theme)
+    web.words_page(
+        words, out / "words.html", f"{name} — the word graph", limit=args.web_limit, theme=theme
+    )
 
     report = _report(args.category, words)
     (out / "report.txt").write_text(report + "\n")
@@ -172,6 +178,12 @@ def main(argv: list[str] | None = None) -> None:
     build = sub.add_parser("build", help="write every figure, page and table")
     _selection_args(build)
     build.add_argument("--out", default="out", metavar="DIR", help="output root (default out)")
+    build.add_argument(
+        "--theme",
+        choices=sorted(THEMES),
+        default="light",
+        help="palette for every figure and page (default light)",
+    )
     build.add_argument(
         "--limit", type=int, default=110, metavar="N", help="words in the static disc (default 110)"
     )

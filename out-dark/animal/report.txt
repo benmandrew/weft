@@ -1,0 +1,15 @@
+animal — 364 words, 4856 playable moves between them
+letter pairs in use: 198 of a possible 676
+
+  letters in play   A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
+  endless core      A B D E F G H I K L M N O P R S T W Y
+  openers only      C J Q V Z   (no word ends here, so play never arrives)
+  dead ends         U X   (no word starts here, so play never leaves)
+
+  worst traps
+    X    3 end    0 start   no reply exists          fox, ox, lynx
+    U    2 end    0 start   no reply exists          emu, gnu
+    Y   34 end    2 start   17.0 landings per reply  fly, turkey, jay, billy, lucy, monkey, puppy, kitty,
+    N   35 end    5 start   7.0 landings per reply   human, queen, chicken, robin, lion, salmon, devon, s
+    E   56 end    9 start   6.2 landings per reply   entire, female, male, horse, mate, mouse, snake, cat
+    K   15 end    4 start   3.8 landings per reply   duck, shark, chick, livestock, hawk, tick, elk, peac

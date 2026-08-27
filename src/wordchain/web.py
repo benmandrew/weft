@@ -15,9 +15,9 @@ from pathlib import Path
 
 from pyvis.network import Network
 
-from . import palette
 from .graph import LETTERS, letter_stats, live_letters
 from .lexicon import Word
+from .palette import LIGHT, Theme, hex_of
 
 # pyvis defaults to pulling vis-network from a CDN. Inlining it costs about
 # 700 kB per page and buys a file that works offline and inside a sandbox that
@@ -31,24 +31,24 @@ _PHYSICS_OFF = {
 }
 
 
-def _canvas(height: str = "820px") -> Network:
+def _canvas(theme: Theme, height: str = "820px") -> Network:
     net = Network(
         height=height,
         width="100%",
         directed=True,
-        bgcolor=palette.BACKGROUND,
-        font_color=palette.INK,
+        bgcolor=theme.ground,
+        font_color=theme.ink,
         cdn_resources=_RESOURCES,
     )
     net.set_options(json.dumps(_PHYSICS_OFF))
     return net
 
 
-def letters_page(words: list[Word], out: Path, title: str) -> None:
+def letters_page(words: list[Word], out: Path, title: str, theme: Theme = LIGHT) -> None:
     """26 letter nodes on a ring, one edge per first/last pair."""
     stats = {s.letter: s for s in letter_stats(words)}
     live = live_letters(words)
-    net = _canvas()
+    net = _canvas(theme)
 
     radius = 360
     for i, letter in enumerate(LETTERS):
@@ -62,12 +62,12 @@ def letters_page(words: list[Word], out: Path, title: str) -> None:
                 f"{letter.upper()}\n{stat.demand} words end here\n"
                 f"{stat.supply} words start here\n{pressure}"
             ),
-            color=palette.ALERT if stat.is_dead_end else palette.hex_of(letter),
+            color=theme.dead if stat.is_dead_end else hex_of(letter, theme),
             size=8 + 1.6 * math.sqrt(stat.supply + stat.demand) * 3,
             x=int(radius * math.cos(angle)),
             y=int(-radius * math.sin(angle)),
             physics=False,
-            font={"size": 22, "color": palette.INK},
+            font={"size": 22, "color": theme.ink},
             opacity=1.0 if letter in live else 0.25,
         )
 
@@ -83,15 +83,17 @@ def letters_page(words: list[Word], out: Path, title: str) -> None:
             tail,
             value=count,
             width=0.6 + 7 * math.sqrt(count / peak),
-            color=palette.hex_of(head),
+            color=hex_of(head, theme),
             title=f"{count} word{'s' if count != 1 else ''}: " + ", ".join(examples),
         )
 
     net.save_graph(str(out))
-    _finish(out, title, "Hover a letter to light every pair it takes part in.")
+    _finish(out, title, "Hover a letter to light every pair it takes part in.", theme)
 
 
-def words_page(words: list[Word], out: Path, title: str, limit: int = 260) -> None:
+def words_page(
+    words: list[Word], out: Path, title: str, limit: int = 260, theme: Theme = LIGHT
+) -> None:
     """One node per word, grouped into wedges by first letter.
 
     Positions are fixed rather than force-directed. Every word ending in A links
@@ -107,11 +109,11 @@ def words_page(words: list[Word], out: Path, title: str, limit: int = 260) -> No
     gap = math.radians(4.0)
     span = (2 * math.pi - gap * len(present)) / max(len(shown), 1)
 
-    net = _canvas("880px")
+    net = _canvas(theme, "880px")
     radius = 430
     angle = math.pi / 2
     for letter in present:
-        for word in sorted(grouped[letter], key=lambda w: w.text):
+        for word in sorted(grouped[letter], key=lambda w: w.text[::-1]):
             angle -= span
             successors = len(grouped.get(word.tail, ()))
             net.add_node(
@@ -121,12 +123,12 @@ def words_page(words: list[Word], out: Path, title: str, limit: int = 260) -> No
                     f"{word.text}\nends in {word.tail.upper()} — "
                     f"{successors} of the shown words follow it"
                 ),
-                color=palette.hex_of(letter),
+                color=hex_of(letter, theme),
                 size=7 + 1.4 * word.zipf,
                 x=int(radius * math.cos(angle + span / 2)),
                 y=int(-radius * math.sin(angle + span / 2)),
                 physics=False,
-                font={"size": 13, "color": palette.INK},
+                font={"size": 13, "color": theme.ink},
             )
         angle -= gap
 
@@ -137,7 +139,7 @@ def words_page(words: list[Word], out: Path, title: str, limit: int = 260) -> No
                     word.text,
                     successor.text,
                     width=0.4,
-                    color={"color": palette.hex_of(word.head), "opacity": 0.22},
+                    color={"color": hex_of(word.head, theme), "opacity": 0.22},
                 )
 
     net.save_graph(str(out))
@@ -145,7 +147,7 @@ def words_page(words: list[Word], out: Path, title: str, limit: int = 260) -> No
     note = "Hover a word to light everything that can follow it."
     if dropped:
         note += f" Showing the {len(shown)} commonest of {len(words)}."
-    _finish(out, title, note)
+    _finish(out, title, note, theme)
 
 
 # pyvis links these from a CDN even under cdn_resources="in_line", which only
@@ -154,16 +156,14 @@ def words_page(words: list[Word], out: Path, title: str, limit: int = 260) -> No
 _CDN_TAG = re.compile(r"\s*<(?:link|script)[^>]*cdn\.jsdelivr\.net[^>]*>(?:</script>)?")
 
 
-def _finish(out: Path, title: str, note: str) -> None:
+def _finish(out: Path, title: str, note: str, theme: Theme) -> None:
     """Add a heading and cut the CDN tags; pyvis writes a bare canvas."""
     banner = (
         f'<div style="font:600 20px/1.3 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
-        f'color:{palette.INK};padding:20px 24px 4px">{title}</div>'
+        f'color:{theme.ink};padding:20px 24px 4px">{title}</div>'
         f'<div style="font:400 13px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;'
-        f'color:{palette.MUTED};padding:0 24px 12px">{note}</div>'
+        f'color:{theme.muted};padding:0 24px 12px">{note}</div>'
     )
     html = _CDN_TAG.sub("", out.read_text())
-    html = html.replace(
-        "<body>", f"<body style='background:{palette.BACKGROUND};margin:0'>{banner}", 1
-    )
+    html = html.replace("<body>", f"<body style='background:{theme.ground};margin:0'>{banner}", 1)
     out.write_text(html)

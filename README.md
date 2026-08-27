@@ -31,7 +31,7 @@ python -m wordchain words animal     # the word list with Zipf frequencies
 python -m wordchain build animal     # every figure, page and table
 ```
 
-`build` writes to `out/<category>/` and takes `--out DIR` (default `out`), `--limit N` (words in the static disc, default 110) and `--web-limit N` (words in the interactive page, default 260). All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
+`build` writes to `out/<category>/` and takes `--out DIR` (default `out`), `--theme light|dark`, `--limit N` (words in the static disc, default 110) and `--web-limit N` (words in the interactive page, default 260). All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
 ## Outputs
 
@@ -40,11 +40,19 @@ python -m wordchain build animal     # every figure, page and table
 - `letters.png` — chord diagram, 26 letters round a circle, ribbon width by word count, dead ends in red
 - `matrix.png` — the 26×26 first/last counts as a grid
 - `pressure.png` — words starting with each letter against words ending with it
-- `words.png` — the word graph in wedges by first letter, 110 commonest words
+- `words.png` — the word graph in wedges by first letter, 110 commonest words by default
 - `letters.html`, `words.html` — interactive pyvis pages; hover a node to light its edges
 - `report.txt`, `words.csv` — the analysis as text and the word list as comma-separated values
 
 The pyvis pages are self-contained. vis-network is inlined, and the tool strips the Bootstrap content delivery network (CDN) tags that pyvis emits regardless of `cdn_resources="in_line"`.
+
+## Reading the disc
+
+Wedges run alphabetically round the ring, and within a wedge the words are sorted on their *last* letter rather than the second onwards. Every word in a wedge already shares a first letter, so ordinary alphabetical order sorts them on something the game does not care about. Sorting on the letter each word hands over puts all the words leading to T side by side, and their curves leave the wedge as a single bundle instead of crossing each other on the way out.
+
+Above about 150 words the labels alternate between two radii, with a leader line tying the outer tier back to its dot. Adjacent labels collide at their inner ends, where the circumference is smallest, and staggering doubles the room each one has against its same-tier neighbour.
+
+Figures come from three families: Iowan Old Style for titles, Avenir for labels, Menlo for letters and counts, each with a fallback ending in a face matplotlib bundles itself. Both themes are complete palettes rather than an inversion — the dark one lifts the letter wheel's value from 0.60 to 0.88 and drops its saturation, so all 26 hues stay separable on either ground.
 
 ## Choosing the words
 
