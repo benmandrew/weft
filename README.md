@@ -100,7 +100,12 @@ label_pt = 9.0
 pull_dense = 0.1
 ```
 
-`build` takes `--config FILE`. With no flag it loads `./wordchain.toml` when that file exists, and uses the built-in defaults otherwise. A file named with `--config` has to exist, because a `--config` that silently falls back to the defaults is a typo that costs a render to notice. The discovered one does not have to, since a checkout without one still has to draw. The repository ships a `wordchain.toml` spelling out every setting at its default, so `build` picks it up and renders exactly what it renders with no file at all.
+`build` takes `--config FILE`. With no flag it loads `./wordchain.toml` when that file exists, and uses the built-in defaults otherwise. A file named with `--config` has to exist, because a `--config` that silently falls back to the defaults is a typo that costs a render to notice. The discovered one does not have to, since a checkout without one still has to draw. The repository ships a `wordchain.toml` that `build` picks up and renders exactly what it renders with no file at all.
+`[geometry]` spells every setting out at its default, while `[palette]` names `spectrum` with the arc keys commented beside it, since a preset and those keys are mutually exclusive and only one of the two can be live.
+
+That was not true of the shipped file until this change.
+It carried `label_pt = 9.8` against a default of 6.8, and 9.8 changes the render.
+It now reads 6.8, and `build animal` writes byte-identical SVG with the file in place and with it moved away, once matplotlib's random per-run element ids are normalised.
 
 Validation refuses rather than ignores. An unknown table, an unknown key, a value that is not a number, a bool, and anything not strictly positive and finite each stop the build. A key the tool ignores is worse than one it refuses: the figure comes back unchanged and the file looks like it should have changed it. An unrecognised key is answered with the closest setting name from `difflib`, or with the full list of eight when nothing is close, and every message carries the file path, since a build otherwise names no file.
 
@@ -130,6 +135,11 @@ Luma spread is the ratio of the brightest letter to the dimmest, by Recommendati
 [palette]
 preset = "duotone"
 ```
+
+The shipped file carries `preset = "spectrum"` as its live line, with the five arc keys commented out at their defaults underneath, so changing the whole wheel is one string edit.
+Going the other way means commenting the preset out and uncommenting the five.
+The file cannot carry both live, and naming a preset is the more common edit of the two.
+`spectrum` is what the theme brings on its own, so the table as it stands changes nothing, verified by `build animal` writing SVG byte-identical to the no-file render once matplotlib's per-run element ids are normalised.
 
 Presets are tuned against the dark ground, which is what `build` draws on by default. On `--theme light` the same wheel is drawn with saturation up 0.07 and value down 0.28, the offsets that already separate the two built-in themes, so the light `spectrum` wheel is byte-identical to what it was before any of this.
 

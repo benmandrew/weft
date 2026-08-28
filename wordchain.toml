@@ -20,7 +20,7 @@ label_radius = 1.015
 # Label size in points. It also sets the canvas, because a label's length is
 # fixed in inches by the font and only a wider figure buys it room along the
 # ring, so raising this grows the figure rather than crowding it.
-label_pt = 9.8
+label_pt = 6.8
 
 # Clear space each label demands along the ring, in multiples of its own size.
 # It decides when two neighbours count as touching, to the same effect.
@@ -46,27 +46,40 @@ disc_limit = 1.34
 
 [palette]
 
-# Name one of spectrum, even, ember, tide or duotone and stop there. A preset
-# can hold two arcs, as duotone does, so it cannot be combined with the keys
-# below and naming both is refused rather than half-applied.
-# preset = "duotone"
+# The wheel is named, or it is spelled out, and never both: a preset can hold
+# two arcs, as duotone does, so there is no honest way to layer one arc's worth
+# of keys over it. Naming one is the common edit, so that is the live line here
+# and the arc's own numbers sit commented below it. spectrum is what the theme
+# brings on its own, so this table as it stands changes nothing.
+#
+#   spectrum  the full turn the tool has always drawn
+#   even      the same turn, with A and Z separated and the luma spread cut
+#             from 1.86x to 1.38x
+#   ember     a quarter turn through the reds and oranges
+#   tide      a quarter turn through the greens and blues
+#   duotone   two short arcs, warm for A-M and cool for N-Z, so every curve
+#             crossing between the halves of the alphabet reads as a crossing
+preset = "spectrum"
 
+# The other way to say it. Comment the preset out and uncomment these five, at
+# the defaults spectrum already draws.
+#
 # Where the letters start on the colour circle, and how much of it they cover.
 # A span of exactly 1 closes the circle, which puts A and Z one step apart and
 # makes them read as the same hue; a little under 1 separates them. A quarter
 # turn gives up telling adjacent letters apart and buys a disc that reads as
 # one object.
-hue_start = 0.0
-hue_span = 1.0
+# hue_start = 0.0
+# hue_span = 1.0
 
 # Saturation and value, fixed across the wheel so all 26 letters stay equally
 # visible against the ground.
-saturation = 0.55
-value = 0.88
+# saturation = 0.55
+# value = 0.88
 
 # How far each letter's value is pulled towards a common brightness, from 0 for
 # none to 1 for equal. A fixed-saturation wheel spans about 1.9x in luma, and
 # every bundle is drawn at one alpha, so a yellow overwhelms a blue at equal
 # weight. Correction can only take brightness away, so 1 sends the greens olive
 # and 0.65 is about as far as they stay green.
-equalise = 0.0
+# equalise = 0.0
