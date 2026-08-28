@@ -1,3 +1,5 @@
+#:schema ./schemas/wordchain.schema.json
+
 # Every setting the disc has, at the value it defaults to. build reads this file
 # without a flag, so editing a number here changes the next render. Every key is
 # optional and anything left out keeps the default, which is why a file written

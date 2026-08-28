@@ -38,6 +38,9 @@
             (pythonEnv pkgs)
             pkgs.nixfmt
             pkgs.ruff
+            # `taplo check` validates wordchain.toml against the schema that
+            # taplo.toml names, which is the same check an editor runs.
+            pkgs.taplo
           ];
 
           env = {

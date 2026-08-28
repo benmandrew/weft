@@ -1,0 +1,16 @@
+# Points taplo at the schema, so an editor validates wordchain.toml as it is
+# typed and offers the settings, the theme names and the preset names as
+# completions. Taplo is what the Even Better TOML extension runs, and the CLI
+# reads this file too, which is what `make check` calls.
+
+# Without a list taplo walks the whole tree, and .direnv holds a nixpkgs
+# checkout: 59 TOML files found instead of the 3 this repository owns.
+include = ["**/*.toml"]
+exclude = ["**/.direnv/**", "**/.claude/**"]
+
+[[rule]]
+name = "wordchain"
+include = ["**/wordchain.toml"]
+
+[rule.schema]
+path = "schemas/wordchain.schema.json"

@@ -24,13 +24,25 @@ SVGS := $(patsubst %,$(OUT)/%.svg,$(CATEGORIES))
 # is empty and the dependency simply is not there.
 SOURCES := $(wildcard src/wordchain/*.py) $(CONFIG)
 
-.PHONY: all clean list
+.PHONY: all check clean list
 
 all: $(SVGS)
 
 # build creates the directory itself, so there is no order-only rule for it.
 $(OUT)/%.svg: $(SOURCES)
 	@$(BUILD) $* --out $(OUT)
+
+# Everything that has to pass before a commit. The last two are about the
+# config file: taplo validates wordchain.toml against wordchain.schema.json,
+# which is the check an editor runs, and check_schema.py reads that schema back
+# against config.py, since the schema repeats every field name, default and
+# bound the code already owns.
+check:
+	@ruff check src/ tools/
+	@ruff format --check src/ tools/
+	@mypy
+	@RUST_LOG=warn taplo check
+	@python tools/check_schema.py
 
 list:
 	@printf '%s\n' $(CATEGORIES)

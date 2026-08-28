@@ -16,7 +16,7 @@ Y is the worst genuine trap, at 17.0 landings per available reply: 34 animals en
 
 ## Setup
 
-The project uses a Nix flake. `direnv allow` activates it on entering the directory, and `nix develop` gives the same shell by hand. `ruff check src/` and `mypy` both pass, the latter in strict mode. Python and its packages (nltk, networkx, matplotlib, numpy, pyvis, wordfreq) come from nixpkgs. There is no virtualenv, no pip, and no lockfile beyond `flake.lock`.
+The project uses a Nix flake. `direnv allow` activates it on entering the directory, and `nix develop` gives the same shell by hand. `make check` is the one command that runs everything that has to pass, and the tree is clean under it; mypy runs in strict mode over `src/wordchain` and `tools`. Python and its packages (nltk, networkx, matplotlib, numpy, pyvis, wordfreq) come from nixpkgs. There is no virtualenv, no pip, and no lockfile beyond `flake.lock`.
 
 One direnv wrinkle is worth knowing about. nix-direnv caches the output of `nix print-dev-env`, which defines `shellHook` as a variable without ever running it, so a flake that does real work in its hook silently does none of it under direnv. Both the `PYTHONPATH` entry and the WordNet symlink below live in that hook, so `.envrc` runs it explicitly with `eval "$shellHook"` rather than keeping a second copy that drifts.
 
@@ -152,6 +152,16 @@ Presets are tuned against the dark ground, which is what `build` draws on by def
 Validation matches `[geometry]`. An unknown key, an unknown preset name, a value outside 0 to 1 and a bool each stop the build, each answered with the closest name from `difflib`. `hue_start` and `equalise` are the two settings that mean something at zero, and every other one is refused at zero.
 
 Rendering with no `[palette]` table writes the same colours as before the feature existed, verified by comparing the distinct stroke colours in the saved SVG.
+
+## Checking the config file
+
+`schemas/wordchain.schema.json` describes that file as a draft-07 *JSON Schema*, in JavaScript Object Notation (JSON). Every key carries its description, type, default and bounds, and `additionalProperties: false` on all three objects makes a typo a refusal rather than a silent no-op, matching what the loader does at load time. `theme` carries an enum of the two ground names and `preset` an enum of the five wheel names. An `if`/`then` clause forbids each of the five arc keys when `preset` is present, the same mutual exclusion the loader enforces, and both enums carry per-value documentation under `x-taplo.docs.enumValues`, so an editor explains each choice as it is picked.
+
+`taplo.toml` points taplo at that schema for `**/wordchain.toml`, with `path = "schemas/wordchain.schema.json"`. Taplo is what the Even Better TOML editor extension runs, so the file is validated as it is typed and the setting and preset names complete. The `taplo check` command-line interface (CLI) reads the same rule, and `pkgs.taplo` is in the flake's devShell so the shell has it.
+
+The file names the schema a second time, on its first line, as `#:schema ./schemas/wordchain.schema.json`. An editor has to discover `taplo.toml` before the rule applies, and opening a parent directory as the workspace is enough to lose it, while a directive read from the document itself needs no discovery. Both associations hold on their own: `taplo check --no-auto-config` ignores `taplo.toml` entirely and still catches a bad `theme` value in `wordchain.toml`. `make check` runs `ruff check src/ tools/`, `ruff format --check src/ tools/`, `mypy`, `RUST_LOG=warn taplo check` and `python tools/check_schema.py` in that order, the environment variable silencing taplo's INFO lines while errors still print. `mypy.ini` names `src/wordchain` and `tools` as its files with `mypy_path = src`, since `tools/` is not part of the package and does not reach the code the way the shell's `PYTHONPATH` does.
+
+The schema repeats every field name, default, bound and preset name that `config.py` and `palette.py` already own. A repeated fact drifts. `tools/check_schema.py` walks the two side by side and reports every disagreement rather than stopping at the first: the top-level key set, the `[geometry]` and `[palette]` key sets against the dataclass fields, every default against the dataclass default, the `exclusiveMinimum` and `minimum` split (`hue_start` and `equalise` are the two settings that mean something at zero and carry `minimum`, and the rest carry `exclusiveMinimum`), the two enums, the count of documented enum values, and the mutual-exclusion clause. It was tried against five kinds of deliberate drift and caught all five.
 
 ## Choosing the words
 

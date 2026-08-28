@@ -68,6 +68,14 @@ Keep the hook idempotent: direnv re-runs it on every load.
   tomllib and difflib at the point of use. `theme` is a bare key at the top of
   that file rather than a third table, because it names a ground rather than a
   group of distances, and `--theme` on the command line overrides it.
+- `schemas/wordchain.schema.json` mirrors `config.py` and `palette.py` by hand,
+  so every field name, default, bound, theme name and preset name is written
+  twice. `tools/check_schema.py` is what stops the two drifting and `make check`
+  runs it; a new or renamed setting reaches the schema in the same commit as the
+  code, or the check fails. `taplo.toml` points taplo at the schema, which is
+  how an editor validates the file as it is typed, and `wordchain.toml` names it
+  again on its first line with `#:schema`, since an editor may never find
+  `taplo.toml`.
 - The Makefile's `all` renders one SVG per category and takes its parallelism
   from make's own `-j`, never from a `MAKEFLAGS` line in the file. Its target
   list comes from `wordchain categories` at parse time, so every invocation pays
@@ -95,6 +103,11 @@ Keep the hook idempotent: direnv re-runs it on every load.
       config.py    Geometry, the TOML file, its validation
       cli.py       argparse entry point, the text report
 
+    wordchain.toml                 every setting at its default   
+    schemas/wordchain.schema.json  the same settings for an editor
+    taplo.toml                     points taplo at the schema
+    tools/check_schema.py          holds the schema to config.py
+
 `graph.py` holds the structural claim the whole project rests on: a word is an
 edge from its first letter to its last, so the game lives on 26 nodes and the
 word graph is the line graph of that one. Keep analysis there rather than in
@@ -118,12 +131,17 @@ rather than by adding a stop-list.
 
 ## Checks
 
-`ruff check src/`, `ruff format src/` and `mypy` must all pass before a commit.
-mypy runs in strict mode over `src/wordchain`. nltk, wordfreq, pyvis and
-networkx ship no type information and have no stubs in nixpkgs, so they are
-declared as untyped imports in `mypy.ini` and the values crossing those
-boundaries are annotated by hand — `lexicon.Synset` is the alias that names the
-opaque WordNet type rather than leaving a bare `Any` at each call site.
+`make check` must pass before a commit. It runs `ruff check`, `ruff format
+--check` and `mypy` over `src/` and `tools/`, then the two config-file checks:
+`taplo check` validates `wordchain.toml` against the schema, which is the check
+an editor runs, and `tools/check_schema.py` reads the schema back against
+`config.py` and `palette.py`. mypy runs in strict mode over `src/wordchain` and
+`tools`, with `mypy_path = src` because `tools/` is not part of the package.
+nltk, wordfreq, pyvis and networkx ship no type information and have no stubs
+in nixpkgs, so they are declared as untyped imports in `mypy.ini` and the
+values crossing those boundaries are annotated by hand — `lexicon.Synset` is
+the alias that names the opaque WordNet type rather than leaving a bare `Any`
+at each call site.
 
 Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
 `src/` on the path, and the tree is clean under it. The pyright CLI is not in
