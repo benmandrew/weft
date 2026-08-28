@@ -81,7 +81,7 @@
       "additionalProperties": false,
       "properties": {
         "preset": {
-          "description": "A named wheel. Every preset is tuned against the dark ground; on the light one the same wheel is drawn with saturation up 0.07 and value down 0.28.",
+          "description": "A named wheel, and the shorter of the two ways to set one: naming a preset is one string edit where the arc below is five. spectrum is what the theme brings on its own, so naming it changes nothing. Every preset is tuned against the dark ground; on the light one the same wheel is drawn with saturation up 0.07 and value down 0.28.",
           "type": "string",
           "enum": ["duotone", "ember", "even", "spectrum", "tide"],
           "x-taplo": {

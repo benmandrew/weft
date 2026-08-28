@@ -75,7 +75,9 @@ Keep the hook idempotent: direnv re-runs it on every load.
   code, or the check fails. `taplo.toml` points taplo at the schema, which is
   how an editor validates the file as it is typed, and `wordchain.toml` names it
   again on its first line with `#:schema`, since an editor may never find
-  `taplo.toml`.
+  `taplo.toml`. The schema also owns the per-key descriptions and
+  `wordchain.toml` carries none, so a new setting is documented there and
+  nowhere else.
 - The Makefile's `all` renders one SVG per category and takes its parallelism
   from make's own `-j`, never from a `MAKEFLAGS` line in the file. Its target
   list comes from `wordchain categories` at parse time, so every invocation pays
@@ -103,7 +105,7 @@ Keep the hook idempotent: direnv re-runs it on every load.
       config.py    Geometry, the TOML file, its validation
       cli.py       argparse entry point, the text report
 
-    wordchain.toml                 every setting at its default   
+    wordchain.toml                 the live config, at the defaults
     schemas/wordchain.schema.json  the same settings for an editor
     taplo.toml                     points taplo at the schema
     tools/check_schema.py          holds the schema to config.py

@@ -100,20 +100,13 @@ label_pt = 9.0
 pull_dense = 0.1
 ```
 
-`build` takes `--config FILE`. With no flag it loads `./wordchain.toml` when that file exists, and uses the built-in defaults otherwise. A file named with `--config` has to exist, because a `--config` that silently falls back to the defaults is a typo that costs a render to notice. The discovered one does not have to, since a checkout without one still has to draw. The repository ships a `wordchain.toml` that `build` picks up and renders exactly what it renders with no file at all.
-`theme` and `[geometry]` spell every setting out at its default, while `[palette]` names `spectrum` with the arc keys commented beside it, since a preset and those keys are mutually exclusive and only one of the two can be live.
+`build` takes `--config FILE`. With no flag it loads `./wordchain.toml` when that file exists, and uses the built-in defaults otherwise. A file named with `--config` has to exist, because a `--config` that silently falls back to the defaults is a typo that costs a render to notice. The discovered one does not have to, since a checkout without one still has to draw. The repository ships a `wordchain.toml` that `build` picks up and renders exactly what it renders with no file at all. `theme` and `[geometry]` spell every setting out at its default, while `[palette]` names `spectrum` with the arc keys commented beside it, since a preset and those keys are mutually exclusive and only one of the two can be live. The file lists the settings and the schema explains them, so it runs to 28 lines and carries no per-key comment.
 
-That was not true of the shipped file until this change.
-It carried `label_pt = 9.8` against a default of 6.8, and 9.8 changes the render.
-It now reads 6.8, and `build animal` writes byte-identical SVG with the file in place and with it moved away, once matplotlib's random per-run element ids are normalised.
+That was not true of the shipped file until this change. It carried `label_pt = 9.8` against a default of 6.8, and 9.8 changes the render. It now reads 6.8, and `build animal` writes byte-identical SVG with the file in place and with it moved away, once matplotlib's random per-run element ids are normalised.
 
 Validation refuses rather than ignores. An unknown table, an unknown key, a value that is not a number, a bool, and anything not strictly positive and finite each stop the build. A key the tool ignores is worse than one it refuses: the figure comes back unchanged and the file looks like it should have changed it. An unrecognised key is answered with the closest setting name from `difflib`, or with the full list of eight when nothing is close, and every message carries the file path, since a build otherwise names no file.
 
-`theme` is a bare key at the top of the file rather than a third table, because it names a ground rather than a group of distances.
-It takes `dark` or `light`.
-`build --theme` overrides whatever the file says, and a run with neither the flag nor the key draws dark.
-Validation is the same shape as the tables'.
-A misspelling is answered with the closest name from `difflib`, as in `there is no theme called drak; did you mean dark?`, an unknown name is answered with both names, and a value that is not a string is refused.
+`theme` is a bare key at the top of the file rather than a third table, because it names a ground rather than a group of distances. It takes `dark` or `light`. `build --theme` overrides whatever the file says, and a run with neither the flag nor the key draws dark. Validation is the same shape as the tables'. A misspelling is answered with the closest name from `difflib`, as in `there is no theme called drak; did you mean dark?`, an unknown name is answered with both names, and a value that is not a string is refused.
 
 `tomllib` and `difflib` are imported at the point of use rather than at module load, for the same reason nltk and matplotlib are. tomllib costs 5 ms to import and only `build` ever reads a config, so `stats` still runs in 0.18 s and imports none of the three. Rendering with no config file present writes bytes identical to the output before any of this existed, once matplotlib's random per-run element ids are normalised.
 
@@ -142,10 +135,7 @@ Luma spread is the ratio of the brightest letter to the dimmest, by Recommendati
 preset = "duotone"
 ```
 
-The shipped file carries `preset = "spectrum"` as its live line, with the five arc keys commented out at their defaults underneath, so changing the whole wheel is one string edit.
-Going the other way means commenting the preset out and uncommenting the five.
-The file cannot carry both live, and naming a preset is the more common edit of the two.
-`spectrum` is what the theme brings on its own, so the table as it stands changes nothing, verified by `build animal` writing SVG byte-identical to the no-file render once matplotlib's per-run element ids are normalised.
+The shipped file carries `preset = "spectrum"` as its live line, with the five arc keys commented out at their defaults underneath, so changing the whole wheel is one string edit. Going the other way means commenting the preset out and uncommenting the five. The file cannot carry both live, and naming a preset is the more common edit of the two. `spectrum` is what the theme brings on its own, so the table as it stands changes nothing, verified by `build animal` writing SVG byte-identical to the no-file render once matplotlib's per-run element ids are normalised.
 
 Presets are tuned against the dark ground, which is what `build` draws on by default. On `--theme light` the same wheel is drawn with saturation up 0.07 and value down 0.28, the offsets that already separate the two built-in themes, so the light `spectrum` wheel is byte-identical to what it was before any of this.
 
@@ -160,6 +150,8 @@ Rendering with no `[palette]` table writes the same colours as before the featur
 `taplo.toml` points taplo at that schema for `**/wordchain.toml`, with `path = "schemas/wordchain.schema.json"`. Taplo is what the Even Better TOML editor extension runs, so the file is validated as it is typed and the setting and preset names complete. The `taplo check` command-line interface (CLI) reads the same rule, and `pkgs.taplo` is in the flake's devShell so the shell has it.
 
 The file names the schema a second time, on its first line, as `#:schema ./schemas/wordchain.schema.json`. An editor has to discover `taplo.toml` before the rule applies, and opening a parent directory as the workspace is enough to lose it, while a directive read from the document itself needs no discovery. Both associations hold on their own: `taplo check --no-auto-config` ignores `taplo.toml` entirely and still catches a bad `theme` value in `wordchain.toml`. `make check` runs `ruff check src/ tools/`, `ruff format --check src/ tools/`, `mypy`, `RUST_LOG=warn taplo check` and `python tools/check_schema.py` in that order, the environment variable silencing taplo's INFO lines while errors still print. `mypy.ini` names `src/wordchain` and `tools` as its files with `mypy_path = src`, since `tools/` is not part of the package and does not reach the code the way the shell's `PYTHONPATH` does.
+
+The schema is also the single home for the per-key prose, and `wordchain.toml` carries none of it. The two had been written twice over, nine of the fifteen keys near-verbatim: `pull` ran to 231 characters in both files and `label_pt` to 213. `[palette]` had already diverged within one sitting, with `preset` at 758 characters in the file against 147 in the schema and `hue_start` at 431 against 144. Moving the prose across took the file from 92 lines to 28, and the detail the palette comments carried was lifted into the schema's `preset` description rather than dropped.
 
 The schema repeats every field name, default, bound and preset name that `config.py` and `palette.py` already own. A repeated fact drifts. `tools/check_schema.py` walks the two side by side and reports every disagreement rather than stopping at the first: the top-level key set, the `[geometry]` and `[palette]` key sets against the dataclass fields, every default against the dataclass default, the `exclusiveMinimum` and `minimum` split (`hue_start` and `equalise` are the two settings that mean something at zero and carry `minimum`, and the rest carry `exclusiveMinimum`), the two enums, the count of documented enum values, and the mutual-exclusion clause. It was tried against five kinds of deliberate drift and caught all five.
 
