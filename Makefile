@@ -30,7 +30,7 @@ all: $(SVGS)
 
 # build creates the directory itself, so there is no order-only rule for it.
 $(OUT)/%.svg: $(SOURCES)
-	@$(BUILD) $* --out $(OUT)
+	$(BUILD) $* --out $(OUT)
 
 # Everything that has to pass before a commit. The last two are about the
 # config file: taplo validates wordchain.toml against wordchain.schema.json,
