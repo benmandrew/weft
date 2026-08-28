@@ -16,7 +16,7 @@ import math
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from .palette import PRESETS, Arc, Wheel
+from .palette import PRESETS, THEMES, Arc, Wheel
 
 
 class ConfigError(Exception):
@@ -67,10 +67,12 @@ DEFAULT = Geometry()
 
 @dataclass(frozen=True)
 class Config:
-    """What a file says. A wheel of None leaves the theme's own alone."""
+    """What a file says. A wheel of None leaves the theme's own alone, and a
+    theme of None leaves the command line's own."""
 
     geometry: Geometry = DEFAULT
     wheel: Wheel | None = None
+    theme: str | None = None
 
 
 # The file a `build` picks up on its own, from the directory it runs in.
@@ -78,7 +80,11 @@ FILENAME = "wordchain.toml"
 
 _GEOMETRY = "geometry"
 _PALETTE = "palette"
+_THEME = "theme"
 _TABLES = (_GEOMETRY, _PALETTE)
+# `theme` names a ground rather than a group of distances, so it is a bare key
+# beside the two tables rather than a lone member of a third.
+_TOP = (_THEME, *_TABLES)
 
 # `hue_start` of 0 is the top of the circle and `equalise` of 0 is no
 # correction, so unlike every other setting these two mean something at zero.
@@ -89,14 +95,14 @@ def _names(kind: type) -> list[str]:
     return [f.name for f in fields(kind)]
 
 
-def _suggest(key: str, names: list[str]) -> str:
-    """Name the closest field, or all of them. A refusal should say what would work."""
+def _suggest(key: str, names: list[str], noun: str = "settings") -> str:
+    """Name the closest of them, or all of them. A refusal should say what would work."""
     from difflib import get_close_matches
 
     near = get_close_matches(key, names, n=1, cutoff=0.6)
     if near:
         return f"; did you mean {near[0]}?"
-    return "; the settings are " + ", ".join(names)
+    return f"; the {noun} are " + ", ".join(names)
 
 
 def _float(table: str, key: str, value: object) -> float:
@@ -130,6 +136,17 @@ def _fraction(key: str, value: object) -> float:
     return number
 
 
+def _theme(value: object) -> str:
+    """The ground a figure draws on, which the two built-in themes name."""
+    if not isinstance(value, str):
+        kind = type(value).__name__
+        raise ConfigError(f"{_THEME} must be a name in quotes, not a {kind}")
+    if value not in THEMES:
+        near = _suggest(value, sorted(THEMES), "themes")
+        raise ConfigError(f"there is no theme called {value}{near}")
+    return value
+
+
 def _geometry(table: dict[str, object]) -> Geometry:
     valid = _names(Geometry)
     values: dict[str, float] = {}
@@ -161,7 +178,7 @@ def _wheel(table: dict[str, object]) -> Wheel:
             kind = type(name).__name__
             raise ConfigError(f"[{_PALETTE}] preset must be a name in quotes, not a {kind}")
         if name not in PRESETS:
-            near = _suggest(name, list(PRESETS))
+            near = _suggest(name, list(PRESETS), "presets")
             raise ConfigError(f"[{_PALETTE}] has no preset called {name}{near}")
         return PRESETS[name]
 
@@ -180,10 +197,10 @@ def from_mapping(data: dict[str, object]) -> Config:
     A key the tool ignores is worse than one it refuses: the figure comes back
     unchanged and the file looks like it should have changed it.
     """
-    unknown = sorted(set(data) - set(_TABLES))
+    unknown = sorted(set(data) - set(_TOP))
     if unknown:
-        tables = " and ".join(f"[{name}]" for name in _TABLES)
-        raise ConfigError(f"unknown table: {unknown[0]}; the tables are {tables}")
+        held = f"{_THEME}, " + " and ".join(f"[{name}]" for name in _TABLES)
+        raise ConfigError(f"unknown setting: {unknown[0]}; the file holds {held}")
 
     for name in _TABLES:
         if name in data and not isinstance(data[name], dict):
@@ -191,7 +208,8 @@ def from_mapping(data: dict[str, object]) -> Config:
 
     geometry = _geometry(data.get(_GEOMETRY, {}))  # type: ignore[arg-type]
     palette = data.get(_PALETTE)
-    return Config(geometry, _wheel(palette) if isinstance(palette, dict) else None)
+    theme = _theme(data[_THEME]) if _THEME in data else None
+    return Config(geometry, _wheel(palette) if isinstance(palette, dict) else None, theme)
 
 
 def load(path: Path) -> Config:

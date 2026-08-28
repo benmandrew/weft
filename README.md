@@ -33,7 +33,7 @@ python -m wordchain build animal     # render the word graph
 
 `categories` takes `--headers` for a header row, and the same filter arguments as the other commands, so its counts match what they would build. Counting means resolving all 37, which is 3.2 s against a cold cache and 0.23 s once they are in it.
 
-`build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark` (default `dark`), `--limit N` (words in the disc, default 110) and `--config FILE`. Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
+`build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark`, which overrides the file's `theme` and stands at dark with neither, `--limit N` (words in the disc, default 110) and `--config FILE`. Every command takes `--no-cache`. All three selection commands take `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters.
 
 `make -j all` renders every category, and `make -j` on its own does the same since `all` is the default goal. Each file depends on the modules under `src/wordchain/` and on `wordchain.toml`, so a run against an untouched tree redraws nothing and a run after editing one module redraws all 37. That sweep takes 18.0 s serially and 5.1 s across eight cores. `make clean` removes the output directory, and `OUT=` moves it. `CONFIG=` names a config file, which both passes `--config` and makes that file a prerequisite, so editing it redraws. It defaults to the `wordchain.toml` in the directory, which is the file `build` would have discovered anyway.
 
@@ -92,7 +92,7 @@ Eight numbers decide where the disc puts things, and the good value for each dep
 | `glyph_width` | 0.58 | mean glyph width, used to reserve label room |
 | `disc_limit` | 1.34 | axis half-width for the chord diagram, and the inches-to-data-units conversion the word disc's canvas is solved in |
 
-The file holds two tables of flat keys, `[geometry]` and `[palette]`, in Tom's Obvious Minimal Language (TOML). Every key is optional, and anything absent keeps its default.
+The file is Tom's Obvious Minimal Language (TOML), and holds two tables of flat keys, `[geometry]` and `[palette]`, under one bare key, `theme`. Every key is optional, and anything absent keeps its default.
 
 ```toml
 [geometry]
@@ -101,13 +101,19 @@ pull_dense = 0.1
 ```
 
 `build` takes `--config FILE`. With no flag it loads `./wordchain.toml` when that file exists, and uses the built-in defaults otherwise. A file named with `--config` has to exist, because a `--config` that silently falls back to the defaults is a typo that costs a render to notice. The discovered one does not have to, since a checkout without one still has to draw. The repository ships a `wordchain.toml` that `build` picks up and renders exactly what it renders with no file at all.
-`[geometry]` spells every setting out at its default, while `[palette]` names `spectrum` with the arc keys commented beside it, since a preset and those keys are mutually exclusive and only one of the two can be live.
+`theme` and `[geometry]` spell every setting out at its default, while `[palette]` names `spectrum` with the arc keys commented beside it, since a preset and those keys are mutually exclusive and only one of the two can be live.
 
 That was not true of the shipped file until this change.
 It carried `label_pt = 9.8` against a default of 6.8, and 9.8 changes the render.
 It now reads 6.8, and `build animal` writes byte-identical SVG with the file in place and with it moved away, once matplotlib's random per-run element ids are normalised.
 
 Validation refuses rather than ignores. An unknown table, an unknown key, a value that is not a number, a bool, and anything not strictly positive and finite each stop the build. A key the tool ignores is worse than one it refuses: the figure comes back unchanged and the file looks like it should have changed it. An unrecognised key is answered with the closest setting name from `difflib`, or with the full list of eight when nothing is close, and every message carries the file path, since a build otherwise names no file.
+
+`theme` is a bare key at the top of the file rather than a third table, because it names a ground rather than a group of distances.
+It takes `dark` or `light`.
+`build --theme` overrides whatever the file says, and a run with neither the flag nor the key draws dark.
+Validation is the same shape as the tables'.
+A misspelling is answered with the closest name from `difflib`, as in `there is no theme called drak; did you mean dark?`, an unknown name is answered with both names, and a value that is not a string is refused.
 
 `tomllib` and `difflib` are imported at the point of use rather than at module load, for the same reason nltk and matplotlib are. tomllib costs 5 ms to import and only `build` ever reads a config, so `stats` still runs in 0.18 s and imports none of the three. Rendering with no config file present writes bytes identical to the output before any of this existed, once matplotlib's random per-run element ids are normalised.
 

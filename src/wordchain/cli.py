@@ -9,7 +9,7 @@ from pathlib import Path
 from .config import FILENAME, ConfigError, resolve
 from .graph import LETTERS, letter_stats, summary
 from .lexicon import CATEGORIES, UnknownCategory, Word, catalogue, members
-from .palette import THEMES, with_wheel
+from .palette import DARK, THEMES, with_wheel
 
 
 def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> None:
@@ -177,7 +177,8 @@ def _cmd_build(args: argparse.Namespace) -> None:
 
     # A [palette] table replaces the wheel the theme brought; without one the
     # theme's own stands, so a file that only sets geometry changes no colour.
-    theme = THEMES[args.theme]
+    # The flag wins over the file, and the dark ground stands with neither.
+    theme = THEMES[args.theme or config.theme or DARK.name]
     if config.wheel is not None:
         theme = with_wheel(theme, config.wheel)
 
@@ -242,8 +243,8 @@ def main(argv: list[str] | None = None) -> None:
     build.add_argument(
         "--theme",
         choices=sorted(THEMES),
-        default="dark",
-        help="palette for the figure (default dark)",
+        help="ground for the figure; overrides the config file's theme, which "
+        "is dark unless a file says otherwise",
     )
     build.add_argument(
         "--limit", type=int, default=110, metavar="N", help="words in the disc (default 110)"

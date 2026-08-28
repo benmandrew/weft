@@ -3,6 +3,11 @@
 # optional and anything left out keeps the default, which is why a file written
 # from scratch is usually two or three lines rather than this one.
 
+# The ground the figure draws on, either dark or light. The two are complete
+# palettes rather than one inverted, and build --theme overrides this.
+theme = "dark"
+
+
 [geometry]
 
 # How far a chord's control points sit toward the centre, as a fraction of the

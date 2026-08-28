@@ -65,7 +65,9 @@ Keep the hook idempotent: direnv re-runs it on every load.
   from `./wordchain.toml` or from the file `--config` names, and a named file
   must exist. Unknown keys and values that are not positive numbers are refused
   rather than ignored, since an ignored key redraws the same figure. Import
-  tomllib and difflib at the point of use.
+  tomllib and difflib at the point of use. `theme` is a bare key at the top of
+  that file rather than a third table, because it names a ground rather than a
+  group of distances, and `--theme` on the command line overrides it.
 - The Makefile's `all` renders one SVG per category and takes its parallelism
   from make's own `-j`, never from a `MAKEFLAGS` line in the file. Its target
   list comes from `wordchain categories` at parse time, so every invocation pays
