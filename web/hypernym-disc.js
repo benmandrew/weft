@@ -11,10 +11,9 @@
  *
  * The disc lays out and paints without a single name, so `src` carries the
  * structure alone and `names-src` is fetched after the first paint. Until it
- * lands, a node answers to `#index`. `glosses-src` trails the names, being the
- * largest of the three and read by one line of text: the definition of the node
- * the crumb path ends at. It is blank for a node with no children, which cannot
- * be a root and so never reaches it.
+ * lands, a node answers to `#index`. `glosses-src` trails the names, being much
+ * the largest of the three and read by one line of text: the definition of
+ * whatever the hub names, the node under the pointer or the current root.
  *
  * The paint runs off this thread. disc-paint.js is the pipeline, disc-worker.js
  * hosts it against an OffscreenCanvas, and the element calls the same class
@@ -525,8 +524,18 @@ class HypernymDisc extends HTMLElement {
     this.#emit("disc-render", { ...this.stats, name: this.#label(this.#root) });
   }
 
+  /* What the pointer is on, or what the search left the cursor on, and -1 when
+     neither is in the view and the root speaks for itself. The hub's name and
+     the gloss both come off this, so the two cannot describe different nodes. */
+  #focus() {
+    const sel = this.#hover >= 0 ? this.#hover
+      : this.#cursor !== this.#root ? this.#cursor : -1;
+    return sel >= 0 && this.#under(sel) ? sel : -1;
+  }
+
   #overlay() {
     if (!this.#ready) return;
+    this.#showGloss();
     const g = this.#over.getContext("2d");
     g.setTransform(this.#dpr, 0, 0, this.#dpr, 0, 0);
     g.clearRect(0, 0, this.#over.width, this.#over.height);
@@ -563,9 +572,8 @@ class HypernymDisc extends HTMLElement {
      wanted for the name. The name is fitted to a radius short of the hint so
      the two cannot collide however long the name runs. */
   #hub(g) {
-    const sel = this.#hover >= 0 ? this.#hover
-      : this.#cursor !== this.#root ? this.#cursor : -1;
-    const named = sel >= 0 && this.#under(sel);
+    const sel = this.#focus();
+    const named = sel >= 0;
     const way = !named && this.#root !== 0;
     const { lines, lh } = fit(g, this.#label(named ? sel : this.#root),
                               this.#r0 - 5 - (way ? HINT_H : 0),
@@ -747,19 +755,23 @@ class HypernymDisc extends HTMLElement {
   #emit(name, detail) {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
-  /* The definition of what the crumb path ends at, which is the current root.
-     WordNet writes its glosses lowercase, so the first letter is raised here.
-     Two kinds are left alone: the 569 that open on a parenthetical label like
-     "(mathematics)", where the first character is not a letter and the label is
-     conventionally lowercase, and a first letter whose neighbour is a capital,
-     which is the one gloss reading "pH values below 7". */
+  /* The definition of whatever the hub names: the node under the pointer, or
+     what the search left the cursor on, and the current root when the pointer
+     is off the disc, which is what the crumb path ends at.
+
+     WordNet writes its glosses lowercase, so the first letter is raised, on
+     75,110 of the 82,115. Two kinds are left as they are: the 2,959 that open
+     on a parenthetical label such as "(mathematics)", where the first character
+     is not a letter and the label is conventionally lowercase, and the 4 whose
+     second letter is a capital, which is what stops "cDNA copy of the RNA
+     genome" becoming "CDNA". The other 4,042 already start on a proper noun. */
   #showGloss() {
-    const g = this.#glosses[this.#root] ?? "";
+    const sel = this.#focus();
+    const g = this.#glosses[sel >= 0 ? sel : this.#root] ?? "";
     this.#glossEl.textContent =
       /^[a-z](?![A-Z])/.test(g) ? g[0].toUpperCase() + g.slice(1) : g;
   }
   #crumbs() {
-    this.#showGloss();
     const path = [];
     for (let c = this.#root; c >= 0; c = this.#par[c]) path.unshift(c);
     this.#crumb.innerHTML = path.map((i, k) =>

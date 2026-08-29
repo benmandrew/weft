@@ -132,21 +132,23 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   the part of the hub with edge cases, and only a context's `font` and
   `measureText` are touched, so `check_web.mjs` measures it with a monospace
   stub where a width is a character count.
-- Above the crumb path sits the definition of what that path ends at, the
-  current root. It is a third export, `wordnet-glosses.txt`, index-aligned like
-  the names and fetched after them, since it is the largest of the three and
-  read by one line of text. It carries only the 16,922 synsets with a
-  definition and a child, blank for the other 65,193: the crumb names the root,
-  and only a synset with children can be one. That is 299 KB over the wire, the
-  same as the names, against 1,428 KB for every gloss in WordNet — take the
-  larger file only if the definition has to follow the pointer as well. The
-  block is a fixed two lines, so zooming to a longer definition never resizes
-  the disc, and it reserves nothing until the file lands. It reads in the ink
-  colour a step above the crumb below it, and its first letter is raised, since
-  WordNet writes its glosses lowercase — except where the gloss opens on a
-  parenthetical label such as `(mathematics)`, which 569 do and which is
-  conventionally lowercase, and except where the second letter is a capital,
-  which is the single gloss reading "pH values below 7".
+- Above the crumb path sits the definition of whatever the hub names: the node
+  under the pointer, and the current root when the pointer is off the disc. One
+  method answers for both, so the name in the middle and the definition below
+  it can never be of different nodes. It is a third export,
+  `wordnet-glosses.txt`, index-aligned with the names and fetched after them,
+  since it is much the largest of the three and read by one line of text. It
+  carries every synset rather than only the 16,922 that can be a root, because
+  the definition follows the pointer and two thirds of what the pointer lands
+  on are leaves: 1,428 KB over the wire against 298 KB for the roots alone.
+  Nothing on the disc waits for it. The block is a fixed two lines, so moving
+  to a longer definition never resizes the disc, and it reserves nothing until
+  the file lands. It reads in the ink colour a step above the crumb below it,
+  and its first letter is raised on 75,110 of the 82,115 — never where the
+  gloss opens on a parenthetical label such as `(mathematics)`, which 2,959 do
+  and which is conventionally lowercase, and never where the second letter is a
+  capital, which is what stops the 4 like "cDNA copy of the RNA genome" from
+  becoming "CDNA".
 - Below that the element prints the crumb path and nothing else. The line
   of counts that sat under it is gone: the hub already names whatever the
   pointer or the search is on, and `disc-hover` still carries the depth and the

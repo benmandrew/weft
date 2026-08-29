@@ -11,11 +11,10 @@ one per line, and `wordnet-glosses.txt` the definitions. Structure is 129 KB
 over the wire against 306 KB of names, so splitting them lets the element paint
 from the smaller file and fetch the rest afterwards.
 
-The glosses file carries only the 16,936 synsets that have children, blank for
-the other 65,179, and holds a line per node either way so the three files stay
-index-aligned. It is what sits above the crumb path, which names the current
-root, and only a synset with children can be one. Every gloss would be 1,428 KB
-over the wire; these are 299 KB, the same as the names.
+The glosses file holds a line per node, index-aligned with the other two. It
+carries every synset rather than only the ones that can be a root, because the
+definition follows the pointer as well as the crumb path, and two thirds of the
+nodes the pointer lands on are leaves.
 
 Nodes come out ordered by rank, then by descending subtree size, which
 guarantees a parent's index is below every one of its children's: that ordering
@@ -115,17 +114,11 @@ def build() -> tuple[list[str], list[int], list[str]]:
 
     laid_out = sorted(parents, key=lambda name: (rank[name], -size[name], name))
     index = {name: i for i, name in enumerate(laid_out)}
-    par = [index[parents[name][0]] if parents[name] else -1 for name in laid_out]
-    has_kids = [False] * len(par)
-    for parent in par:
-        if parent >= 0:
-            has_kids[parent] = True
-
     gloss = {synset.name(): _gloss(synset) for synset in synsets}
     return (
         [_label(name) for name in laid_out],
-        par,
-        [gloss[name] if has_kids[i] else "" for i, name in enumerate(laid_out)],
+        [index[parents[name][0]] if parents[name] else -1 for name in laid_out],
+        [gloss[name] for name in laid_out],
     )
 
 
