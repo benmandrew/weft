@@ -97,25 +97,33 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   rescales angles rather than laying out again, so neither needs a spatial
   index. `make serve` watches `web/` and reloads the browser on save. Nothing in
   `all` depends on any of it.
-- The draw path has been measured, and two of its choices are not obvious.
-  Colours are interned into a palette once per theme and root rather than built
-  per node per frame, since the string is what canvas has to parse and 82,115
-  nodes share 145 of them; that alone was a fifth of the frame. Adjacent wedges
-  of one colour thinner than a pixel are then merged into single arcs, which
-  takes 82,115 arcs to about 6,600 and the frame to a tenth. Gaps between
-  subtrees break every run, so the fringe still reads as many nodes.
-- Merging gains accuracy rather than spending it, which is the opposite of what
-  it looks like. A merged run's members are 0.0225 px wide at the median, and
-  the rasteriser cannot draw that: against the per-node path, merging paints
-  21,450 pixels that were dropped altogether, loses 5, and lifts mean alpha from
-  196 to 227 of 255 on the pixels both reach, with 47% of those partly
-  transparent per-node. So the 8.3% of pixels that differ are mostly subtree the
-  old path never drew. Do not try to reproduce that washing-out by tinting
-  merged arcs: no flat alpha fits, since some pixels want zero and some want
-  full, and a sweep bottoms out at 0.50 for an 8% RMS gain. `merge="off"` is
-  there for comparison, not as the faithful setting. Both passes are cached on
-  root, tint, radius, theme and the attribute, so a repeated repaint pays for
-  neither.
+- The draw path has been measured, and its choices are not obvious. Colours are
+  interned into a palette once per theme and root rather than built per node per
+  frame, since the string is what canvas has to parse; that alone was a fifth of
+  the frame. `merge` then decides how sub-pixel wedges are drawn: `density` (the
+  default) merges adjacent same-coloured runs thinner than a pixel and cuts each
+  run back up at pixel boundaries, `on` merges each run flat, `off` draws every
+  node. Density takes 82,115 arcs to about 8,500 and the frame to a fifteenth;
+  `on` reaches 6,800 and is only there for comparison. Gaps between subtrees
+  break every run, so the fringe still reads as many nodes. All of it is cached
+  on root, tint, radius, theme and the mode, so a repeated repaint pays nothing.
+- Merging gains accuracy rather than spending it, because the rasteriser has a
+  cliff. Coverage for abutting wedges falls smoothly from 0.903 at 2 px to 0.580
+  at 0.25 px and then to exactly zero before 0.1 px, where every pixel comes out
+  blank. A merged run's members are 0.0225 px wide at the median, far past that
+  edge, so against `merge=off` merging paints 21,450 pixels that were dropped
+  altogether and loses 5. Do not try to imitate the old washing-out by tinting:
+  no flat alpha fits a hard zero and a partial value at once, and a sweep bottoms
+  out at 0.50 for an 8% RMS gain.
+- The density ramp encodes density, not coverage. Wedges tile a run exactly, so
+  true coverage inside one is 100% everywhere and there is no brightness
+  variation to recover. What varies is how many wedges fall in a pixel, from 1
+  to 64, and value ramps over the log of that across RAMP_STEPS rungs down to
+  RAMP_FLOOR. Log because a linear ramp spends its range on the sparse end, and
+  quantised because that keeps the ramped colours interned rather than built per
+  piece, which is the difference between 4 ms and 8.5 ms. A piece counting zero
+  is a whole wedge rather than an empty one and takes the top rung, otherwise
+  every wide inner arc dims to the floor.
 - Do not batch the draw into one path per colour. It looks like the obvious win,
   145 fills against 82,115, and it is eight times slower: each colour's path
   holds hundreds of subpaths scattered across the whole disc, so the rasteriser

@@ -14,8 +14,9 @@
  * lands, a node answers to `#index`.
  *
  * Attributes: src, names-src, readout="off", hue-depth (default 2), start,
- *             merge="off" to draw every wedge separately rather than joining
- *             sub-pixel runs of one colour.
+ *             merge: "density" (default) splits merged runs at pixel
+ *             boundaries and shades each by how many wedges it holds, "on"
+ *             merges each run flat, "off" draws every wedge separately.
  * Properties: data, index, names. Methods: zoomTo(i), up(), reset(), repaint(), path(i).
  * Events: disc-hover {index,name,depth,leaves}, disc-zoom {index,name,path},
  *         disc-render {nodes,drawn,buildMs,drawMs,hitUs,name} after every repaint,
@@ -75,6 +76,11 @@ const hsv = (h, s, v) => {
 const TAU = Math.PI * 2;
 // Below one pixel at its outer edge a wedge cannot be told from its neighbour.
 const MERGE_PX = 1;
+// Value steps the density ramp is quantised to, and how far it dips at its
+// sparse end. 24 steps sits below the eye's threshold on this ramp and keeps
+// the interned palette a lookup rather than a string build per piece.
+const RAMP_STEPS = 24;
+const RAMP_FLOOR = .62;
 
 class HypernymDisc extends HTMLElement {
   static observedAttributes = ["src", "names-src", "start", "hue-depth", "merge"];
@@ -88,7 +94,8 @@ class HypernymDisc extends HTMLElement {
   // Which URLs have been fetched, so the upgrade and the connect that follow
   // it do not each start the same request.
   #loadedSrc = null; #loadedNames = null;
-  #palette = []; #fillId = null; #seg = null; #prepKey = ""; #prepMs = 0; #tintKey = 0;
+  #palette = []; #paletteKey = new Map(); #fillId = null; #seg = null;
+  #prepKey = ""; #prepMs = 0; #tintKey = 0; #sat = .55; #val = .88;
   #cx = 0; #cy = 0; #r0 = 0; #rw = 1; #rmax = 1; #dpr = 1; #ready = false;
 
   constructor() {
@@ -186,6 +193,7 @@ class HypernymDisc extends HTMLElement {
     return { nodes: this.#par.length, drawn: this.#drawn,
              buildMs: this.#buildMs, drawMs: this.#drawMs, hitUs: this.#hitUs,
              prepMs: this.#prepMs, segments: this.#seg ? this.#seg.f.length : 0,
+             mode: this.#mode(), colours: this.#palette.length,
              structureMs: this.#structureMs, namesMs: this.#namesMs,
              named: this.#names.length > 0 };
   }
@@ -261,39 +269,61 @@ class HypernymDisc extends HTMLElement {
     this.#tintKey++;
   }
 
-  /* A colour is a string, and a string is what the canvas has to parse, so
-     they are interned once per theme and root instead of rebuilt per node per
-     frame. At the default hue-depth 82,115 nodes share 145 of them. */
-  #repalette() {
-    const N = this.#par.length;
-    const S = parseFloat(this.#tok("--_sat", ".55"));
-    const V = parseFloat(this.#tok("--_val", ".88"));
-    const base = this.#depth[this.#root];
-    const seen = new Map();
-    this.#palette = [];
-    this.#fillId = new Int32Array(N);
-    for (let i = 0; i < N; i++) {
-      const value = Math.max(.22, V * (1 - (this.#depth[i] - base) * .035));
-      const str = hsv(this.#tint[i], S, value);
-      let id = seen.get(str);
-      if (id === undefined) { id = this.#palette.length; seen.set(str, id); this.#palette.push(str); }
-      this.#fillId[i] = id;
-    }
+  /* density (the default) splits a merged run at pixel boundaries and shades
+     each piece by how many wedges fell in it; on merges each run flat; off
+     draws every node. */
+  #mode() {
+    const m = this.getAttribute("merge");
+    return m === "off" || m === "on" ? m : "density";
   }
 
-  /* Adjacent wedges that share a colour and are each thinner than a pixel are
-     one shape to the rasteriser, so they are drawn as one: 82,115 arcs become
-     about 6,600. A gap between subtrees breaks every run, which is what keeps
-     the fringe reading as many nodes rather than a solid band. Runs are found
-     off `#byDepth`, already sorted by start angle for hit testing. */
+  /* A colour is a string, and a string is what the canvas has to parse, so
+     they are interned rather than rebuilt per piece per frame. `step` is the
+     density rung, RAMP_STEPS meaning fully covered. */
+  #colourId(tint, rel, step) {
+    const key = tint + "|" + rel + "|" + step;
+    let id = this.#paletteKey.get(key);
+    if (id === undefined) {
+      const base = Math.max(.22, this.#val * (1 - rel * .035));
+      const v = base * (RAMP_FLOOR + (1 - RAMP_FLOOR) * step / RAMP_STEPS);
+      id = this.#palette.length;
+      this.#palette.push(hsv(tint, this.#sat, Math.min(1, v)));
+      this.#paletteKey.set(key, id);
+    }
+    return id;
+  }
+
+  #repalette() {
+    const N = this.#par.length;
+    this.#sat = parseFloat(this.#tok("--_sat", ".55"));
+    this.#val = parseFloat(this.#tok("--_val", ".88"));
+    this.#palette = [];
+    this.#paletteKey = new Map();
+    this.#fillId = new Int32Array(N);
+    const base = this.#depth[this.#root];
+    for (let i = 0; i < N; i++)
+      this.#fillId[i] = this.#colourId(this.#tint[i], this.#depth[i] - base, RAMP_STEPS);
+  }
+
+  /* Adjacent wedges of one colour thinner than a pixel are one shape to the
+     rasteriser, which below about 0.1 px draws them as nothing at all, so they
+     are drawn as one. A gap between subtrees breaks every run, which is what
+     keeps the fringe reading as many nodes. In density mode a run is then cut
+     at pixel boundaries and each piece keeps its own count, so a flat block
+     becomes a ramp showing where the tree is packed. Runs are found off
+     `#byDepth`, already sorted by start angle for hit testing. */
   #remerge() {
-    if (this.getAttribute("merge") === "off") { this.#seg = null; return; }
+    const mode = this.#mode();
+    if (mode === "off") { this.#seg = null; return; }
+    const dense = mode === "density";
     const base = this.#depth[this.#root];
     const sc = TAU / (this.#a1[this.#root] - this.#a0[this.#root]);
-    const s0 = [], s1 = [], sd = [], sf = [], sw = [];
+    const s0 = [], s1 = [], sd = [], st = [], sn = [], sw = [];
+    let peak = 1;
     for (let d = base; d <= this.#maxDepth; d++) {
       const arr = this.#byDepth[d];
-      const r1 = this.#r0 + (d - base + 1) * this.#rw;
+      const rel = d - base;
+      const r1 = this.#r0 + (rel + 1) * this.#rw;
       const thin = k => (this.#a1[k] - this.#a0[k]) * sc * r1 < MERGE_PX;
       let i = 0;
       while (i < arr.length) {
@@ -302,15 +332,38 @@ class HypernymDisc extends HTMLElement {
         while (thin(arr[j]) && j + 1 < arr.length && this.#inView(arr[j + 1]) && thin(arr[j + 1])
                && this.#fillId[arr[j + 1]] === this.#fillId[arr[i]]
                && Math.abs(this.#a0[arr[j + 1]] - this.#a1[arr[j]]) < 1e-9) j++;
-        s0.push(this.#a0[arr[i]]); s1.push(this.#a1[arr[j]]);
-        sd.push(d - base); sf.push(this.#fillId[arr[i]]);
-        // Only a wedge that stayed whole is wide enough to earn its hairline.
-        sw.push(j === i && (this.#a1[arr[i]] - this.#a0[arr[i]]) * sc > .012 ? 1 : 0);
+        const from = this.#a0[arr[i]], to = this.#a1[arr[j]];
+        if (j === i || !dense) {
+          // A wedge that stayed whole is fully covered, and only it is wide
+          // enough to earn a hairline.
+          s0.push(from); s1.push(to); sd.push(rel); st.push(this.#tint[arr[i]]);
+          sn.push(0); sw.push(j === i && (to - from) * sc > .012 ? 1 : 0);
+        } else {
+          const pieces = Math.max(1, Math.round((to - from) * sc * r1));
+          const width = (to - from) / pieces;
+          let m = i;
+          for (let q = 0; q < pieces; q++) {
+            const a = from + q * width, b = a + width;
+            let count = 0;
+            while (m <= j && (this.#a0[arr[m]] + this.#a1[arr[m]]) / 2 < b) { count++; m++; }
+            if (count > peak) peak = count;
+            s0.push(a); s1.push(b); sd.push(rel); st.push(this.#tint[arr[i]]);
+            sn.push(count || 1); sw.push(0);
+          }
+        }
         i = j + 1;
       }
     }
+    // Log, because counts run 1 to 64 and a linear ramp would spend most of
+    // its range on the sparse end. A count of 0 means a whole wedge, not an
+    // empty one, so it takes the top rung.
+    const lg = Math.log(peak);
+    const f = new Int32Array(s0.length);
+    for (let i = 0; i < f.length; i++)
+      f[i] = this.#colourId(st[i], sd[i],
+        sn[i] && lg > 0 ? Math.round(RAMP_STEPS * Math.log(sn[i]) / lg) : RAMP_STEPS);
     this.#seg = { s0: Float64Array.from(s0), s1: Float64Array.from(s1),
-                  d: Int16Array.from(sd), f: Int32Array.from(sf), w: Uint8Array.from(sw) };
+                  d: Int16Array.from(sd), f, w: Uint8Array.from(sw) };
   }
 
   /* Palette and runs survive anything that leaves angles, depths, colours and
@@ -318,7 +371,7 @@ class HypernymDisc extends HTMLElement {
   #prepare() {
     const key = [this.#root, this.#tintKey, this.#rmax.toFixed(1),
                  this.#tok("--_sat", ""), this.#tok("--_val", ""),
-                 this.getAttribute("merge") ?? ""].join("|");
+                 this.#mode()].join("|");
     if (key === this.#prepKey) return;
     this.#prepKey = key;
     const t0 = performance.now();
