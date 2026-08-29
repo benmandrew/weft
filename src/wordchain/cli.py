@@ -18,11 +18,12 @@ def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> N
     parser.add_argument(
         "--min-zipf",
         type=float,
-        default=2.0,
+        default=0.0,
         metavar="Z",
-        help="drop words rarer than this on wordfreq's Zipf scale (default 2.0, "
-        "about one occurrence per ten million words); words wordfreq scores at "
-        "zero are dropped whatever this is set to",
+        help="drop words rarer than this on wordfreq's Zipf scale (default 0.0, "
+        "which keeps every word wordfreq knows at all; 2.0 is about one "
+        "occurrence per ten million words); words wordfreq scores at zero are "
+        "dropped whatever this is set to",
     )
     parser.add_argument(
         "--min-dominance",
@@ -54,7 +55,8 @@ def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> N
         default=60,
         metavar="N",
         help="relax --min-zipf until the category yields this many words "
-        "(default 60); categories with more common words than this ignore it",
+        "(default 60); inert at the default --min-zipf, which relaxes to "
+        "nothing, and it is categories with fewer common words that notice it",
     )
     parser.add_argument(
         "--zipf-floor",

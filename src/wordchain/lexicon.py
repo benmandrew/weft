@@ -356,7 +356,7 @@ def _with_extras(words: list[Word], category: str, allow_multiword: bool) -> lis
 def members(
     category: str,
     *,
-    min_zipf: float = 2.0,
+    min_zipf: float = 0.0,
     min_dominance: float = 0.2,
     max_rank: int = 2,
     min_depth: int = 1,
@@ -368,9 +368,12 @@ def members(
     """The words of a category, commonest first.
 
     min_zipf is on wordfreq's Zipf scale, where 2.0 is about one occurrence per
-    ten million words. Words wordfreq scores at zero are dropped outright,
-    whatever the threshold: that is the line between WordNet's vocabulary and
-    its taxonomy. min_dominance and max_rank control
+    ten million words. It stands at zero, which keeps every word wordfreq knows
+    at all, since the list is already ordered by frequency and `build` draws the
+    commonest `limit` of them: the order is a better instrument than a cut.
+    Words wordfreq scores at exactly zero are dropped outright, whatever the
+    threshold: that is the line between WordNet's vocabulary and its taxonomy.
+    min_dominance and max_rank control
     the polysemy filter described on _in_category, min_depth the shallow-layer
     cut described on _closure, and target with zipf_floor the sliding cut
     described on _resolve. EXTRA_WORDS then adds the category's hand-picked

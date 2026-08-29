@@ -25,7 +25,8 @@ python -m wordchain build animal     # render the word graph
 
 `build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark`, which overrides the config file's `theme` and stands at dark with neither, `--limit N` (words in the disc, default 110) and `--config FILE`.
 
-The three selection commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance` and `--max-rank`, so the counts `categories` prints match what `build` would draw. `--multiword` keeps entries like *polar bear* and chains them on their outer letters. Every command takes `--no-cache`.
+The three selection commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance` and `--max-rank`, so the counts `categories` prints match what `build` would draw. `--min-zipf` stands at zero, so a category yields every word wordfreq knows and the frequency order rather than a cut decides which 110 the disc draws.
+`--multiword` keeps entries like *polar bear* and chains them on their outer letters. Every command takes `--no-cache`.
 
 `make -j` renders every category, one file each, so editing a module redraws all 37 and an untouched tree redraws none. `make clean` removes the output directory, `OUT=` moves it, and `CONFIG=` names a config file.
 

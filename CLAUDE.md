@@ -410,10 +410,19 @@ A Zipf of exactly zero is dropped unconditionally in `_resolve`, as the line
 between WordNet's vocabulary and its taxonomy. That is structural rather than a
 tuned threshold — keep it independent of `--min-zipf`.
 
-The frequency cut then slides: a category yielding fewer than `--target` words
-relaxes from `--min-zipf` down its own frequency order to `--zipf-floor`. One
-absolute cut is calibrated for the common categories and guts the rest — flower
-had 9 words at 3.0 and has 60 now.
+`--min-zipf` then defaults to 0.0, keeping every word wordfreq knows at all. The
+list is already ordered by frequency and `build --limit` draws only the commonest
+110, so the order is a better instrument than a cut: it costs the disc nothing
+and gives `words` and `stats` the whole vocabulary. That took plant from 539
+words to 1020, animal 895 to 1582, food 860 to 1255, job 751 to 1073, colour 80
+to 97 and flower 60 to 83. The drawn 110 are unchanged for the first four, and
+only colour and flower, which used to stop short at 80 and 60, draw more than
+before.
+
+The sliding cut survives and is inert at the defaults: a category yielding fewer
+than `--target` words relaxes from `--min-zipf` down its own frequency order to
+`--zipf-floor`, and there is nothing below 0.0. It is what stops a raised
+`--min-zipf` gutting the rare categories, which is the reason to keep it.
 
 WordNet is a lexical database, not a game word list, so residue survives the
 filters in `lexicon.py` ("entire" and "royal" are genuine WordNet animal terms).
