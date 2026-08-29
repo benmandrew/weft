@@ -83,12 +83,21 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - `<hypernym-disc>` reads a tree as `par`, an array where every parent's index
   is below all of its children's. That ordering is the whole contract: it lets
   the element find depths, leaf counts and angles in flat loops instead of a
-  traversal, so 82,115 nodes lay out in one frame. Nesting needs a tree and the
-  hypernyms are a DAG, so `export_tree.py` keeps each synset's first hypernym
-  and drops the other 2,313 edges; every node survives, only cross-links go.
+  traversal, so 82,115 nodes lay out in one frame. `export_tree.py` writes the
+  nodes in preorder over that tree, which satisfies the contract on its own by
+  emitting a node ahead of its whole subtree, and visits siblings by rank then
+  by descending subtree size, since sibling order is wedge order and the layout
+  has to come out unchanged. Preorder also puts every subtree in a contiguous
+  run of indices, worth 181 KB brotli across the three files and a prerequisite
+  for serving one wedge's glosses as a byte range, which nothing does yet. Rank
+  no longer holds the contract up but is still what finds a cycle in the DAG,
+  orders the pass that totals subtree sizes, and leads the sibling key, where
+  379 of the 16,933 sibling groups hold nodes of differing rank. Nesting needs a
+  tree and the hypernyms are a DAG, so each synset keeps its first hypernym and
+  drops the other 2,313 edges; every node survives, only cross-links go.
 - The layout never reads a name, so the export is two files and the element
-  fetches them in that order: `wordnet-tree.json` is the structure at 129 KB
-  brotli, `wordnet-names.txt` the names for the same indices at 306 KB. First
+  fetches them in that order: `wordnet-tree.json` is the structure at 42 KB
+  brotli, `wordnet-names.txt` the names for the same indices at 311 KB. First
   paint waits on the smaller one and a node answers to `#index` until the
   larger arrives, which is why `start` is re-resolved when it does. Both are
   generated into `out/` and never committed. Keep them index-aligned: the names
@@ -140,8 +149,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   since it is much the largest of the three and read by one line of text. It
   carries every synset rather than only the 16,922 that can be a root, because
   the definition follows the pointer and two thirds of what the pointer lands
-  on are leaves: 1,428 KB over the wire against 298 KB for the roots alone.
-  Nothing on the disc waits for it. Stacked under the disc the block is a fixed
+  on are leaves, at 1,329 KB over the wire. Nothing on the disc waits for it. Stacked under the disc the block is a fixed
   two lines, so moving to a longer definition never resizes the disc, and it
   reserves nothing until the file lands. It reads in the ink colour a step
   above the crumb below it, and its first letter is raised on 75,110 of the
