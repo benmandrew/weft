@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/benmandrew/wordchain/blob/main/wordchain.schema.json",
+  "$id": "https://raw.githubusercontent.com/benmandrew/wordchain/main/schemas/wordchain.schema.json",
   "title": "wordchain",
   "description": "Everything wordchain.toml may say about the disc: the ground it draws on, the eight distances that place things, and the wheel that maps 26 letters to 26 hues. Every key is optional and anything left out keeps its default. Kept in step with src/wordchain/config.py by tools/check_schema.py.",
   "type": "object",
