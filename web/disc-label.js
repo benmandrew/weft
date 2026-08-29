@@ -5,7 +5,13 @@
  * measures a monospace face. The same split as disc-paint.js and
  * disc-search.js: the part with edge cases is the part that can be checked.
  *
- *   const {lines, lh} = fit(ctx, "domestic cat", 49, "Menlo, monospace");
+ *   const {lines, lh, font} = fit(ctx, "domestic cat", 49, "Menlo, monospace");
+ *
+ * `font` is the face the fit settled on, which it has already set on the
+ * context. It is returned as well so a caller holding the result can set it
+ * again without measuring the name a second time: fitting costs 9.5
+ * measureText calls at the median and 539 for the longest name in WordNet, and
+ * the pointer crossing back into a wedge asks for the same name it just left.
  */
 
 // The sizes the label steps down through, and the lines it may wrap to.
@@ -19,15 +25,17 @@ const MAX_LINES = 3;
    Sets the font on `g` as it goes. */
 export function fit(g, text, r, mono) {
   for (const px of SIZES) {
-    g.font = `500 ${px}px ${mono}`;
+    const font = `500 ${px}px ${mono}`;
+    g.font = font;
     const lh = px + 2;
     for (let n = 1; n <= MAX_LINES && n * lh < 2 * r; n++) {
       const lines = wrap(g, text, 2 * Math.sqrt(r * r - ((n * lh) / 2) ** 2), n);
-      if (lines) return { lines, lh };
+      if (lines) return { lines, lh, font };
     }
   }
-  g.font = `500 ${SIZES.at(-1)}px ${mono}`;
-  return { lines: wrap(g, text, 1.4 * r, MAX_LINES, true), lh: SIZES.at(-1) + 2 };
+  const font = `500 ${SIZES.at(-1)}px ${mono}`;
+  g.font = font;
+  return { lines: wrap(g, text, 1.4 * r, MAX_LINES, true), lh: SIZES.at(-1) + 2, font };
 }
 
 /* Greedy by word, null when the text needs more than `n` lines. Under `hard` a

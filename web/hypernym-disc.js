@@ -56,6 +56,13 @@ const HINT_PX = 9,
 // taking only once the frame is this much wider than a disc filling its height.
 const ASIDE_MIN = 200,
   ASIDE_GAP = 18;
+// How long a resize is held open. A drag fires the observer every frame and
+// each frame costs the painter a whole remerge, since the merge is measured in
+// pixels and the radius moved.
+const RESIZE_HOLD = 60;
+// What the worker gets to answer in, timed from the first paint the element
+// actually wants rather than from the worker's construction.
+const WORKER_FLOOR = 400;
 
 const TPL = document.createElement("template");
 TPL.innerHTML = `
@@ -150,10 +157,10 @@ TPL.innerHTML = `
   .crumb::-webkit-scrollbar{display:none}
   .crumb button{font:inherit;color:var(--_accent);background:none;border:0;padding:0;
     cursor:pointer;text-decoration:underline;text-underline-offset:2px}
-  .crumb span{color:var(--_ink)}
+  .crumb .now{color:var(--_ink)}
   .crumb em{font-style:normal}
   .crumb i{font-style:normal;color:var(--_muted);opacity:.5;padding:0 4px}
-  .crumb i:first-child{padding-left:0}
+  .crumb .head i:first-child{padding-left:0}
   .crumb b{color:var(--_ink);font-weight:600}
 </style>
 <div class="frame">
@@ -168,7 +175,7 @@ TPL.innerHTML = `
     <canvas class="over" aria-hidden="true"></canvas>
   </div>
   <div class="gloss"></div>
-  <div class="crumb"></div>
+  <div class="crumb"><span class="head"></span><span class="tail"></span></div>
 </div>`;
 
 class HypernymDisc extends HTMLElement {
@@ -199,7 +206,12 @@ class HypernymDisc extends HTMLElement {
   #names = [];
   #glosses = [];
   #par = [];
-  #kids = [];
+  // Where i's children start in the flat child list, which is the build's
+  // own and goes no further: #kidOff[i + 1] - #kidOff[i] is the child count,
+  // and nothing outside #build walks the children themselves. The 82,115
+  // separate arrays this replaces held 4.8 MB, two thirds of them the empty
+  // one a leaf never reads.
+  #kidOff;
   #depth;
   #leaves;
   #a0;
@@ -209,12 +221,14 @@ class HypernymDisc extends HTMLElement {
   #root = 0;
   #hover = -1;
   #cursor = 0;
-  // The crumb path in two parts: the head is the way out and moves only on a
-  // zoom, the tail follows the pointer. #crumbSel is the tail's node, so the
-  // pointer crossing a wedge writes to the DOM once rather than per pixel, and
-  // #failed holds a load error in the crumb until a zoom, as it did when the
-  // line was written whole.
-  #head = "";
+  // The crumb path in two written parts: the head is the way out and moves
+  // only on a zoom, the tail follows the pointer, and each has an element of
+  // its own so writing one does not re-parse the other. #crumbSel is the
+  // tail's node, so the pointer crossing a wedge writes to the DOM once rather
+  // than per pixel, and #failed holds a load error in the crumb until a zoom,
+  // as it did when the line was written whole.
+  #headEl;
+  #tailEl;
   #crumbSel = -2;
   #failed = false;
   #buildMs = 0;
@@ -235,6 +249,11 @@ class HypernymDisc extends HTMLElement {
   // is answering, then "worker" or "main" for the rest of the element's life.
   #route;
   #worker = null;
+  // The worker before it has answered, and the deadline it is answering
+  // against, which #armFloor starts only once a paint is wanted.
+  #pending = null;
+  #settle = null;
+  #floor = 0;
   #painter = null;
   #sent = -1;
   #layoutKey = 0;
@@ -248,6 +267,15 @@ class HypernymDisc extends HTMLElement {
   #ready = false;
   #pw = 0;
   #ph = 0;
+  // The custom properties and the fitted labels, both read on every pointer
+  // move and both dropped whenever the ground under them could have moved.
+  #toks = new Map();
+  #fits = new Map();
+  // The box the next resize will apply, when it was last applied, and the
+  // timer coalescing a drag.
+  #box = null;
+  #resized = -Infinity;
+  #fitTimer = 0;
 
   constructor() {
     super();
@@ -256,6 +284,8 @@ class HypernymDisc extends HTMLElement {
     this.#base = this.#sr.querySelector(".base");
     this.#over = this.#sr.querySelector(".over");
     this.#crumb = this.#sr.querySelector(".crumb");
+    this.#headEl = this.#crumb.querySelector(".head");
+    this.#tailEl = this.#crumb.querySelector(".tail");
     this.#q = this.#sr.querySelector(".q");
     this.#hits = this.#sr.querySelector(".hits");
     this.#frame = this.#sr.querySelector(".frame");
@@ -288,6 +318,11 @@ class HypernymDisc extends HTMLElement {
     this.#ro.observe(this.#sr.querySelector(".stage"));
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#repaint);
+    // Before the fetch, not after the first draw asks for it. The worker's own
+    // module fetch then runs alongside the tree's, so a slow link no longer
+    // spends the whole deadline on the network and reads as a device with no
+    // worker at all.
+    if (this.#route === undefined) this.#openPainter();
     if (!this.#ready) this.#load();
   }
   disconnectedCallback() {
@@ -318,10 +353,7 @@ class HypernymDisc extends HTMLElement {
     }
   }
   #mq;
-  #repaint = () => {
-    this.#draw();
-    this.#overlay();
-  };
+  #repaint = () => this.repaint();
 
   async #load() {
     const src = this.getAttribute("src");
@@ -339,7 +371,7 @@ class HypernymDisc extends HTMLElement {
         this.data = JSON.parse(inline.textContent);
       }
     } catch (err) {
-      this.#crumb.innerHTML = `<b>Could not load the tree.</b> ${err.message}`;
+      this.#say(`<b>Could not load the tree.</b> ${err.message}`);
       this.#failed = true;
       return;
     }
@@ -358,7 +390,7 @@ class HypernymDisc extends HTMLElement {
       this.#namesMs = performance.now() - t0;
       this.names = text;
     } catch (err) {
-      this.#crumb.innerHTML = `<b>Could not load the names.</b> ${err.message}`;
+      this.#say(`<b>Could not load the names.</b> ${err.message}`);
       this.#failed = true;
     }
     this.#loadGlosses();
@@ -445,6 +477,14 @@ class HypernymDisc extends HTMLElement {
   #label(i) {
     return this.#names[i] ?? `#${i}`;
   }
+  #isLeaf(i) {
+    return this.#kidOff[i] === this.#kidOff[i + 1];
+  }
+  /* The crumb line, when there is a message to put there instead of a path. */
+  #say(html) {
+    this.#headEl.innerHTML = html;
+    this.#tailEl.replaceChildren();
+  }
 
   #applyStart() {
     const want = this.getAttribute("start");
@@ -460,14 +500,21 @@ class HypernymDisc extends HTMLElement {
     const t0 = performance.now();
     const N = this.#par.length,
       par = this.#par;
-    this.#kids = Array.from({ length: N }, () => []);
-    for (let i = 0; i < N; i++) if (par[i] >= 0) this.#kids[par[i]].push(i);
+    // Counting sort into one flat array. Children come out in index order
+    // within each parent, which is the order the angles below are laid in.
+    const off = new Int32Array(N + 1);
+    for (let i = 0; i < N; i++) if (par[i] >= 0) off[par[i] + 1]++;
+    for (let i = 0; i < N; i++) off[i + 1] += off[i];
+    const at = Int32Array.from(off.subarray(0, N));
+    const idx = new Int32Array(off[N]);
+    for (let i = 0; i < N; i++) if (par[i] >= 0) idx[at[par[i]]++] = i;
+    this.#kidOff = off;
 
     this.#depth = new Int16Array(N);
     this.#leaves = new Int32Array(N);
     for (let i = 0; i < N; i++) this.#depth[i] = par[i] < 0 ? 0 : this.#depth[par[i]] + 1;
     for (let i = N - 1; i >= 0; i--) {
-      if (!this.#kids[i].length) this.#leaves[i] = 1;
+      if (off[i] === off[i + 1]) this.#leaves[i] = 1;
       if (par[i] >= 0) this.#leaves[par[i]] += this.#leaves[i];
     }
     this.#a0 = new Float64Array(N);
@@ -476,7 +523,8 @@ class HypernymDisc extends HTMLElement {
     for (let i = 0; i < N; i++) {
       let a = this.#a0[i];
       const w = (this.#a1[i] - this.#a0[i]) / this.#leaves[i];
-      for (const c of this.#kids[i]) {
+      for (let k = off[i]; k < off[i + 1]; k++) {
+        const c = idx[k];
         this.#a0[c] = a;
         a += this.#leaves[c] * w;
         this.#a1[c] = a;
@@ -511,39 +559,82 @@ class HypernymDisc extends HTMLElement {
 
   /* Whether the suggestions get a column of their own. Measured off the frame
      rather than the stage, so toggling the class cannot change the answer and
-     the observer settles in one more pass. */
+     the observer settles in one more pass. True says the class moved, which
+     leaves the stage box just read stale: the observation that follows carries
+     the right one. */
   #shape() {
     const f = this.#frame.getBoundingClientRect();
-    this.#frame.classList.toggle(
-      "wide",
-      this.hasAttribute("fit") && f.width - f.height >= ASIDE_MIN + ASIDE_GAP,
-    );
+    const want = this.hasAttribute("fit") && f.width - f.height >= ASIDE_MIN + ASIDE_GAP;
+    if (want === this.#frame.classList.contains("wide")) return false;
+    this.#frame.classList.toggle("wide", want);
+    return true;
   }
 
   #fit() {
     if (!this.#ready) return;
-    this.#shape();
+    // Only once something is drawn: the first fit goes ahead on the box it
+    // has, since a toggle that left the stage the same size would fire no
+    // further observation and there would be nothing on screen to correct.
+    if (this.#shape() && this.#pw) return;
     const box = this.#sr.querySelector(".stage").getBoundingClientRect();
     if (!box.width || !box.height) return;
-    this.#dpr = Math.min(window.devicePixelRatio || 1, 2);
-    // Only the overlay is sized here. The base canvas may belong to the
-    // worker by now, where setting a dimension throws, so the painter sizes it.
-    this.#pw = Math.round(box.width * this.#dpr);
-    this.#ph = Math.round(box.height * this.#dpr);
-    this.#over.width = this.#pw;
-    this.#over.height = this.#ph;
-    const s = Math.min(box.width, box.height);
-    this.#cx = box.width / 2;
-    this.#cy = box.height / 2;
-    this.#r0 = s * 0.075;
-    this.#rmax = s * 0.485;
-    this.#draw();
-    this.#overlay();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const pw = Math.round(box.width * dpr),
+      ph = Math.round(box.height * dpr);
+    // Back to the size already drawn, so a box held from part way through the
+    // drag has to be dropped rather than applied when the timer comes round.
+    if (pw === this.#pw && ph === this.#ph && dpr === this.#dpr) {
+      clearTimeout(this.#fitTimer);
+      this.#fitTimer = 0;
+      return;
+    }
+    this.#box = { w: box.width, h: box.height, dpr, pw, ph };
+    // The merge is in pixels and the radius has moved, so every frame of a
+    // drag would cost the painter a whole remerge. The first change is taken
+    // outright, so a load or a rotation is not held up, and the rest are
+    // coalesced: the canvases stretch to the new box until the drag stops.
+    if (performance.now() - this.#resized > RESIZE_HOLD) return this.#resize();
+    clearTimeout(this.#fitTimer);
+    this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
   }
 
+  #resize = () => {
+    clearTimeout(this.#fitTimer);
+    this.#fitTimer = 0;
+    this.#resized = performance.now();
+    const b = this.#box;
+    this.#dpr = b.dpr;
+    // Only the overlay is sized here. The base canvas may belong to the
+    // worker by now, where setting a dimension throws, so the painter sizes it.
+    this.#pw = b.pw;
+    this.#ph = b.ph;
+    this.#over.width = b.pw;
+    this.#over.height = b.ph;
+    const s = Math.min(b.w, b.h);
+    this.#cx = b.w / 2;
+    this.#cy = b.h / 2;
+    this.#r0 = s * 0.075;
+    this.#rmax = s * 0.485;
+    // The labels are keyed on a radius that just moved, and a host's tokens
+    // can follow a width-driven media query.
+    this.#toks.clear();
+    this.#fits.clear();
+    this.#draw();
+    this.#overlay();
+  };
+
+  /* Read once and held. getComputedStyle flushes pending style, and the
+     overlay wants three of these on every pointer move, which is what turned a
+     hover into a style recalculation per event. The cache is dropped wherever
+     the ground under it could have moved: a resize, the colour-scheme query,
+     and the repaint() a host calls after restyling by any other means. */
   #tok(n, f) {
-    const v = getComputedStyle(this).getPropertyValue(n).trim();
-    return v || f;
+    let v = this.#toks.get(n);
+    if (v === undefined) {
+      v = getComputedStyle(this).getPropertyValue(n).trim() || f;
+      this.#toks.set(n, v);
+    }
+    return v;
   }
   #under(i) {
     return (
@@ -575,7 +666,7 @@ class HypernymDisc extends HTMLElement {
     if (!this.#ready) return;
     this.#rw = (this.#rmax - this.#r0) / this.#rings();
     if (this.#route === undefined) return this.#openPainter();
-    if (this.#route === "wait") return;
+    if (this.#route === "wait") return this.#armFloor();
     const hd = Math.max(0, +(this.getAttribute("hue-depth") ?? 8));
     const msg = {};
     if (this.#sent !== this.#layoutKey) {
@@ -615,48 +706,64 @@ class HypernymDisc extends HTMLElement {
   /* A canvas can be handed to a worker only once, and only before anything has
      taken a context on it, so the choice cannot be made by painting here and
      handing over afterwards: the element waits for the worker to answer, and a
-     worker that errors or never answers leaves the draw on this thread. */
+     worker that errors or never answers leaves the draw on this thread.
+
+     Opened when the element connects rather than when the first draw wants a
+     painter, so fetching and evaluating the worker's two modules runs
+     alongside the fetch of the tree instead of after it. */
   #openPainter() {
     this.#route = "wait";
-    const settle = here => {
+    this.#settle = here => {
       if (this.#route !== "wait") return;
+      clearTimeout(this.#floor);
+      this.#floor = 0;
+      this.#pending = null;
       this.#route = here ? "main" : "worker";
       if (here) this.#painter = new Painter();
       this.#sent = -1;
       this.#draw();
     };
     if (!this.#base.transferControlToOffscreen || typeof Worker === "undefined")
-      return settle(true);
+      return this.#settle(true);
     let w;
     try {
       w = new Worker(new URL("./disc-worker.js", import.meta.url), { type: "module" });
     } catch {
-      return settle(true);
+      return this.#settle(true);
     }
-    const floor = setTimeout(() => {
-      w.terminate();
-      settle(true);
-    }, 400);
+    this.#pending = w;
     w.onerror = () => {
       if (this.#route !== "wait") return;
-      clearTimeout(floor);
       w.terminate();
-      settle(true);
+      this.#settle(true);
     };
     w.onmessage = ev => {
       if (!ev.data.ready) return this.#painted(ev.data.stats);
-      clearTimeout(floor);
       let off;
       try {
         off = this.#base.transferControlToOffscreen();
       } catch {
         w.terminate();
-        return settle(true);
+        return this.#settle(true);
       }
       this.#worker = w;
       w.postMessage({ canvas: off }, [off]);
-      settle(false);
+      this.#settle(false);
     };
+    if (this.#ready) this.#armFloor();
+  }
+
+  /* The deadline, started the first time a paint is actually wanted. Timing it
+     from the worker's construction spent it on the network, so a slow link
+     read as a device with no worker and painted here for the rest of the
+     element's life. What it guards now is a worker that loads and never
+     answers, and what it costs is a blank disc for that long. */
+  #armFloor() {
+    if (this.#route !== "wait" || this.#floor) return;
+    this.#floor = setTimeout(() => {
+      this.#pending?.terminate();
+      this.#settle(true);
+    }, WORKER_FLOOR);
   }
 
   /* What the painter reports, whichever thread it ran on. */
@@ -721,15 +828,34 @@ class HypernymDisc extends HTMLElement {
      with the pointer on a wedge the hub is naming that instead and the room is
      wanted for the name. The name is fitted to a radius short of the hint so
      the two cannot collide however long the name runs. */
+  /* Fitting a name costs 9.5 measureText calls at the median and 539 for the
+     longest in WordNet, and the pointer crossing wedges asks for the same few
+     names over and over. The radius is in the key because the hint under the
+     name takes room from it; the face is not, since the map is dropped when
+     the tokens are. */
+  #fitted(g, text, r) {
+    const key = `${r}|${text}`;
+    const had = this.#fits.get(key);
+    if (had) {
+      g.font = had.font;
+      return had;
+    }
+    const got = fit(g, text, r, this.#tok("--_mono", "monospace"));
+    // Bounded, since a pointer crossing the whole disc would otherwise hold
+    // every name it touched.
+    if (this.#fits.size > 4096) this.#fits.clear();
+    this.#fits.set(key, got);
+    return got;
+  }
+
   #hub(g) {
     const sel = this.#focus();
     const named = sel >= 0;
     const way = !named && this.#root !== 0;
-    const { lines, lh } = fit(
+    const { lines, lh } = this.#fitted(
       g,
       this.#label(named ? sel : this.#root),
       this.#r0 - 5 - (way ? HINT_H : 0),
-      this.#tok("--_mono", "monospace"),
     );
     g.fillStyle = named ? this.#tok("--_ink", "#e7eded") : this.#tok("--_muted", "#90a1a1");
     g.textAlign = "center";
@@ -772,9 +898,12 @@ class HypernymDisc extends HTMLElement {
     return best >= 0 && this.#a1[best] >= A && this.#inView(best) ? best : -1;
   }
 
+  /* The canvas has no border and no padding, so offsetX and offsetY are the
+     rect arithmetic they replace. Reading a rect here forced a layout on every
+     pointer move, and the crumb line's write on the move before had just
+     dirtied one. */
   #at(ev) {
-    const b = this.#over.getBoundingClientRect();
-    return [ev.clientX - b.left, ev.clientY - b.top];
+    return [ev.offsetX, ev.offsetY];
   }
   #onMove = ev => {
     const h = this.#hit(...this.#at(ev));
@@ -800,13 +929,14 @@ class HypernymDisc extends HTMLElement {
     const [px, py] = this.#at(ev);
     if (Math.hypot(px - this.#cx, py - this.#cy) < this.#r0) return this.up();
     const h = this.#hit(px, py);
-    if (h >= 0 && this.#kids[h].length) this.zoomTo(h);
+    if (h >= 0 && !this.#isLeaf(h)) this.zoomTo(h);
   };
 
-  /* Straight through, not deferred to a frame. The scan is 4.4 ms at worst over
-     82,115 names, so coalescing keystrokes through requestAnimationFrame would
-     save a fraction of one frame and buy a stall everywhere that callback is
-     throttled, which is where a hidden or background tab leaves it. */
+  /* Straight through, not deferred to a frame. The scan is 1.2 ms at worst over
+     82,115 names, and 0.2 for most queries, so coalescing keystrokes through
+     requestAnimationFrame would save a fraction of one frame and buy a stall
+     everywhere that callback is throttled, which is where a hidden or
+     background tab leaves it. Nobody types faster than a frame in any case. */
   #onQuery = () => {
     if (!this.#ready || !this.#names.length) return;
     this.#search ??= new Search(this.#names);
@@ -844,7 +974,7 @@ class HypernymDisc extends HTMLElement {
      so the next search is one keystroke away. */
   #go(i) {
     this.#closeFind();
-    if (this.#kids[i].length) this.zoomTo(i);
+    if (!this.#isLeaf(i)) this.zoomTo(i);
     else if (this.#par[i] >= 0) {
       this.zoomTo(this.#par[i]);
       this.#cursor = i;
@@ -928,6 +1058,8 @@ class HypernymDisc extends HTMLElement {
   /* Call after the host page changes theme by any means other than
      prefers-color-scheme, which the element already watches. */
   repaint() {
+    this.#toks.clear();
+    this.#fits.clear();
     this.#draw();
     this.#overlay();
   }
@@ -960,12 +1092,12 @@ class HypernymDisc extends HTMLElement {
     for (let c = this.#root; c >= 0; c = this.#par[c]) path.unshift(c);
     // A separator before every step, the first included, so the path reads as
     // a path rather than as a name with a trail after it.
-    this.#head = path
+    this.#headEl.innerHTML = path
       .map(
         i =>
           "<i>›</i>" +
           (i === this.#root
-            ? `<span>${this.#label(i)}</span>`
+            ? `<span class="now">${this.#label(i)}</span>`
             : `<button type="button" data-i="${i}">${this.#label(i)}</button>`),
       )
       .join("");
@@ -986,8 +1118,9 @@ class HypernymDisc extends HTMLElement {
     this.#crumbSel = sel;
     const tail = [];
     for (let c = sel; c >= 0 && c !== this.#root; c = this.#par[c]) tail.unshift(c);
-    this.#crumb.innerHTML =
-      this.#head + tail.map(i => `<i>›</i><em>${this.#label(i)}</em>`).join("");
+    // Its own element, so a pointer crossing wedges rewrites the tail alone
+    // and the head is not re-parsed behind it.
+    this.#tailEl.innerHTML = tail.map(i => `<i>›</i><em>${this.#label(i)}</em>`).join("");
   }
 }
 customElements.define("hypernym-disc", HypernymDisc);

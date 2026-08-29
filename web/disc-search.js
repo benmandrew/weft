@@ -3,14 +3,17 @@
  * No DOM in here, so the element wires it to an input and tools/check_web.mjs
  * runs it on its own, the same split as disc-paint.js.
  *
- * A query is one pass over every name, scoring each and keeping the best few.
- * Over WordNet's 82,115 names that runs 2.6 to 4.4 ms depending on the query,
- * under a frame, and the only thing built up front is a lowercased copy, at
- * 4.4 ms on the first query. A sorted index would answer a prefix in log time
- * for a 23 ms sort, but the last band below is a subsequence match, which no
- * ordering of the names prunes: it reads all 82,115 whatever the index says.
- * Paying for an index that half the query cannot use, to save an amount of time
- * that is already inside a frame, buys nothing.
+ * A query is one pass over every name, scoring each and keeping the best few,
+ * behind a filter that skips most of them without touching the string. Every
+ * band below, the subsequence one included, needs every character of the query
+ * to appear somewhere in the name, so a bitmask of which characters a name
+ * holds rules it out in one AND. That is the prune an ordering cannot give: a
+ * sorted index answers a prefix in log time and still reads all 82,115 names
+ * for a subsequence match, where the mask throws most of them out for any query
+ * of two characters or more.
+ *
+ * The masks and the lowercased copy are built together on the first query, and
+ * every query after that is the AND, then `score` on what survives.
  *
  * Bands sit 1,000 apart and every penalty is capped below that, so a weaker
  * kind of match can never outrank a stronger one however long the name:
@@ -29,6 +32,24 @@ const EXACT = 5000,
   INSIDE = 2000,
   ORDER = 1000;
 const SPACE = 32;
+// Where a character lands in a name's mask: a to z take a bit each, a space
+// takes its own, since a multiword query is common and a space is not in most
+// names, and every other character shares the last bit.
+const LOW_A = 97,
+  LOW_Z = 122,
+  SPACE_BIT = 26,
+  OTHER_BIT = 27;
+
+/* The characters `s` holds, as bits. A name can match a query only if its mask
+   holds every bit the query's does, whichever band would score it. */
+function mask(s) {
+  let m = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    m |= 1 << (c >= LOW_A && c <= LOW_Z ? c - LOW_A : c === SPACE ? SPACE_BIT : OTHER_BIT);
+  }
+  return m;
+}
 
 /* 0 for no match. Every branch stays under its band: the length penalty caps at
    500 and the position penalty at 400, so the two together cannot reach 1,000. */
@@ -70,6 +91,7 @@ function place(out, hit, limit) {
 export class Search {
   #names = [];
   #lower = [];
+  #mask = new Int32Array(0);
 
   constructor(names) {
     this.index(names);
@@ -78,6 +100,11 @@ export class Search {
   index(names) {
     this.#names = Array.from(names);
     this.#lower = this.#names.map(s => s.toLowerCase());
+    // A second pass, over strings the first has just left in cache, which is
+    // why it costs nothing measurable: 5.1 ms for both against 5.3 ms for the
+    // lowercased copy alone.
+    this.#mask = new Int32Array(this.#lower.length);
+    for (let i = 0; i < this.#lower.length; i++) this.#mask[i] = mask(this.#lower[i]);
   }
 
   /* [{i, name, score}], best first. An empty or all-space query matches
@@ -86,9 +113,12 @@ export class Search {
     const q = text.trim().toLowerCase();
     const out = [];
     if (!q || limit < 1) return out;
-    const low = this.#lower;
+    const low = this.#lower,
+      msk = this.#mask,
+      qm = mask(q);
     let worst = 0;
     for (let i = 0; i < low.length; i++) {
+      if ((msk[i] & qm) !== qm) continue;
       const sc = score(low[i], q);
       if (sc <= 0 || (out.length === limit && sc <= worst)) continue;
       place(out, { i, name: this.#names[i], score: sc }, limit);

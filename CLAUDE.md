@@ -95,6 +95,12 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   379 of the 16,933 sibling groups hold nodes of differing rank. Nesting needs a
   tree and the hypernyms are a DAG, so each synset keeps its first hypernym and
   drops the other 2,313 edges; every node survives, only cross-links go.
+  Children are held the same way, as one offsets array rather than a list per
+  node: the child count and the leaf test are both `#kidOff[i + 1] -
+  #kidOff[i]`, and the flat list of child indices stays local to `#build`,
+  since nothing outside it walks children. As 82,115 plain arrays, two thirds
+  of them the empty one a leaf never reads, they held 4.8 MB of retained heap
+  against 657 KB, and the build's median went 5.3 ms to 1.6 ms.
 - The layout never reads a name, so the export is two files and the element
   fetches them in that order: `wordnet-tree.json` is the structure at 42 KB
   brotli, `wordnet-names.txt` the names for the same indices at 311 KB. First
@@ -110,12 +116,23 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   thing clicking cannot do and the reason to search for a word at all. A picked
   node outside the current zoom is not highlighted, since there is nowhere on
   the disc to draw it; Enter brings it into view.
-- `disc-search.js` scores every name in one pass rather than holding an index:
-  2.6 to 4.4 ms over 82,115 names depending on the query, plus 4.4 ms to lower
-  them on the first query, and the input is debounced to one scan per frame.
+- `disc-search.js` scores every name in one pass rather than holding an index.
   A sorted index would answer a prefix in log time for a 23 ms sort, but the
-  weakest band is a subsequence match, which no ordering of the names prunes —
-  it reads all 82,115 however the index is built. Bands sit 1,000 apart and
+  weakest band is a subsequence match, which no ordering of the names prunes.
+  Containment does: every name carries a bitmask of the characters it holds, a
+  bit each for a to z, one of its own for a space, since a multiword query is
+  common and most names have no space, and a last bit shared by everything
+  else. A name can match only if its mask holds every bit the query's mask
+  does, which is as true of the subsequence band as of the rest. The masks
+  cost nothing measurable to build: they go in a second pass over strings the
+  first has just left in cache, taking the first query's setup over 82,115
+  names to 5.1 ms against 5.3 ms for the lowercased copy alone. The scan then
+  falls from 4.30 ms to 0.41 on "dog", 2.29 to 0.19 on "domestic dog" and 3.74
+  to 0.18 on "xyzq", warm medians of 15 runs; a one-character query gains
+  least, 2.27 ms to 1.15 on "a", since almost every name holds the letter. The
+  prune is inert, and that was checked rather than argued: the scorer with and
+  without it returns identical hits, indices and scores over the real corpus
+  for 26 written queries and 400 generated ones. Bands sit 1,000 apart and
   every penalty is capped below 1,000, so a weaker kind of match can never
   outrank a stronger one however long the name it sits in; that ordering is
   what `check_web.mjs` asserts, not the scores.
@@ -131,7 +148,17 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   buttons' accent, and only where clicking does something: never at the root,
   where a click on the hub is a no-op, and never with the pointer on a wedge,
   where the room is wanted for that wedge's name. The name is fitted to a
-  radius short of the hint, so the two cannot collide however long it runs.
+  radius short of the hint, so the two cannot collide however long it runs. A
+  pointer move used to force a layout per event, reading
+  `getBoundingClientRect` and three custom properties through
+  `getComputedStyle` and writing the crumb's `innerHTML` on a line the write
+  before had just dirtied. The rect is now `offsetX`/`offsetY`, exact because
+  the canvas carries no border or padding; the custom properties are read once
+  and held until a resize, the colour-scheme query, or the `repaint()` a host
+  calls after restyling; and the hub's fit is held on radius and name, since
+  fitting costs 9.5 `measureText` calls at the median and 539 for the longest
+  name in WordNet, and a pointer crossing wedges asks for the same few names
+  over and over.
 - `disc-label.js` fits that name: it steps down five sizes and up to three
   lines, and breaks a word only when nothing else fits. A forced break carries
   a trailing hyphen and the word carries on below, including on the last line,
@@ -140,7 +167,9 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   that would invent one inside the name. It is its own module because it is
   the part of the hub with edge cases, and only a context's `font` and
   `measureText` are touched, so `check_web.mjs` measures it with a monospace
-  stub where a width is a character count.
+  stub where a width is a character count. `fit` returns the face it set as
+  well as setting it, so a held fit puts the font back without measuring
+  again.
 - Above the crumb path sits the definition of whatever the hub names: the node
   under the pointer, and the current root when the pointer is off the disc. One
   method answers for both, so the name in the middle and the definition below
@@ -167,9 +196,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   method the hub's name and the gloss come off, so the three can never be of
   different nodes, and `#focus` answers -1 for a node outside the current zoom,
   so a searched node elsewhere in the tree adds no tail — the same rule that
-  leaves it unhighlighted on the disc. The line is rendered in two parts: the
-  head is rebuilt only on a zoom and the tail only when the focus moves, so a
+  leaves it unhighlighted on the disc. The line is rendered in two elements,
+  the head rebuilt only on a zoom and the tail only when the focus moves, so a
   pointer crossing a wedge writes to the DOM once rather than once per pixel.
+  Written into one element the split bought nothing, since every tail rewrite
+  re-parsed the head.
   The line of counts that sat under it is gone: the hub already names whatever
   the pointer or the search is on, and `disc-hover` still carries the depth and
   the leaf count, so a host that wants them can print its own. A failed fetch
@@ -235,9 +266,17 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   since a nested plain array of 82,115 numbers is the slowest thing structured
   clone can be handed. A canvas can be handed to a worker only once, and only
   before anything has taken a context on it, so the element cannot paint first
-  and hand over afterwards; it waits for the worker to say it is ready, and a
-  worker that errors or does not answer within 400 ms leaves the draw on the
-  main thread for good. Do not terminate the worker when the element
+  and hand over afterwards; it waits for the worker to say it is ready. The
+  worker is opened when the element connects rather than when the first draw
+  asks for a painter, so its module fetch runs alongside the tree's, and the
+  400 ms it is given starts at the first paint the element wants rather than
+  at `new Worker()`. Timed from the constructor that budget covered fetching
+  and evaluating two modules, so a slow link spent it all on the network and
+  the device most in need of the worker was the one most likely to lose it,
+  permanently. It is an evaluation budget now. What it still guards is a
+  worker that loads and never answers, which leaves the draw on the main
+  thread for good, and what it still costs is a blank disc for that long. Do
+  not terminate the worker when the element
   disconnects: it holds the only handle to the base canvas, and that canvas
   cannot be handed over twice. The element no longer sizes that canvas either,
   since setting a dimension on a transferred canvas throws — the painter does
@@ -252,6 +291,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   reaches 6,800 and is only there for comparison. Gaps between subtrees break
   every run, so the fringe still reads as many nodes. All of it is cached on
   root, tint, radius, theme and the mode, so a repeated repaint pays nothing.
+  Radius is in that key because the merge is measured in pixels, which makes a
+  resize a whole remerge, 15.6 ms over 82,115 nodes, once per frame of a drag.
+  The first change is applied outright, so a load or a rotation is not held
+  up, and the rest are coalesced on a 60 ms trailing timer; the canvases
+  stretch to the new box until the drag stops.
 - A merged piece takes the circular mean of its members' hues, which is what
   lets a run ignore colour. Matching on colour instead left nothing to merge
   above `hue-depth` 2, since above that depth every node takes its own angle as
@@ -405,7 +449,10 @@ the geometry does: that `merge=off` draws every node, that `density` and
 that hue-depth 19 still merges, which is what guards the hue blend. Last it
 queries the search over eight names written down in the file, asserting the
 order of the bands rather than the scores, which move whenever a penalty is
-retuned. It needs no data files, so it does not depend on the exported tree.
+retuned, that a multiword subsequence query still reaches a multiword name
+through the character-mask prune, that holding every character of a query is
+not the same as holding them in order, and that `fit` returns the face it set.
+It needs no data files, so it does not depend on the exported tree.
 
 Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
 `src/` on the path, and the tree is clean under it; the pyright CLI is not in

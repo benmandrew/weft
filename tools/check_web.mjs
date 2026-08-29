@@ -222,6 +222,15 @@ check(
   `letters in order did not reach waterfowl: ${find("wtrfl")}`,
 );
 check(find("cat", 2).length === 2, "the limit was not kept");
+/* The mask that skips most names before they are scored keeps a bit for the
+   space, so a multiword query still has to reach a multiword name through it,
+   and holding every character of a query is not the same as holding them in
+   order. */
+check(
+  find("wld hnt").join("|") === "wildcat hunting",
+  `a multiword subsequence did not survive the prune: ${find("wld hnt")}`,
+);
+check(find("tac").length === 0, `letters out of order matched: ${find("tac")}`);
 check(find("   ").length === 0 && find("").length === 0, "an empty query matched");
 check(find("zzz").length === 0, "a query that matches nothing returned hits");
 /* Names repeat in WordNet, so the same name at two indices has to come back
@@ -284,6 +293,16 @@ const small = fit(
   "monospace",
 );
 check(big.lh > small.lh, `a short name took ${big.lh} against a long name's ${small.lh}`);
+/* The face comes back as well as being set, so the element can hold the fit
+   and put the font back without measuring the name again. */
+for (const [what, got] of [
+  ["a short name", big],
+  ["the longest name in WordNet", small],
+])
+  check(
+    got.font.includes(`${got.lh - 2}px`),
+    `fit returned ${got.font} for ${what}, which is not the ${got.lh - 2}px it wrapped to`,
+  );
 check(
   small.lines.length > 0 && small.lines.every(l => l.length > 0),
   "the longest name in WordNet left the hub with nothing to draw",
