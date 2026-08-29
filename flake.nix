@@ -41,6 +41,10 @@
             # `taplo check` validates wordchain.toml against the schema that
             # taplo.toml names, which is the same check an editor runs.
             pkgs.taplo
+            # `biome lint` and `biome format` over web/ and tools/. It is one
+            # binary with the rules built in, like ruff and taplo above, so the
+            # JavaScript checks need no node_modules and no lockfile.
+            pkgs.biome
             # Only `make web` needs it. `node --check` parses a file without
             # running the early-error pass a browser runs, so the check loads
             # each module in web/ instead, which needs a JavaScript runtime.

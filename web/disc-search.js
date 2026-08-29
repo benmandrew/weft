@@ -23,7 +23,11 @@
  * something outright never surfaces a scattered match above it.
  */
 
-const EXACT = 5000, PREFIX = 4000, WORD = 3000, INSIDE = 2000, ORDER = 1000;
+const EXACT = 5000,
+  PREFIX = 4000,
+  WORD = 3000,
+  INSIDE = 2000,
+  ORDER = 1000;
 const SPACE = 32;
 
 /* 0 for no match. Every branch stays under its band: the length penalty caps at
@@ -40,9 +44,14 @@ function score(s, q) {
   }
   // Greedy from the first letter that matches, which is not the tightest run
   // through the name but costs one pass rather than a search.
-  let k = 0, from = -1, j = 0;
+  let k = 0,
+    from = -1,
+    j = 0;
   for (; j < s.length && k < n; j++) {
-    if (s.charCodeAt(j) === q.charCodeAt(k)) { if (k === 0) from = j; k++; }
+    if (s.charCodeAt(j) === q.charCodeAt(k)) {
+      if (k === 0) from = j;
+      k++;
+    }
   }
   if (k < n) return 0;
   return ORDER - Math.min(j - from - n, 500) - Math.min(s.length, 400);
@@ -59,9 +68,12 @@ function place(out, hit, limit) {
 }
 
 export class Search {
-  #names = []; #lower = [];
+  #names = [];
+  #lower = [];
 
-  constructor(names) { this.index(names); }
+  constructor(names) {
+    this.index(names);
+  }
 
   index(names) {
     this.#names = Array.from(names);

@@ -180,7 +180,7 @@ def _watch_roots(extra: list[Path]) -> Iterator[Path]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").partition("\n")[0])
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--interval", type=float, default=0.25, help="seconds between scans")

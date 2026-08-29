@@ -47,6 +47,8 @@ check: web
 	@mypy
 	@RUST_LOG=warn taplo check
 	@python tools/check_schema.py
+	@biome lint .
+	@biome format .
 
 # A prerequisite of check rather than a line in it, since it is the one part
 # that needs node. It loads every module in web/ the way a browser does, which

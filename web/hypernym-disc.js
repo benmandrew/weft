@@ -50,10 +50,12 @@ import { fit } from "./disc-label.js";
 
 // The "up" hint under the hub's name: its size, and the room it takes from the
 // name above it.
-const HINT_PX = 9, HINT_H = 12;
+const HINT_PX = 9,
+  HINT_H = 12;
 // The search column beside the disc, and the gutter to it. Landscape is worth
 // taking only once the frame is this much wider than a disc filling its height.
-const ASIDE_MIN = 200, ASIDE_GAP = 18;
+const ASIDE_MIN = 200,
+  ASIDE_GAP = 18;
 
 const TPL = document.createElement("template");
 TPL.innerHTML = `
@@ -169,35 +171,83 @@ TPL.innerHTML = `
   <div class="crumb"></div>
 </div>`;
 
-
 class HypernymDisc extends HTMLElement {
-  static observedAttributes = ["src", "names-src", "glosses-src", "start", "hue-depth",
-                              "merge", "rings"];
+  static observedAttributes = [
+    "src",
+    "names-src",
+    "glosses-src",
+    "start",
+    "hue-depth",
+    "merge",
+    "rings",
+  ];
 
-  #sr; #base; #over; #crumb; #ro; #q; #hits; #frame; #glossEl;
+  #sr;
+  #base;
+  #over;
+  #crumb;
+  #ro;
+  #q;
+  #hits;
+  #frame;
+  #glossEl;
   // Built on the first query rather than when the names land, so a page that
   // never searches never pays for the lowercased copy.
-  #search = null; #sug = []; #pick = -1;
-  #names = []; #glosses = []; #par = []; #kids = [];
-  #depth; #leaves; #a0; #a1; #byDepth = []; #maxDepth = 0;
-  #root = 0; #hover = -1; #cursor = 0;
+  #search = null;
+  #sug = [];
+  #pick = -1;
+  #names = [];
+  #glosses = [];
+  #par = [];
+  #kids = [];
+  #depth;
+  #leaves;
+  #a0;
+  #a1;
+  #byDepth = [];
+  #maxDepth = 0;
+  #root = 0;
+  #hover = -1;
+  #cursor = 0;
   // The crumb path in two parts: the head is the way out and moves only on a
   // zoom, the tail follows the pointer. #crumbSel is the tail's node, so the
   // pointer crossing a wedge writes to the DOM once rather than per pixel, and
   // #failed holds a load error in the crumb until a zoom, as it did when the
   // line was written whole.
-  #head = ""; #crumbSel = -2; #failed = false;
-  #buildMs = 0; #drawMs = 0; #drawn = 0; #hitUs = 0;
-  #structureMs = 0; #namesMs = 0;
+  #head = "";
+  #crumbSel = -2;
+  #failed = false;
+  #buildMs = 0;
+  #drawMs = 0;
+  #drawn = 0;
+  #hitUs = 0;
+  #structureMs = 0;
+  #namesMs = 0;
   // Which URLs have been fetched, so the upgrade and the connect that follow
   // it do not each start the same request.
-  #loadedSrc = null; #loadedNames = null; #loadedGlosses = null;
-  #prepMs = 0; #segments = 0; #colours = 0;
+  #loadedSrc = null;
+  #loadedNames = null;
+  #loadedGlosses = null;
+  #prepMs = 0;
+  #segments = 0;
+  #colours = 0;
   // Where the paint goes: undefined until asked for, "wait" while the worker
   // is answering, then "worker" or "main" for the rest of the element's life.
-  #route; #worker = null; #painter = null; #sent = -1; #layoutKey = 0; #hd = -1;
-  #cx = 0; #cy = 0; #r0 = 0; #rw = 1; #rmax = 1; #dpr = 1; #ready = false;
-  #pw = 0; #ph = 0;
+  #route;
+  #worker = null;
+  #painter = null;
+  #sent = -1;
+  #layoutKey = 0;
+  #hd = -1;
+  #cx = 0;
+  #cy = 0;
+  #r0 = 0;
+  #rw = 1;
+  #rmax = 1;
+  #dpr = 1;
+  #ready = false;
+  #pw = 0;
+  #ph = 0;
 
   constructor() {
     super();
@@ -253,13 +303,25 @@ class HypernymDisc extends HTMLElement {
     if (n === "names-src" && this.#ready) this.#loadNames();
     if (n === "glosses-src" && this.#ready) this.#loadGlosses();
     if (n === "start" && this.#ready) this.#applyStart();
-    if (n === "hue-depth" && this.#ready) { this.#draw(); this.#overlay(); }
+    if (n === "hue-depth" && this.#ready) {
+      this.#draw();
+      this.#overlay();
+    }
     // The painter keys its prepare on the mode, so there is nothing to clear.
-    if (n === "merge" && this.#ready) { this.#draw(); this.#overlay(); }
-    if (n === "rings" && this.#ready) { this.#draw(); this.#overlay(); }
+    if (n === "merge" && this.#ready) {
+      this.#draw();
+      this.#overlay();
+    }
+    if (n === "rings" && this.#ready) {
+      this.#draw();
+      this.#overlay();
+    }
   }
   #mq;
-  #repaint = () => { this.#draw(); this.#overlay(); };
+  #repaint = () => {
+    this.#draw();
+    this.#overlay();
+  };
 
   async #load() {
     const src = this.getAttribute("src");
@@ -318,7 +380,7 @@ class HypernymDisc extends HTMLElement {
   }
 
   set data(d) {
-    if (!d || !d.par) return;
+    if (!d?.par) return;
     if (d.names !== undefined) this.#setNames(d.names);
     this.#par = d.par;
     this.#build();
@@ -326,20 +388,34 @@ class HypernymDisc extends HTMLElement {
     this.#applyStart();
     this.#fit();
   }
-  get data() { return { names: this.#names, par: this.#par }; }
-  get index() { return this.#root; }
+  get data() {
+    return { names: this.#names, par: this.#par };
+  }
+  get index() {
+    return this.#root;
+  }
   /* What the last build and the last repaint cost, and how many arcs that
      repaint actually put on the canvas. Zooming in draws far fewer. */
   get stats() {
-    return { nodes: this.#par.length, drawn: this.#drawn,
-             buildMs: this.#buildMs, drawMs: this.#drawMs, hitUs: this.#hitUs,
-             prepMs: this.#prepMs, segments: this.#segments,
-             mode: this.#mode(), colours: this.#colours,
-             thread: this.#route === "worker" ? "worker" : "main",
-             structureMs: this.#structureMs, namesMs: this.#namesMs,
-             named: this.#names.length > 0 };
+    return {
+      nodes: this.#par.length,
+      drawn: this.#drawn,
+      buildMs: this.#buildMs,
+      drawMs: this.#drawMs,
+      hitUs: this.#hitUs,
+      prepMs: this.#prepMs,
+      segments: this.#segments,
+      mode: this.#mode(),
+      colours: this.#colours,
+      thread: this.#route === "worker" ? "worker" : "main",
+      structureMs: this.#structureMs,
+      namesMs: this.#namesMs,
+      named: this.#names.length > 0,
+    };
   }
-  get names() { return this.#names; }
+  get names() {
+    return this.#names;
+  }
   /* Names can arrive at any point, including never. Setting them re-resolves
      `start`, which can only be matched by name, and refreshes what is on
      screen; the geometry is untouched. */
@@ -351,7 +427,9 @@ class HypernymDisc extends HTMLElement {
     this.#overlay();
     this.#emit("disc-names", { count: this.#names.length, ms: this.#namesMs });
   }
-  get glosses() { return this.#glosses; }
+  get glosses() {
+    return this.#glosses;
+  }
   set glosses(v) {
     this.#glosses = typeof v === "string" ? v.split("\n") : Array.from(v);
     if (this.#ready) this.#showGloss();
@@ -364,7 +442,9 @@ class HypernymDisc extends HTMLElement {
     this.#q.disabled = this.#names.length === 0;
     if (!this.#q.disabled) this.#q.placeholder = "Search names…";
   }
-  #label(i) { return this.#names[i] ?? `#${i}`; }
+  #label(i) {
+    return this.#names[i] ?? `#${i}`;
+  }
 
   #applyStart() {
     const want = this.getAttribute("start");
@@ -378,7 +458,8 @@ class HypernymDisc extends HTMLElement {
      is always lower than its children's. */
   #build() {
     const t0 = performance.now();
-    const N = this.#par.length, par = this.#par;
+    const N = this.#par.length,
+      par = this.#par;
     this.#kids = Array.from({ length: N }, () => []);
     for (let i = 0; i < N; i++) if (par[i] >= 0) this.#kids[par[i]].push(i);
 
@@ -389,17 +470,21 @@ class HypernymDisc extends HTMLElement {
       if (!this.#kids[i].length) this.#leaves[i] = 1;
       if (par[i] >= 0) this.#leaves[par[i]] += this.#leaves[i];
     }
-    this.#a0 = new Float64Array(N); this.#a1 = new Float64Array(N);
+    this.#a0 = new Float64Array(N);
+    this.#a1 = new Float64Array(N);
     this.#a1[0] = TAU;
     for (let i = 0; i < N; i++) {
       let a = this.#a0[i];
       const w = (this.#a1[i] - this.#a0[i]) / this.#leaves[i];
       for (const c of this.#kids[i]) {
-        this.#a0[c] = a; a += this.#leaves[c] * w; this.#a1[c] = a;
+        this.#a0[c] = a;
+        a += this.#leaves[c] * w;
+        this.#a1[c] = a;
       }
     }
     this.#maxDepth = 0;
-    for (let i = 0; i < N; i++) if (this.#depth[i] > this.#maxDepth) this.#maxDepth = this.#depth[i];
+    for (let i = 0; i < N; i++)
+      if (this.#depth[i] > this.#maxDepth) this.#maxDepth = this.#depth[i];
     const rings = Array.from({ length: this.#maxDepth + 1 }, () => []);
     for (let i = 0; i < N; i++) rings[this.#depth[i]].push(i);
     for (const arr of rings) arr.sort((x, y) => this.#a0[x] - this.#a0[y]);
@@ -429,8 +514,10 @@ class HypernymDisc extends HTMLElement {
      the observer settles in one more pass. */
   #shape() {
     const f = this.#frame.getBoundingClientRect();
-    this.#frame.classList.toggle("wide",
-      this.hasAttribute("fit") && f.width - f.height >= ASIDE_MIN + ASIDE_GAP);
+    this.#frame.classList.toggle(
+      "wide",
+      this.hasAttribute("fit") && f.width - f.height >= ASIDE_MIN + ASIDE_GAP,
+    );
   }
 
   #fit() {
@@ -443,11 +530,15 @@ class HypernymDisc extends HTMLElement {
     // worker by now, where setting a dimension throws, so the painter sizes it.
     this.#pw = Math.round(box.width * this.#dpr);
     this.#ph = Math.round(box.height * this.#dpr);
-    this.#over.width = this.#pw; this.#over.height = this.#ph;
+    this.#over.width = this.#pw;
+    this.#over.height = this.#ph;
     const s = Math.min(box.width, box.height);
-    this.#cx = box.width / 2; this.#cy = box.height / 2;
-    this.#r0 = s * .075; this.#rmax = s * .485;
-    this.#draw(); this.#overlay();
+    this.#cx = box.width / 2;
+    this.#cy = box.height / 2;
+    this.#r0 = s * 0.075;
+    this.#rmax = s * 0.485;
+    this.#draw();
+    this.#overlay();
   }
 
   #tok(n, f) {
@@ -455,9 +546,11 @@ class HypernymDisc extends HTMLElement {
     return v || f;
   }
   #under(i) {
-    return this.#depth[i] >= this.#depth[this.#root]
-      && this.#a0[i] >= this.#a0[this.#root] - 1e-9
-      && this.#a1[i] <= this.#a1[this.#root] + 1e-9;
+    return (
+      this.#depth[i] >= this.#depth[this.#root] &&
+      this.#a0[i] >= this.#a0[this.#root] - 1e-9 &&
+      this.#a1[i] <= this.#a1[this.#root] + 1e-9
+    );
   }
   /* Under the root and inside the rings being drawn. The hub asks #under
      instead, so a node the search reached below the last ring is still named
@@ -488,16 +581,30 @@ class HypernymDisc extends HTMLElement {
     if (this.#sent !== this.#layoutKey) {
       this.#sent = this.#layoutKey;
       msg.hd = this.#hd = hd;
-      msg.layout = { par: Int32Array.from(this.#par), depth: this.#depth,
-                     a0: this.#a0, a1: this.#a1, byDepth: this.#byDepth,
-                     maxDepth: this.#maxDepth };
+      msg.layout = {
+        par: Int32Array.from(this.#par),
+        depth: this.#depth,
+        a0: this.#a0,
+        a1: this.#a1,
+        byDepth: this.#byDepth,
+        maxDepth: this.#maxDepth,
+      };
     } else if (hd !== this.#hd) msg.hd = this.#hd = hd;
     msg.view = {
-      root: this.#root, w: this.#pw, h: this.#ph, dpr: this.#dpr,
-      cx: this.#cx, cy: this.#cy, r0: this.#r0, rmax: this.#rmax, rw: this.#rw,
+      root: this.#root,
+      w: this.#pw,
+      h: this.#ph,
+      dpr: this.#dpr,
+      cx: this.#cx,
+      cy: this.#cy,
+      r0: this.#r0,
+      rmax: this.#rmax,
+      rw: this.#rw,
       rings: this.#rings(),
-      mode: this.#mode(), sat: this.#tok("--_sat", ".55"),
-      val: this.#tok("--_val", ".88"), panel: this.#tok("--_panel", "#141b1c"),
+      mode: this.#mode(),
+      sat: this.#tok("--_sat", ".55"),
+      val: this.#tok("--_val", ".88"),
+      panel: this.#tok("--_panel", "#141b1c"),
     };
     if (this.#route === "worker") return this.#worker.postMessage(msg);
     if (msg.layout) this.#painter.layout(msg.layout, msg.hd);
@@ -521,19 +628,31 @@ class HypernymDisc extends HTMLElement {
     if (!this.#base.transferControlToOffscreen || typeof Worker === "undefined")
       return settle(true);
     let w;
-    try { w = new Worker(new URL("./disc-worker.js", import.meta.url), { type: "module" }); }
-    catch { return settle(true); }
-    const floor = setTimeout(() => { w.terminate(); settle(true); }, 400);
+    try {
+      w = new Worker(new URL("./disc-worker.js", import.meta.url), { type: "module" });
+    } catch {
+      return settle(true);
+    }
+    const floor = setTimeout(() => {
+      w.terminate();
+      settle(true);
+    }, 400);
     w.onerror = () => {
       if (this.#route !== "wait") return;
-      clearTimeout(floor); w.terminate(); settle(true);
+      clearTimeout(floor);
+      w.terminate();
+      settle(true);
     };
     w.onmessage = ev => {
       if (!ev.data.ready) return this.#painted(ev.data.stats);
       clearTimeout(floor);
       let off;
-      try { off = this.#base.transferControlToOffscreen(); }
-      catch { w.terminate(); return settle(true); }
+      try {
+        off = this.#base.transferControlToOffscreen();
+      } catch {
+        w.terminate();
+        return settle(true);
+      }
       this.#worker = w;
       w.postMessage({ canvas: off }, [off]);
       settle(false);
@@ -543,8 +662,11 @@ class HypernymDisc extends HTMLElement {
   /* What the painter reports, whichever thread it ran on. */
   #painted(st) {
     if (!st) return;
-    this.#drawn = st.drawn; this.#drawMs = st.drawMs; this.#prepMs = st.prepMs;
-    this.#segments = st.segments; this.#colours = st.colours;
+    this.#drawn = st.drawn;
+    this.#drawMs = st.drawMs;
+    this.#prepMs = st.prepMs;
+    this.#segments = st.segments;
+    this.#colours = st.colours;
     this.#emit("disc-render", { ...this.stats, name: this.#label(this.#root) });
   }
 
@@ -552,8 +674,7 @@ class HypernymDisc extends HTMLElement {
      neither is in the view and the root speaks for itself. The hub's name and
      the gloss both come off this, so the two cannot describe different nodes. */
   #focus() {
-    const sel = this.#hover >= 0 ? this.#hover
-      : this.#cursor !== this.#root ? this.#cursor : -1;
+    const sel = this.#hover >= 0 ? this.#hover : this.#cursor !== this.#root ? this.#cursor : -1;
     return sel >= 0 && this.#under(sel) ? sel : -1;
   }
 
@@ -577,7 +698,11 @@ class HypernymDisc extends HTMLElement {
       g.arc(this.#cx, this.#cy, r1, s, e);
       g.arc(this.#cx, this.#cy, r0, e, s, true);
       g.closePath();
-      if (cur === mark) { g.globalAlpha = .22; g.fill(); g.globalAlpha = 1; }
+      if (cur === mark) {
+        g.globalAlpha = 0.22;
+        g.fill();
+        g.globalAlpha = 1;
+      }
       g.stroke();
       if (cur === this.#root) break;
       cur = this.#par[cur];
@@ -600,13 +725,19 @@ class HypernymDisc extends HTMLElement {
     const sel = this.#focus();
     const named = sel >= 0;
     const way = !named && this.#root !== 0;
-    const { lines, lh } = fit(g, this.#label(named ? sel : this.#root),
-                              this.#r0 - 5 - (way ? HINT_H : 0),
-                              this.#tok("--_mono", "monospace"));
+    const { lines, lh } = fit(
+      g,
+      this.#label(named ? sel : this.#root),
+      this.#r0 - 5 - (way ? HINT_H : 0),
+      this.#tok("--_mono", "monospace"),
+    );
     g.fillStyle = named ? this.#tok("--_ink", "#e7eded") : this.#tok("--_muted", "#90a1a1");
-    g.textAlign = "center"; g.textBaseline = "middle";
-    const top = this.#cy - (lines.length - 1) * lh / 2 - (way ? HINT_H / 2 : 0);
-    lines.forEach((line, k) => g.fillText(line, this.#cx, top + k * lh));
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    const top = this.#cy - ((lines.length - 1) * lh) / 2 - (way ? HINT_H / 2 : 0);
+    lines.forEach((line, k) => {
+      g.fillText(line, this.#cx, top + k * lh);
+    });
     if (!way) return;
     g.font = `500 ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
     g.fillStyle = this.#tok("--_accent", "#59b491");
@@ -617,19 +748,25 @@ class HypernymDisc extends HTMLElement {
      ring by binary search — no spatial index. */
   #hit(px, py) {
     const t0 = performance.now();
-    const dx = px - this.#cx, dy = py - this.#cy, r = Math.hypot(dx, dy);
+    const dx = px - this.#cx,
+      dy = py - this.#cy,
+      r = Math.hypot(dx, dy);
     if (r < this.#r0 || r > this.#rmax) return -1;
     const d = this.#depth[this.#root] + Math.floor((r - this.#r0) / this.#rw);
     if (d > this.#maxDepth || d >= this.#depth[this.#root] + this.#rings()) return -1;
     let ang = Math.atan2(dy, dx) + Math.PI / 2;
     if (ang < 0) ang += TAU;
-    const A = this.#a0[this.#root]
-      + ang / (TAU / (this.#a1[this.#root] - this.#a0[this.#root]));
+    const A = this.#a0[this.#root] + ang / (TAU / (this.#a1[this.#root] - this.#a0[this.#root]));
     const arr = this.#byDepth[d];
-    let lo = 0, hi = arr.length - 1, best = -1;
+    let lo = 0,
+      hi = arr.length - 1,
+      best = -1;
     while (lo <= hi) {
       const m = (lo + hi) >> 1;
-      if (this.#a0[arr[m]] <= A) { best = arr[m]; lo = m + 1; } else hi = m - 1;
+      if (this.#a0[arr[m]] <= A) {
+        best = arr[m];
+        lo = m + 1;
+      } else hi = m - 1;
     }
     this.#hitUs = (performance.now() - t0) * 1000;
     return best >= 0 && this.#a1[best] >= A && this.#inView(best) ? best : -1;
@@ -651,8 +788,13 @@ class HypernymDisc extends HTMLElement {
   #preview(i) {
     this.#hover = i;
     this.#overlay();
-    if (i >= 0) this.#emit("disc-hover", {
-      index: i, name: this.#label(i), depth: this.#depth[i], leaves: this.#leaves[i] });
+    if (i >= 0)
+      this.#emit("disc-hover", {
+        index: i,
+        name: this.#label(i),
+        depth: this.#depth[i],
+        leaves: this.#leaves[i],
+      });
   }
   #onClick = ev => {
     const [px, py] = this.#at(ev);
@@ -689,7 +831,10 @@ class HypernymDisc extends HTMLElement {
     } else if (ev.key === "Escape") {
       ev.preventDefault();
       if (n) this.#closeFind();
-      else { this.#q.value = ""; this.#preview(-1); }
+      else {
+        this.#q.value = "";
+        this.#preview(-1);
+      }
     }
   };
 
@@ -702,37 +847,40 @@ class HypernymDisc extends HTMLElement {
     if (this.#kids[i].length) this.zoomTo(i);
     else if (this.#par[i] >= 0) {
       this.zoomTo(this.#par[i]);
-      this.#cursor = i; this.#overlay();
+      this.#cursor = i;
+      this.#overlay();
     }
   }
 
   #drawHits() {
     const q = this.#q.value.trim().toLowerCase();
-    this.#hits.replaceChildren(...this.#sug.map((hit, k) => {
-      const li = document.createElement("li");
-      li.id = `hit-${k}`;
-      li.dataset.k = k;
-      li.setAttribute("role", "option");
-      li.setAttribute("aria-selected", "false");
-      const name = document.createElement("span");
-      name.className = "n";
-      // Marks the run the query matched outright. A fuzzy hit has no such run,
-      // and is left plain rather than marked letter by letter.
-      const at = hit.name.toLowerCase().indexOf(q);
-      if (at < 0) name.textContent = hit.name;
-      else {
-        const b = document.createElement("b");
-        b.textContent = hit.name.slice(at, at + q.length);
-        name.append(hit.name.slice(0, at), b, hit.name.slice(at + q.length));
-      }
-      // The parent, because a WordNet name is not unique: four synsets are
-      // called "bank" and only their parents tell them apart.
-      const par = document.createElement("span");
-      par.className = "p";
-      par.textContent = this.#par[hit.i] >= 0 ? this.#label(this.#par[hit.i]) : "";
-      li.append(name, par);
-      return li;
-    }));
+    this.#hits.replaceChildren(
+      ...this.#sug.map((hit, k) => {
+        const li = document.createElement("li");
+        li.id = `hit-${k}`;
+        li.dataset.k = k;
+        li.setAttribute("role", "option");
+        li.setAttribute("aria-selected", "false");
+        const name = document.createElement("span");
+        name.className = "n";
+        // Marks the run the query matched outright. A fuzzy hit has no such run,
+        // and is left plain rather than marked letter by letter.
+        const at = hit.name.toLowerCase().indexOf(q);
+        if (at < 0) name.textContent = hit.name;
+        else {
+          const b = document.createElement("b");
+          b.textContent = hit.name.slice(at, at + q.length);
+          name.append(hit.name.slice(0, at), b, hit.name.slice(at + q.length));
+        }
+        // The parent, because a WordNet name is not unique: four synsets are
+        // called "bank" and only their parents tell them apart.
+        const par = document.createElement("span");
+        par.className = "p";
+        par.textContent = this.#par[hit.i] >= 0 ? this.#label(this.#par[hit.i]) : "";
+        li.append(name, par);
+        return li;
+      }),
+    );
     this.#hits.hidden = this.#sug.length === 0;
     this.#q.setAttribute("aria-expanded", String(this.#sug.length > 0));
   }
@@ -753,7 +901,8 @@ class HypernymDisc extends HTMLElement {
 
   #closeFind = () => {
     if (this.#pick >= 0) this.#preview(-1);
-    this.#sug = []; this.#pick = -1;
+    this.#sug = [];
+    this.#pick = -1;
     this.#hits.replaceChildren();
     this.#hits.hidden = true;
     this.#q.setAttribute("aria-expanded", "false");
@@ -762,15 +911,26 @@ class HypernymDisc extends HTMLElement {
 
   zoomTo(i) {
     if (!(i >= 0) || i >= this.#par.length) return;
-    this.#root = i; this.#cursor = i; this.#hover = -1;
-    this.#draw(); this.#overlay(); this.#crumbs();
+    this.#root = i;
+    this.#cursor = i;
+    this.#hover = -1;
+    this.#draw();
+    this.#overlay();
+    this.#crumbs();
     this.#emit("disc-zoom", { index: i, name: this.#label(i), path: this.path(i) });
   }
-  up() { if (this.#root !== 0) this.zoomTo(Math.max(0, this.#par[this.#root])); }
-  reset() { this.zoomTo(0); }
+  up() {
+    if (this.#root !== 0) this.zoomTo(Math.max(0, this.#par[this.#root]));
+  }
+  reset() {
+    this.zoomTo(0);
+  }
   /* Call after the host page changes theme by any means other than
      prefers-color-scheme, which the element already watches. */
-  repaint() { this.#draw(); this.#overlay(); }
+  repaint() {
+    this.#draw();
+    this.#overlay();
+  }
   path(i) {
     const out = [];
     for (let c = i; c >= 0; c = this.#par[c]) out.unshift(this.#label(c));
@@ -793,18 +953,22 @@ class HypernymDisc extends HTMLElement {
   #showGloss() {
     const sel = this.#focus();
     const g = this.#glosses[sel >= 0 ? sel : this.#root] ?? "";
-    this.#glossEl.textContent =
-      /^[a-z](?![A-Z])/.test(g) ? g[0].toUpperCase() + g.slice(1) : g;
+    this.#glossEl.textContent = /^[a-z](?![A-Z])/.test(g) ? g[0].toUpperCase() + g.slice(1) : g;
   }
   #crumbs() {
     const path = [];
     for (let c = this.#root; c >= 0; c = this.#par[c]) path.unshift(c);
     // A separator before every step, the first included, so the path reads as
     // a path rather than as a name with a trail after it.
-    this.#head = path.map(i =>
-      "<i>›</i>" + (i === this.#root
-        ? `<span>${this.#label(i)}</span>`
-        : `<button type="button" data-i="${i}">${this.#label(i)}</button>`)).join("");
+    this.#head = path
+      .map(
+        i =>
+          "<i>›</i>" +
+          (i === this.#root
+            ? `<span>${this.#label(i)}</span>`
+            : `<button type="button" data-i="${i}">${this.#label(i)}</button>`),
+      )
+      .join("");
     this.#failed = false;
     this.#crumbSel = -2;
     this.#showTail();
@@ -822,8 +986,8 @@ class HypernymDisc extends HTMLElement {
     this.#crumbSel = sel;
     const tail = [];
     for (let c = sel; c >= 0 && c !== this.#root; c = this.#par[c]) tail.unshift(c);
-    this.#crumb.innerHTML = this.#head +
-      tail.map(i => `<i>›</i><em>${this.#label(i)}</em>`).join("");
+    this.#crumb.innerHTML =
+      this.#head + tail.map(i => `<i>›</i><em>${this.#label(i)}</em>`).join("");
   }
 }
 customElements.define("hypernym-disc", HypernymDisc);

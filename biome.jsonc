@@ -1,0 +1,21 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.9/schema.json",
+  "files": { "includes": ["web/**/*.js", "tools/**/*.mjs"] },
+  // lineWidth matches ruff's line-length, so both languages wrap alike.
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "javascript": {
+    "formatter": { "quoteStyle": "double", "arrowParentheses": "asNeeded", "semicolons": "always" }
+  },
+  // Off because its one action, organize-imports, would sort hypernym-disc.js's
+  // imports alphabetically, where they sit in the order the module builds on them.
+  "assist": { "enabled": false },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      // Off because every site it fires on appends a literal to an expression,
+      // as in `s.slice(0, k + 1) + "-"`, where a template literal reads worse.
+      "style": { "useTemplate": "off" }
+    }
+  }
+}

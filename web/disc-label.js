@@ -22,7 +22,7 @@ export function fit(g, text, r, mono) {
     g.font = `500 ${px}px ${mono}`;
     const lh = px + 2;
     for (let n = 1; n <= MAX_LINES && n * lh < 2 * r; n++) {
-      const lines = wrap(g, text, 2 * Math.sqrt(r * r - (n * lh / 2) ** 2), n);
+      const lines = wrap(g, text, 2 * Math.sqrt(r * r - ((n * lh) / 2) ** 2), n);
       if (lines) return { lines, lh };
     }
   }
@@ -40,28 +40,47 @@ export function wrap(g, text, w, n, hard = false) {
   const fits = s => g.measureText(s).width <= w;
   // How much of `s` fits, plainly or with a hyphen added. At least one
   // character either way, so a break always makes progress and the loop ends.
-  const plain = s => { let k = 1; while (k < s.length && fits(s.slice(0, k + 1))) k++; return k; };
-  const upTo = s => { let k = 1; while (k < s.length - 1 && fits(s.slice(0, k + 1) + "-")) k++; return k; };
+  const plain = s => {
+    let k = 1;
+    while (k < s.length && fits(s.slice(0, k + 1))) k++;
+    return k;
+  };
+  const upTo = s => {
+    let k = 1;
+    while (k < s.length - 1 && fits(s.slice(0, k + 1) + "-")) k++;
+    return k;
+  };
   const out = [];
   let rest = text;
   while (rest) {
-    if (fits(rest)) { out.push(rest); return out; }
+    if (fits(rest)) {
+      out.push(rest);
+      return out;
+    }
     if (!hard) {
       const at = rest.lastIndexOf(" ", plain(rest));
       if (at <= 0 || out.length === n - 1) return null;
-      out.push(rest.slice(0, at)); rest = rest.slice(at + 1);
+      out.push(rest.slice(0, at));
+      rest = rest.slice(at + 1);
       continue;
     }
     // The last line takes what is left, hyphenated unless the cut falls on a
     // space, where a hyphen would invent one inside the name.
     if (out.length === n - 1) {
-      const k = upTo(rest), head = rest.slice(0, k).trimEnd();
+      const k = upTo(rest),
+        head = rest.slice(0, k).trimEnd();
       out.push(rest[k] === " " ? head : head + "-");
       return out;
     }
     const at = rest.lastIndexOf(" ", plain(rest));
-    if (at > 0) { out.push(rest.slice(0, at)); rest = rest.slice(at + 1); }
-    else { const k = upTo(rest); out.push(rest.slice(0, k) + "-"); rest = rest.slice(k); }
+    if (at > 0) {
+      out.push(rest.slice(0, at));
+      rest = rest.slice(at + 1);
+    } else {
+      const k = upTo(rest);
+      out.push(rest.slice(0, k) + "-");
+      rest = rest.slice(k);
+    }
   }
   return out;
 }

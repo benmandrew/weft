@@ -309,6 +309,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     schemas/wordchain.schema.json  the same settings for an editor
     taplo.toml                     points taplo at the schema
     tools/check_schema.py          holds the schema to config.py
+    biome.jsonc                    lints and formats the JavaScript
 
     web/hypernym-disc.js           the nested-arc element
     web/disc-paint.js              the draw pipeline, no DOM
@@ -345,13 +346,31 @@ Tighten via `--min-dominance` / `--max-rank`, not by adding a stop-list.
 `make check` must pass before a commit: `ruff check`, `ruff format --check` and
 `mypy` over `src/` and `tools/`, then `taplo check`, which validates
 `wordchain.toml` against the schema as an editor would, `tools/check_schema.py`,
-which reads the schema back against `config.py` and `palette.py`, and `make
-web`, which loads `web/` the way a browser does. mypy is strict over
+which reads the schema back against `config.py` and `palette.py`, `biome lint`
+and `biome format` over the JavaScript, and `make web`, which loads `web/` the
+way a browser does. mypy is strict over
 `src/wordchain` and `tools`, with `mypy_path = src` because `tools/` is not part
 of the package. nltk, wordfreq, pyvis and networkx ship no type information and
 have no stubs in nixpkgs, so `mypy.ini` declares them untyped and the values
 crossing those boundaries are annotated by hand — `lexicon.Synset` names the
 opaque WordNet type rather than leaving a bare `Any` at each call site.
+
+Biome is one Rust binary with its rules built in, like `ruff` and `taplo`, so
+the JavaScript checks need no `node_modules` and no lockfile. It covers
+`web/**/*.js` and `tools/**/*.mjs`, which is everything: `web/index.html`
+carries no inline script. `biome format` reports without writing and exits
+non-zero on a diff, so there is no `--check` flag to pass and `--write` is what
+writes. `lineWidth` is 100 to match ruff's `line-length`, and the style settings
+name what the code already did. Two things are off, with their reasons in
+`biome.jsonc`: the `assist` group, whose one action would sort
+`hypernym-disc.js`'s imports alphabetically where they sit in the order the
+module builds on them, and `style/useTemplate`, which fired on five sites that
+all append a literal to an expression. The config is `.jsonc` because Biome
+refuses comments in `biome.json`, and those two decisions need their reasons
+beside them. Formatting took the five `web/*.js` files and `check_web.mjs` from
+1,494 lines to 1,908, mostly by splitting lines that held several statements;
+that churn was paid once and deliberately. Biome never runs the modules, so
+`make web` still has to.
 
 `make web` is `node tools/check_web.mjs`. It is a prerequisite of `check` rather
 than a line in its recipe, since it is the one part that needs node, and
@@ -381,6 +400,6 @@ clearing them means writing stubs rather than annotating this code.
 
 Both themes in `palette.py` are complete palettes, never an inversion of each
 other. A figure takes a `Theme` argument rather than reading a global, and every
-colour in `render.py` and `web.py` comes off that object. Ruff for Python, `nix
-fmt` for the flake. Comments explain why a choice was forced, not what a line
+colour in `render.py` and `web.py` comes off that object. Ruff for Python, Biome for
+JavaScript, `nix fmt` for the flake. Comments explain why a choice was forced, not what a line
 does.

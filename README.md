@@ -12,7 +12,7 @@ The project uses a Nix flake. `direnv allow` activates it on entering the direct
 
 The shellHook puts `src/` on `PYTHONPATH` and symlinks the WordNet corpus out of the nix store, so `python -m wordchain` works from the project root and nothing is fetched over the network at runtime.
 
-`make check` runs everything that has to pass: ruff, mypy in strict mode over `src/wordchain` and `tools`, the two checks that hold the config file and its schema together, and a `nodejs` pass that loads the browser modules as a browser would and draws a synthetic tree with them.
+`make check` runs everything that has to pass: ruff, mypy in strict mode over `src/wordchain` and `tools`, the two checks that hold the config file and its schema together, Biome linting and formatting the browser modules and the node tools, and a `nodejs` pass that loads the browser modules as a browser would and draws a synthetic tree with them.
 
 ## Commands
 
