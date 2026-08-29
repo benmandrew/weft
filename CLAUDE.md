@@ -97,6 +97,25 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   rescales angles rather than laying out again, so neither needs a spatial
   index. `make serve` watches `web/` and reloads the browser on save. Nothing in
   `all` depends on any of it.
+- The paint runs on a worker. `disc-paint.js` holds the whole pipeline with no
+  DOM in it: the tint, the palette, the merged runs and the draw.
+  `disc-worker.js` hosts that class against an OffscreenCanvas, and the element
+  calls the same class on the main thread where a worker cannot be had, so the
+  fallback cannot drift from the fast path. The layout stays with the element
+  rather than moving to the worker, because hit testing, the crumbs, the
+  keyboard and the readout all have to answer without a round trip. The layout
+  crosses once per tree and the hue depth only when it changes, so a repaint is
+  a small message however large the tree, and `byDepth` crosses as typed arrays,
+  since a nested plain array of 82,115 numbers is the slowest thing structured
+  clone can be handed. A canvas can be handed to a worker only once, and only
+  before anything has taken a context on it, so the element cannot paint first
+  and hand over afterwards; it waits for the worker to say it is ready, and a
+  worker that errors or does not answer within 400 ms leaves the draw on the
+  main thread for good. Do not terminate the worker when the element
+  disconnects: it holds the only handle to the base canvas, and that canvas
+  cannot be handed over twice. The element no longer sizes that canvas either,
+  since setting a dimension on a transferred canvas throws — the painter does
+  it, and the element still sizes the overlay.
 - The draw path has been measured, and its choices are not obvious. Colours are
   interned into a palette once per theme and root rather than built per node per
   frame, since the string is what canvas has to parse; that alone was a fifth of
@@ -165,7 +184,9 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     taplo.toml                     points taplo at the schema
     tools/check_schema.py          holds the schema to config.py
 
-    web/hypernym-disc.js           the nested-arc element, no dependencies
+    web/hypernym-disc.js           the nested-arc element
+    web/disc-paint.js              the draw pipeline, no DOM
+    web/disc-worker.js             hosts it on its own thread
     web/index.html                 its harness, with the render timings
     tools/export_tree.py           writes the tree and names for it
     tools/serve.py                 serves web/ and reloads it on save

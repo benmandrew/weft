@@ -85,6 +85,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--live);outline-
       <dl class="metrics">
         <dt>nodes in tree</dt><dd id="m-nodes">&mdash;</dd>
         <dt>arcs drawn</dt><dd id="m-drawn">&mdash;</dd>
+        <dt>painted on</dt><dd id="m-thread">&mdash;</dd>
         <dt>prepare</dt><dd id="m-prep">&mdash;</dd>
         <dt>palette</dt><dd id="m-cols">&mdash;</dd>
         <dt>structure fetch</dt><dd id="m-struct">&mdash;</dd>
@@ -138,6 +139,7 @@ disc.addEventListener("disc-render", e => {
   if (draws.length > 120) draws.shift();
   $("m-nodes").textContent = s.nodes.toLocaleString("en-GB");
   $("m-drawn").textContent = s.drawn.toLocaleString("en-GB");
+  $("m-thread").textContent = s.thread === "worker" ? "worker thread" : "this thread";
   $("m-struct").textContent = s.structureMs ? ms(s.structureMs) : "inline";
   $("m-prep").textContent = s.prepMs ? ms(s.prepMs) : "cached";
   $("m-cols").textContent = s.colours ? s.colours.toLocaleString("en-GB") : "\u2014";

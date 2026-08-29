@@ -13,6 +13,11 @@
  * structure alone and `names-src` is fetched after the first paint. Until it
  * lands, a node answers to `#index`.
  *
+ * The paint runs off this thread. disc-paint.js is the pipeline, disc-worker.js
+ * hosts it against an OffscreenCanvas, and the element calls the same class
+ * here where a worker cannot be had. The element keeps the layout either way,
+ * because hit testing, the crumbs and the keyboard answer without a round trip.
+ *
  * Attributes: src, names-src, readout="off", hue-depth (default 2), start,
  *             merge: "density" (default) splits merged runs at pixel
  *             boundaries and shades each by how many wedges it holds, "on"
@@ -24,6 +29,8 @@
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
+import { Painter, TAU } from "./disc-paint.js";
+
 const TPL = document.createElement("template");
 TPL.innerHTML = `
 <style>
@@ -67,36 +74,25 @@ TPL.innerHTML = `
   <div class="bar"><div class="crumb"></div><div class="tip"></div></div>
 </div>`;
 
-const hsv = (h, s, v) => {
-  const i = Math.floor(h * 6) % 6, f = h * 6 - Math.floor(h * 6),
-        p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
-  const c = [[v,t,p],[q,v,p],[p,v,t],[p,q,v],[t,p,v],[v,p,q]][i];
-  return `rgb(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0})`;
-};
-const TAU = Math.PI * 2;
-// Below one pixel at its outer edge a wedge cannot be told from its neighbour.
-const MERGE_PX = 1;
-// Value steps the density ramp is quantised to, and how far it dips at its
-// sparse end. 24 steps sits below the eye's threshold on this ramp and keeps
-// the interned palette a lookup rather than a string build per piece.
-const RAMP_STEPS = 24;
-const RAMP_FLOOR = .62;
 
 class HypernymDisc extends HTMLElement {
   static observedAttributes = ["src", "names-src", "start", "hue-depth", "merge"];
 
   #sr; #base; #over; #crumb; #tip; #ro;
   #names = []; #par = []; #kids = [];
-  #depth; #leaves; #a0; #a1; #tint; #tcos; #tsin; #byDepth = []; #maxDepth = 0;
+  #depth; #leaves; #a0; #a1; #byDepth = []; #maxDepth = 0;
   #root = 0; #hover = -1; #cursor = 0;
   #buildMs = 0; #drawMs = 0; #drawn = 0; #hitUs = 0;
   #structureMs = 0; #namesMs = 0;
   // Which URLs have been fetched, so the upgrade and the connect that follow
   // it do not each start the same request.
   #loadedSrc = null; #loadedNames = null;
-  #palette = []; #paletteKey = new Map(); #fillId = null; #seg = null;
-  #prepKey = ""; #prepMs = 0; #tintKey = 0; #sat = .55; #val = .88; #hueQ = 1;
+  #prepMs = 0; #segments = 0; #colours = 0;
+  // Where the paint goes: undefined until asked for, "wait" while the worker
+  // is answering, then "worker" or "main" for the rest of the element's life.
+  #route; #worker = null; #painter = null; #sent = -1; #layoutKey = 0; #hd = -1;
   #cx = 0; #cy = 0; #r0 = 0; #rw = 1; #rmax = 1; #dpr = 1; #ready = false;
+  #pw = 0; #ph = 0;
 
   constructor() {
     super();
@@ -126,14 +122,18 @@ class HypernymDisc extends HTMLElement {
   disconnectedCallback() {
     this.#ro?.disconnect();
     this.#mq?.removeEventListener("change", this.#repaint);
+    // The worker is left running on purpose. It holds the only handle to the
+    // base canvas, which cannot be handed over twice, so terminating it here
+    // would leave a reattached element with nothing to paint on.
   }
   attributeChangedCallback(n, was, now) {
     if (was === now) return;
     if (n === "src") this.#load();
     if (n === "names-src" && this.#ready) this.#loadNames();
     if (n === "start" && this.#ready) this.#applyStart();
-    if (n === "hue-depth" && this.#ready) { this.#retint(); this.#draw(); this.#overlay(); }
-    if (n === "merge" && this.#ready) { this.#prepKey = ""; this.#draw(); this.#overlay(); }
+    if (n === "hue-depth" && this.#ready) { this.#draw(); this.#overlay(); }
+    // The painter keys its prepare on the mode, so there is nothing to clear.
+    if (n === "merge" && this.#ready) { this.#draw(); this.#overlay(); }
   }
   #mq;
   #repaint = () => { this.#draw(); this.#overlay(); };
@@ -192,8 +192,9 @@ class HypernymDisc extends HTMLElement {
   get stats() {
     return { nodes: this.#par.length, drawn: this.#drawn,
              buildMs: this.#buildMs, drawMs: this.#drawMs, hitUs: this.#hitUs,
-             prepMs: this.#prepMs, segments: this.#seg ? this.#seg.f.length : 0,
-             mode: this.#mode(), colours: this.#palette.length,
+             prepMs: this.#prepMs, segments: this.#segments,
+             mode: this.#mode(), colours: this.#colours,
+             thread: this.#route === "worker" ? "worker" : "main",
              structureMs: this.#structureMs, namesMs: this.#namesMs,
              named: this.#names.length > 0 };
   }
@@ -249,41 +250,15 @@ class HypernymDisc extends HTMLElement {
     }
     this.#maxDepth = 0;
     for (let i = 0; i < N; i++) if (this.#depth[i] > this.#maxDepth) this.#maxDepth = this.#depth[i];
-    this.#byDepth = Array.from({ length: this.#maxDepth + 1 }, () => []);
-    for (let i = 0; i < N; i++) this.#byDepth[this.#depth[i]].push(i);
-    for (const arr of this.#byDepth) arr.sort((x, y) => this.#a0[x] - this.#a0[y]);
-    this.#retint();
+    const rings = Array.from({ length: this.#maxDepth + 1 }, () => []);
+    for (let i = 0; i < N; i++) rings[this.#depth[i]].push(i);
+    for (const arr of rings) arr.sort((x, y) => this.#a0[x] - this.#a0[y]);
+    // Typed, because these cross to the worker whole and a nested plain array
+    // of 82,115 numbers is the slowest thing structured clone can be handed.
+    this.#byDepth = rings.map(arr => Int32Array.from(arr));
+    this.#layoutKey++;
     this.#buildMs = performance.now() - t0;
   }
-
-  /* Above hue-depth a node takes its own angle as a hue; below it inherits,
-     so each branch reads as one colour family. Deeper costs a little more at
-     paint time, because it multiplies the distinct fillStyle strings. */
-  #retint() {
-    const N = this.#par.length;
-    const hd = Math.max(0, +(this.getAttribute("hue-depth") ?? 2));
-    this.#tint = new Float64Array(N);
-    for (let i = 0; i < N; i++)
-      this.#tint[i] = this.#depth[i] <= hd
-        ? ((this.#a0[i] + this.#a1[i]) / 2) / TAU : this.#tint[this.#par[i]];
-    // Merged pieces average their members' hues, and hue is an angle, so each
-    // node's is kept as a vector rather than turned into one per piece per
-    // frame. Radius plays no part, so this survives a resize and a zoom.
-    this.#tcos = new Float64Array(N); this.#tsin = new Float64Array(N);
-    for (let i = 0; i < N; i++) {
-      this.#tcos[i] = Math.cos(this.#tint[i] * TAU);
-      this.#tsin[i] = Math.sin(this.#tint[i] * TAU);
-    }
-    this.#tintKey++;
-  }
-
-  /* A blended hue is a continuous value, and a colour is a string the canvas
-     has to parse, so hues are rounded to a slice one pixel wide at the fringe
-     and interned. That is the same threshold that decides two wedges cannot be
-     told apart: neighbouring slices differ by 0.16°, and a wedge wide enough to
-     read as its own arc cannot collide with its neighbour at that step. */
-  #quant(h) { const w = ((h % 1) + 1) % 1; return Math.round(w * this.#hueQ) / this.#hueQ; }
-  #hue(i) { return this.#quant(this.#tint[i]); }
 
   /* density (the default) splits a merged run at pixel boundaries and shades
      each piece by how many wedges fell in it; on merges each run flat; off
@@ -293,138 +268,16 @@ class HypernymDisc extends HTMLElement {
     return m === "off" || m === "on" ? m : "density";
   }
 
-  /* A colour is a string, and a string is what the canvas has to parse, so
-     they are interned rather than rebuilt per piece per frame. `step` is the
-     density rung, RAMP_STEPS meaning fully covered. */
-  #colourId(tint, rel, step) {
-    const key = tint + "|" + rel + "|" + step;
-    let id = this.#paletteKey.get(key);
-    if (id === undefined) {
-      const base = Math.max(.22, this.#val * (1 - rel * .035));
-      const v = base * (RAMP_FLOOR + (1 - RAMP_FLOOR) * step / RAMP_STEPS);
-      id = this.#palette.length;
-      this.#palette.push(hsv(tint, this.#sat, Math.min(1, v)));
-      this.#paletteKey.set(key, id);
-    }
-    return id;
-  }
-
-  #repalette() {
-    const N = this.#par.length;
-    this.#sat = parseFloat(this.#tok("--_sat", ".55"));
-    this.#val = parseFloat(this.#tok("--_val", ".88"));
-    this.#palette = [];
-    this.#paletteKey = new Map();
-    this.#fillId = new Int32Array(N);
-    this.#hueQ = Math.max(1, Math.round(TAU * this.#rmax / MERGE_PX));
-    // Only the unmerged draw reads a per-node fill; a merged one colours the
-    // run, so filling this in would be 82,115 lookups nothing goes on to read.
-    if (this.#mode() !== "off") return;
-    const base = this.#depth[this.#root];
-    for (let i = 0; i < N; i++)
-      this.#fillId[i] = this.#colourId(this.#hue(i), this.#depth[i] - base, RAMP_STEPS);
-  }
-
-  /* Adjacent wedges thinner than a pixel are one shape to the rasteriser,
-     which below about 0.1 px draws them as nothing at all, so they are drawn as
-     one and take the mean of their hues. Blending is what lets a run ignore
-     colour, and matching on it instead left nothing to merge above hue-depth 2,
-     where every node takes its own angle: the draw paid all 82,115 arcs there
-     rather than 7,823. A gap between subtrees breaks every run, which is what
-     keeps the fringe reading as many nodes. In density mode a run is then cut
-     at pixel boundaries and each piece keeps its own count and its own blend,
-     so a flat block becomes a ramp showing where the tree is packed. Runs are
-     found off `#byDepth`, already sorted by start angle for hit testing. */
-  #remerge() {
-    const mode = this.#mode();
-    if (mode === "off") { this.#seg = null; return; }
-    const dense = mode === "density";
-    const base = this.#depth[this.#root];
-    const sc = TAU / (this.#a1[this.#root] - this.#a0[this.#root]);
-    const s0 = [], s1 = [], sd = [], st = [], sn = [], sw = [];
-    let peak = 1;
-    for (let d = base; d <= this.#maxDepth; d++) {
-      const arr = this.#byDepth[d];
-      const rel = d - base;
-      const r1 = this.#r0 + (rel + 1) * this.#rw;
-      const thin = k => (this.#a1[k] - this.#a0[k]) * sc * r1 < MERGE_PX;
-      // Hue wraps, so the mean of 0.99 and 0.01 has to come out at 0 rather
-      // than 0.5, which is why the members are summed as vectors.
-      const blend = (lo, hi) => {
-        if (lo === hi) return this.#hue(arr[lo]);
-        let cx = 0, cy = 0;
-        for (let k = lo; k <= hi; k++) { cx += this.#tcos[arr[k]]; cy += this.#tsin[arr[k]]; }
-        return this.#quant(Math.atan2(cy, cx) / TAU);
-      };
-      let i = 0;
-      while (i < arr.length) {
-        if (!this.#inView(arr[i])) { i++; continue; }
-        let j = i;
-        while (thin(arr[j]) && j + 1 < arr.length && this.#inView(arr[j + 1]) && thin(arr[j + 1])
-               && Math.abs(this.#a0[arr[j + 1]] - this.#a1[arr[j]]) < 1e-9) j++;
-        const from = this.#a0[arr[i]], to = this.#a1[arr[j]];
-        if (j === i || !dense) {
-          // A wedge that stayed whole is fully covered, and only it is wide
-          // enough to earn a hairline.
-          s0.push(from); s1.push(to); sd.push(rel); st.push(blend(i, j));
-          sn.push(0); sw.push(j === i && (to - from) * sc > .012 ? 1 : 0);
-        } else {
-          const pieces = Math.max(1, Math.round((to - from) * sc * r1));
-          const width = (to - from) / pieces;
-          let m = i;
-          for (let q = 0; q < pieces; q++) {
-            const a = from + q * width, b = a + width;
-            let count = 0, cx = 0, cy = 0;
-            while (m <= j && (this.#a0[arr[m]] + this.#a1[arr[m]]) / 2 < b) {
-              cx += this.#tcos[arr[m]]; cy += this.#tsin[arr[m]]; count++; m++;
-            }
-            if (count > peak) peak = count;
-            s0.push(a); s1.push(b); sd.push(rel);
-            // A piece no midpoint fell in lies under one wedge, so it takes
-            // that wedge's hue rather than the mean of nothing.
-            st.push(count ? this.#quant(Math.atan2(cy, cx) / TAU)
-                          : this.#hue(arr[Math.min(m, j)]));
-            sn.push(count || 1); sw.push(0);
-          }
-        }
-        i = j + 1;
-      }
-    }
-    // Log, because counts run 1 to 64 and a linear ramp would spend most of
-    // its range on the sparse end. A count of 0 means a whole wedge, not an
-    // empty one, so it takes the top rung.
-    const lg = Math.log(peak);
-    const f = new Int32Array(s0.length);
-    for (let i = 0; i < f.length; i++)
-      f[i] = this.#colourId(st[i], sd[i],
-        sn[i] && lg > 0 ? Math.round(RAMP_STEPS * Math.log(sn[i]) / lg) : RAMP_STEPS);
-    this.#seg = { s0: Float64Array.from(s0), s1: Float64Array.from(s1),
-                  d: Int16Array.from(sd), f, w: Uint8Array.from(sw) };
-  }
-
-  /* Palette and runs survive anything that leaves angles, depths, colours and
-     radius alone, so a repeated repaint pays for neither. */
-  #prepare() {
-    const key = [this.#root, this.#tintKey, this.#rmax.toFixed(1),
-                 this.#tok("--_sat", ""), this.#tok("--_val", ""),
-                 this.#mode()].join("|");
-    if (key === this.#prepKey) return;
-    this.#prepKey = key;
-    const t0 = performance.now();
-    this.#repalette();
-    this.#remerge();
-    this.#prepMs = performance.now() - t0;
-  }
-
   #fit() {
     if (!this.#ready) return;
     const box = this.#sr.querySelector(".stage").getBoundingClientRect();
     if (!box.width || !box.height) return;
     this.#dpr = Math.min(window.devicePixelRatio || 1, 2);
-    for (const c of [this.#base, this.#over]) {
-      c.width = Math.round(box.width * this.#dpr);
-      c.height = Math.round(box.height * this.#dpr);
-    }
+    // Only the overlay is sized here. The base canvas may belong to the
+    // worker by now, where setting a dimension throws, so the painter sizes it.
+    this.#pw = Math.round(box.width * this.#dpr);
+    this.#ph = Math.round(box.height * this.#dpr);
+    this.#over.width = this.#pw; this.#over.height = this.#ph;
     const s = Math.min(box.width, box.height);
     this.#cx = box.width / 2; this.#cy = box.height / 2;
     this.#r0 = s * .075; this.#rmax = s * .485;
@@ -450,57 +303,75 @@ class HypernymDisc extends HTMLElement {
     return [s, e, this.#r0 + d * this.#rw, this.#r0 + (d + 1) * this.#rw];
   }
 
+  /* One view, either posted or painted here. The layout goes over once per
+     tree and the hue depth only when it changes, so a repaint is a small
+     message however large the tree. */
   #draw() {
     if (!this.#ready) return;
     this.#rw = (this.#rmax - this.#r0) / (this.#maxDepth - this.#depth[this.#root] + 1);
-    this.#prepare();
-    const t0 = performance.now();
-    let drawn = 0;
-    const g = this.#base.getContext("2d");
-    g.setTransform(this.#dpr, 0, 0, this.#dpr, 0, 0);
-    g.clearRect(0, 0, this.#base.width, this.#base.height);
-    const panel = this.#tok("--_panel", "#141b1c");
-    const sc = TAU / (this.#a1[this.#root] - this.#a0[this.#root]);
-    const half = Math.PI / 2;
-    let cur = -1;
-
-    const wedge = (s, e, r0, r1) => {
-      g.beginPath();
-      g.arc(this.#cx, this.#cy, r1, s, e);
-      g.arc(this.#cx, this.#cy, r0, e, s, true);
-      g.closePath();
+    if (this.#route === undefined) return this.#openPainter();
+    if (this.#route === "wait") return;
+    const hd = Math.max(0, +(this.getAttribute("hue-depth") ?? 2));
+    const msg = {};
+    if (this.#sent !== this.#layoutKey) {
+      this.#sent = this.#layoutKey;
+      msg.hd = this.#hd = hd;
+      msg.layout = { par: Int32Array.from(this.#par), depth: this.#depth,
+                     a0: this.#a0, a1: this.#a1, byDepth: this.#byDepth,
+                     maxDepth: this.#maxDepth };
+    } else if (hd !== this.#hd) msg.hd = this.#hd = hd;
+    msg.view = {
+      root: this.#root, w: this.#pw, h: this.#ph, dpr: this.#dpr,
+      cx: this.#cx, cy: this.#cy, r0: this.#r0, rmax: this.#rmax, rw: this.#rw,
+      mode: this.#mode(), sat: this.#tok("--_sat", ".55"),
+      val: this.#tok("--_val", ".88"), panel: this.#tok("--_panel", "#141b1c"),
     };
+    if (this.#route === "worker") return this.#worker.postMessage(msg);
+    if (msg.layout) this.#painter.layout(msg.layout, msg.hd);
+    else if (msg.hd !== undefined) this.#painter.hueDepth(msg.hd);
+    this.#painted(this.#painter.paint(this.#base.getContext("2d"), msg.view));
+  }
 
-    if (this.#seg) {
-      const { s0, s1, d: sd, f, w } = this.#seg;
-      for (let i = 0; i < f.length; i++) {
-        const s = (s0[i] - this.#a0[this.#root]) * sc - half;
-        const e = (s1[i] - this.#a0[this.#root]) * sc - half;
-        wedge(s, e, this.#r0 + sd[i] * this.#rw, this.#r0 + (sd[i] + 1) * this.#rw);
-        if (f[i] !== cur) { cur = f[i]; g.fillStyle = this.#palette[cur]; }
-        g.fill();
-        drawn++;
-        if (w[i]) { g.strokeStyle = panel; g.lineWidth = .6; g.stroke(); }
-      }
-    } else {
-      for (let i = 0; i < this.#par.length; i++) {
-        if (!this.#inView(i)) continue;
-        const [s, e, r0, r1] = this.#geom(i);
-        wedge(s, e, r0, r1);
-        if (this.#fillId[i] !== cur) { cur = this.#fillId[i]; g.fillStyle = this.#palette[cur]; }
-        g.fill();
-        drawn++;
-        // A hairline on a sub-pixel wedge would cover the fill it separates.
-        if (e - s > .012) { g.strokeStyle = panel; g.lineWidth = .6; g.stroke(); }
-      }
-    }
+  /* A canvas can be handed to a worker only once, and only before anything has
+     taken a context on it, so the choice cannot be made by painting here and
+     handing over afterwards: the element waits for the worker to answer, and a
+     worker that errors or never answers leaves the draw on this thread. */
+  #openPainter() {
+    this.#route = "wait";
+    const settle = here => {
+      if (this.#route !== "wait") return;
+      this.#route = here ? "main" : "worker";
+      if (here) this.#painter = new Painter();
+      this.#sent = -1;
+      this.#draw();
+    };
+    if (!this.#base.transferControlToOffscreen || typeof Worker === "undefined")
+      return settle(true);
+    let w;
+    try { w = new Worker(new URL("./disc-worker.js", import.meta.url), { type: "module" }); }
+    catch { return settle(true); }
+    const floor = setTimeout(() => { w.terminate(); settle(true); }, 400);
+    w.onerror = () => {
+      if (this.#route !== "wait") return;
+      clearTimeout(floor); w.terminate(); settle(true);
+    };
+    w.onmessage = ev => {
+      if (!ev.data.ready) return this.#painted(ev.data.stats);
+      clearTimeout(floor);
+      let off;
+      try { off = this.#base.transferControlToOffscreen(); }
+      catch { w.terminate(); return settle(true); }
+      this.#worker = w;
+      w.postMessage({ canvas: off }, [off]);
+      settle(false);
+    };
+  }
 
-    // The hub's ground only. Its label names whatever the pointer is over, so
-    // it is painted on the overlay instead of here.
-    g.beginPath(); g.arc(this.#cx, this.#cy, this.#r0 - 3, 0, TAU);
-    g.fillStyle = panel; g.fill();
-    this.#drawn = drawn;
-    this.#drawMs = performance.now() - t0;
+  /* What the painter reports, whichever thread it ran on. */
+  #painted(st) {
+    if (!st) return;
+    this.#drawn = st.drawn; this.#drawMs = st.drawMs; this.#prepMs = st.prepMs;
+    this.#segments = st.segments; this.#colours = st.colours;
     this.#emit("disc-render", { ...this.stats, name: this.#label(this.#root) });
   }
 
