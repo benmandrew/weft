@@ -23,7 +23,7 @@ python -m wordchain words animal     # the word list with Zipf frequencies
 python -m wordchain build animal     # render the word graph
 ```
 
-`build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark`, which overrides the config file's `theme` and stands at dark with neither, and `--limit N`, the words in the disc, 110 unless the config file moves it.
+`build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark`, which overrides the config file's `theme` and stands at dark with neither, and `--limit N`, the words in the disc, 110 unless the config file moves it, or 0 for every word the category has. The label size is solved rather than set: the canvas grows until the labels clear each other, and past the 30 inches it is capped at the type shrinks instead, so a disc of every word a category has is legible under a zoom rather than a pile of overlaps.
 
 The three selection commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance` and `--max-rank`, so the counts `categories` prints match what `build` would draw. `--min-zipf` stands at zero, so a category yields every word wordfreq knows and the frequency order rather than a cut decides which 110 the disc draws. `--multiword` keeps entries like *polar bear* and chains them on their outer letters, and `--no-multiword` turns them back off. Every command takes `--no-cache` and `--config FILE`.
 

@@ -128,10 +128,10 @@
           "default": false
         },
         "limit": {
-          "description": "Words in the disc, commonest first. Only build reads it, and a category holding more than this keeps the rest for `words` and `stats` to count. `build --limit` overrides this.",
+          "description": "Words in the disc, commonest first, or 0 for every word the category has. Only build reads it, and a category holding more than this keeps the rest for `words` and `stats` to count. `build --limit` overrides this.",
           "type": "integer",
           "default": 110,
-          "minimum": 1
+          "minimum": 0
         }
       }
     },

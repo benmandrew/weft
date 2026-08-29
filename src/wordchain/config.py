@@ -103,7 +103,8 @@ class Selection:
     # Whether "polar bear" is a word, chained on its outer letters.
     multiword: bool = False
 
-    # Words in the disc, commonest first. Only `build` reads it.
+    # Words in the disc, commonest first, or 0 for all of them. Only `build`
+    # reads it.
     limit: int = 110
 
 
@@ -142,9 +143,10 @@ _ZERO_OK = frozenset({"hue_start", "equalise"})
 # and so does `tools/check_schema.py`, which is what stops the schema's bounds
 # drifting from the ones actually enforced. Unlike `[geometry]`, each of these
 # allows its own minimum: a `min_zipf` of 0 is the whole vocabulary, a
-# `min_dominance` of 0 asks nothing of a word's senses, and a `target` of 0
-# relaxes nothing. `limit` is the exception and starts at 1, since a disc of no
-# words is a blank page. The Zipf ceiling is 8 because the scale runs out there —
+# `min_dominance` of 0 asks nothing of a word's senses, a `target` of 0 relaxes
+# nothing, and a `limit` of 0 is no limit rather than a blank disc: a count is
+# the thing being lifted, so zero reads as "all of them" the way it does in a
+# head or a tail. The Zipf ceiling is 8 because the scale runs out there —
 # "the" scores 7.7 — so anything above it empties every category.
 _SELECTION_BOUNDS: dict[str, tuple[str, float, float | None]] = {
     "min_zipf": ("number", 0.0, 8.0),
@@ -153,7 +155,7 @@ _SELECTION_BOUNDS: dict[str, tuple[str, float, float | None]] = {
     "min_depth": ("integer", 0, None),
     "target": ("integer", 0, None),
     "zipf_floor": ("number", 0.0, 8.0),
-    "limit": ("integer", 1, None),
+    "limit": ("integer", 0, None),
 }
 
 # The one setting in the table that is a state rather than a quantity.

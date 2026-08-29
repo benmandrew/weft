@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path as FilePath
 
 import matplotlib
@@ -82,20 +83,47 @@ def _disc_limit(size_in: float, longest: int, geo: Geometry) -> float:
     return (geo.label_radius + geo.wedge_band) / max(crowding, 0.4)
 
 
-def _canvas_inches(span: float, geo: Geometry) -> float:
-    """How wide the disc has to be for adjacent labels to clear each other.
+# The narrowest disc worth drawing and the widest a figure is allowed to be.
+# Sizing up is close to free in vector output, which is priced by element count
+# rather than dimensions, but a figure has to stop somewhere.
+_MIN_INCHES = 9.6
+_MAX_INCHES = 30.0
+
+
+def _wanted_inches(span: float, geo: Geometry) -> float:
+    """The width at which adjacent labels exactly clear each other.
 
     A label sits at a fixed radius in data units while its font size is in
     points, so the only thing that buys it room along the ring is a larger
     canvas. Solving for the size that gives every label a full line of leading
     is what lets all 364 words share one radius.
-
-    Sizing up is close to free in vector output, which is priced by element
-    count rather than dimensions, and a reader zooms rather than squints.
     """
     arc = geo.label_radius * span
-    needed = geo.label_pt * geo.leading * (2 * geo.disc_limit) / (72 * arc)
-    return max(9.6, min(30.0, needed))
+    return geo.label_pt * geo.leading * (2 * geo.disc_limit) / (72 * arc)
+
+
+def _canvas_inches(span: float, geo: Geometry) -> float:
+    """That width, held between the floor and the cap."""
+    return max(_MIN_INCHES, min(_MAX_INCHES, _wanted_inches(span, geo)))
+
+
+def _fitted_pt(span: float, geo: Geometry) -> float:
+    """`label_pt`, or as much of it as the capped canvas leaves room for.
+
+    Below the cap the figure grows until the labels clear each other and the
+    type is untouched, which is every disc at the default limit. Past it the
+    words keep coming and the room does not, so the type takes the shortfall
+    rather than the labels overlapping: `limit = 0` on animal wants 101 inches,
+    gets 30, and sets 2.0 pt instead of 6.8. That is small on a screen and
+    exact under a zoom, which is the same trade `--format svg` already makes.
+
+    The cap is tested rather than the two sizes compared, so a disc that fits
+    returns `label_pt` itself and no figure moves by a rounding error.
+    """
+    wanted = _wanted_inches(span, geo)
+    if wanted <= _MAX_INCHES:
+        return geo.label_pt
+    return geo.label_pt * _MAX_INCHES / wanted
 
 
 def _hoist_shared_attributes(out: FilePath) -> None:
@@ -426,7 +454,10 @@ def words_disc(
     Grouping by first letter puts the structure back, because the bundles of
     curves between two wedges are exactly the letter graph's ribbons.
     """
-    shown = sorted(words, key=lambda w: (-w.zipf, w.text))[:limit]
+    # A limit of 0 draws every word, since a count being lifted reads as "all
+    # of them" rather than as none; the slice would return an empty list.
+    ranked = sorted(words, key=lambda w: (-w.zipf, w.text))
+    shown = ranked[:limit] if limit else ranked
     grouped: dict[str, list[Word]] = defaultdict(list)
     for word in shown:
         grouped[word.head].append(word)
@@ -449,8 +480,11 @@ def words_disc(
 
     crowded = len(shown) > 150
     size = _canvas_inches(span, geometry)
+    # Every length below reads the fitted type, not the configured one, so the
+    # axis limit frames the labels actually drawn.
+    fitted = replace(geometry, label_pt=_fitted_pt(span, geometry))
     # `limit` is already the word count, so the axis half-width is `reach`.
-    reach = _disc_limit(size, max(len(w.text) for w in shown), geometry)
+    reach = _disc_limit(size, max(len(w.text) for w in shown), fitted)
     # Chrome hangs a title and a caption outside the axes, which a full-bleed
     # axes would clip, so that path keeps the margins and the tight crop.
     fig, ax = _blank_disc(theme, size, bleed=not chrome, limit=reach)
@@ -499,7 +533,7 @@ def words_disc(
             x * geometry.label_radius,
             y * geometry.label_radius,
             word.text,
-            fontsize=geometry.label_pt,
+            fontsize=fitted.label_pt,
             color=theme.ink,
             rotation=degrees + 180 if flip else degrees,
             rotation_mode="anchor",

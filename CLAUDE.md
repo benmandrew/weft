@@ -74,6 +74,19 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `svg.fonttype = "path"` in `render._typeface`, since naming the fonts would
   silently substitute a face on any machine without Iowan Old Style, Avenir and
   Menlo.
+- The label size is solved, not set: `_wanted_inches` gives the width at which
+  adjacent labels exactly clear each other, `_canvas_inches` holds that between
+  9.6 and 30 inches, and `_fitted_pt` shrinks `label_pt` by whatever the cap
+  denied. Below the cap it returns `label_pt` itself — the cap is tested rather
+  than the two sizes compared, so a disc that already fits cannot move by a
+  rounding error, and every category at the default limit renders byte for byte
+  as it did before the fitting existed. Above it the type takes the shortfall
+  rather than the labels overlapping: `--limit 0` on animal wants 101 inches,
+  gets 30, and sets 2.0 pt against 6.8. Small on a screen and exact under a
+  zoom, which is the trade `--format svg` already makes. `_disc_limit` reads
+  the fitted geometry too, through a `dataclasses.replace` of the one passed
+  in, so the axis frames the labels actually drawn rather than the ones asked
+  for.
 - Geometry lives on `config.Geometry`, the word filters on `config.Selection`
   beside it, and the letter colours on a `palette.Wheel` of one or more `Arc`s
   carried by the `Theme`; a figure takes each as an argument, never as a module
@@ -103,9 +116,10 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `equalise` are the two settings that mean something at zero. `[selection]`
   inverts that rule: every numeric setting there allows its own minimum, since
   a `min_zipf` of 0 is the whole vocabulary, a `min_dominance` of 0 asks
-  nothing of a word's senses and a `target` of 0 relaxes nothing. `limit` is
-  the exception at 1, since a disc of no words is a blank page, and the Zipf
-  ceiling is 8, because the
+  nothing of a word's senses, a `target` of 0 relaxes nothing, and a `limit` of
+  0 is no limit rather than a blank disc, since a count being lifted reads as
+  all of them the way it does in a head or a tail. `render.words_disc` spells
+  that out rather than slicing, because the slice returns nothing. The Zipf ceiling is 8, because the
   scale runs out there ("the" scores 7.7) and anything above it empties every
   category. `config._SELECTION_BOUNDS` declares
   each numeric setting's JSON type, minimum and maximum once, and both the

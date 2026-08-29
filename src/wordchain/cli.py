@@ -271,8 +271,8 @@ def main(argv: list[str] | None = None) -> None:
         "--limit",
         type=int,
         metavar="N",
-        help="words in the disc; overrides [selection] limit, which is 110 "
-        "unless a file says otherwise",
+        help="words in the disc, or 0 for every word the category has; "
+        "overrides [selection] limit, which is 110 unless a file says otherwise",
     )
     build.set_defaults(func=_cmd_build)
 
