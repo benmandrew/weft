@@ -16,7 +16,7 @@
  * The paint runs off this thread. disc-paint.js is the pipeline, disc-worker.js
  * hosts it against an OffscreenCanvas, and the element calls the same class
  * here where a worker cannot be had. The element keeps the layout either way,
- * because hit testing, the crumbs and the keyboard answer without a round trip.
+ * because hit testing and the crumbs both answer without a round trip.
  *
  * Only `rings` depths below the root are drawn. A deep tree's last rings hold
  * almost nothing — WordNet is 20 deep and its depth 19 is a single node — so
@@ -93,8 +93,7 @@ TPL.innerHTML = `
     color:var(--_muted);overflow:hidden;text-overflow:ellipsis}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-  canvas.over{cursor:pointer;outline:none;touch-action:none}
-  canvas.over:focus-visible{outline:2px solid var(--_accent);outline-offset:3px;border-radius:50%}
+  canvas.over{cursor:pointer;touch-action:none}
   .bar{min-height:1.7em;font-size:12px;margin-top:7px}
   :host([readout="off"]) .bar{display:none}
   .crumb{font-family:var(--_mono);font-size:11px;color:var(--_muted);line-height:1.6;
@@ -115,7 +114,7 @@ TPL.innerHTML = `
   </div>
   <div class="stage">
     <canvas class="base" aria-hidden="true"></canvas>
-    <canvas class="over" tabindex="0" role="application"></canvas>
+    <canvas class="over" aria-hidden="true"></canvas>
   </div>
   <div class="bar"><div class="crumb"></div></div>
 </div>`;
@@ -158,7 +157,6 @@ class HypernymDisc extends HTMLElement {
     this.#over.addEventListener("pointermove", this.#onMove);
     this.#over.addEventListener("pointerleave", this.#onLeave);
     this.#over.addEventListener("click", this.#onClick);
-    this.#over.addEventListener("keydown", this.#onKey);
     this.#crumb.addEventListener("click", e => {
       const b = e.target.closest("button");
       if (b) this.zoomTo(+b.dataset.i);
@@ -481,17 +479,17 @@ class HypernymDisc extends HTMLElement {
     }
   }
 
-  /* The hub names what the readout names — the node under the pointer, or the
-     one the keyboard is on — and falls back to the way out of the view: up a
-     level when zoomed, the root's own name at the top. Drawing it on the
-     overlay is what makes it free to follow the pointer, since the base holds
-     every arc and the overlay only the path being highlighted. */
+  /* The hub names the node under the pointer, or the one the search left the
+     cursor on, and falls back to the root: what you are looking at, at every level rather
+     than only at the top. Muted when it is the fallback, so the name of the
+     view never reads as a selection. Drawing it on the overlay is what makes it
+     free to follow the pointer, since the base holds every arc and the overlay
+     only the path being highlighted. */
   #hub(g) {
     const sel = this.#hover >= 0 ? this.#hover
       : this.#cursor !== this.#root ? this.#cursor : -1;
     const named = sel >= 0 && this.#under(sel);
-    const text = named ? this.#label(sel)
-      : this.#root === 0 ? (this.#names[0] ?? "root") : "↑ up";
+    const text = this.#label(named ? sel : this.#root);
     const { lines, lh } = this.#fitHub(g, text);
     g.fillStyle = named ? this.#tok("--_ink", "#e7eded") : this.#tok("--_muted", "#90a1a1");
     g.textAlign = "center"; g.textBaseline = "middle";
@@ -594,23 +592,6 @@ class HypernymDisc extends HTMLElement {
     const h = this.#hit(px, py);
     if (h >= 0 && this.#kids[h].length) this.zoomTo(h);
   };
-  #onKey = ev => {
-    const c = this.#cursor, sib = this.#par[c] >= 0 ? this.#kids[this.#par[c]] : [c];
-    const at = sib.indexOf(c);
-    let next = null;
-    if (ev.key === "ArrowRight") next = sib[(at + 1) % sib.length];
-    else if (ev.key === "ArrowLeft") next = sib[(at - 1 + sib.length) % sib.length];
-    else if (ev.key === "ArrowDown") next = this.#kids[c][0] ?? null;
-    else if (ev.key === "ArrowUp") next = this.#par[c] >= 0 ? this.#par[c] : null;
-    else if (ev.key === "Enter" || ev.key === " ") { if (this.#kids[c].length) this.zoomTo(c); }
-    else if (ev.key === "Escape") this.up();
-    else return;
-    ev.preventDefault();
-    if (next != null) {
-      this.#cursor = next; this.#overlay();
-      this.#over.setAttribute("aria-label", this.#label(next));
-    }
-  };
 
   /* Straight through, not deferred to a frame. The scan is 4.4 ms at worst over
      82,115 names, so coalescing keystrokes through requestAnimationFrame would
@@ -646,8 +627,8 @@ class HypernymDisc extends HTMLElement {
 
   /* The click, for a node reached by name. Zooming into a leaf would show an
      empty disc, so a leaf goes to its parent with the cursor left on the leaf:
-     the word stays highlighted and named in the hub. Focus follows to the
-     canvas, where the arrow keys carry on from there. */
+     the word stays highlighted and named in the hub. Focus stays in the box,
+     so the next search is one keystroke away. */
   #go(i) {
     this.#closeFind();
     if (this.#kids[i].length) this.zoomTo(i);
@@ -655,8 +636,6 @@ class HypernymDisc extends HTMLElement {
       this.zoomTo(this.#par[i]);
       this.#cursor = i; this.#overlay();
     }
-    this.#over.setAttribute("aria-label", this.#label(i));
-    this.#over.focus();
   }
 
   #drawHits() {

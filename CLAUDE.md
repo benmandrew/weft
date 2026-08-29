@@ -110,6 +110,15 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   every penalty is capped below 1,000, so a weaker kind of match can never
   outrank a stronger one however long the name it sits in; that ordering is
   what `check_web.mjs` asserts, not the scores.
+- The disc is driven by the pointer alone. The arrow keys, Enter and Escape
+  that used to move a cursor over the canvas are gone, and with them the
+  canvas's tabindex and its `application` role, since a canvas that answers no
+  key should not take focus. The search box is the keyboard's way to any node
+  and keeps its own arrows and Enter. `#cursor` stays: it is what holds the
+  highlight on a leaf that Enter landed beside.
+- The hub names the node under the pointer and otherwise the current root, at
+  every level rather than only at the top, muted so the name of the view never
+  reads as a selection. Clicking it still goes up a level; it no longer says so.
 - Below the disc the element prints the crumb path and nothing else. The line
   of counts that sat under it is gone: the hub already names whatever the
   pointer or the search is on, and `disc-hover` still carries the depth and the
@@ -148,7 +157,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   calls the same class on the main thread where a worker cannot be had, so the
   fallback cannot drift from the fast path. The layout stays with the element
   rather than moving to the worker, because hit testing, the crumbs, the
-  keyboard and the crumbs all have to answer without a round trip. The layout
+  crumbs and the hub all have to answer without a round trip. The layout
   crosses once per tree and the hue depth only when it changes, so a repaint is
   a small message however large the tree, and `byDepth` crosses as typed arrays,
   since a nested plain array of 82,115 numbers is the slowest thing structured
