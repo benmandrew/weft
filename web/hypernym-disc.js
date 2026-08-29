@@ -44,6 +44,11 @@
  */
 import { Painter, TAU } from "./disc-paint.js";
 import { Search } from "./disc-search.js";
+import { fit } from "./disc-label.js";
+
+// The "up" hint under the hub's name: its size, and the room it takes from the
+// name above it.
+const HINT_PX = 9, HINT_H = 12;
 
 const TPL = document.createElement("template");
 TPL.innerHTML = `
@@ -480,69 +485,33 @@ class HypernymDisc extends HTMLElement {
   }
 
   /* The hub names the node under the pointer, or the one the search left the
-     cursor on, and falls back to the root: what you are looking at, at every level rather
-     than only at the top. Muted when it is the fallback, so the name of the
-     view never reads as a selection. Drawing it on the overlay is what makes it
-     free to follow the pointer, since the base holds every arc and the overlay
-     only the path being highlighted. */
+     cursor on, and falls back to the root: what you are looking at, at every
+     level rather than only at the top. Muted when it is the fallback, so the
+     name of the view never reads as a selection. Drawing it on the overlay is
+     what makes it free to follow the pointer, since the base holds every arc
+     and the overlay only the path being highlighted.
+
+     Under the name sits the way out, in the accent the crumb buttons use, and
+     only when there is one: at the root a click on the hub does nothing, and
+     with the pointer on a wedge the hub is naming that instead and the room is
+     wanted for the name. The name is fitted to a radius short of the hint so
+     the two cannot collide however long the name runs. */
   #hub(g) {
     const sel = this.#hover >= 0 ? this.#hover
       : this.#cursor !== this.#root ? this.#cursor : -1;
     const named = sel >= 0 && this.#under(sel);
-    const text = this.#label(named ? sel : this.#root);
-    const { lines, lh } = this.#fitHub(g, text);
+    const way = !named && this.#root !== 0;
+    const { lines, lh } = fit(g, this.#label(named ? sel : this.#root),
+                              this.#r0 - 5 - (way ? HINT_H : 0),
+                              this.#tok("--_mono", "monospace"));
     g.fillStyle = named ? this.#tok("--_ink", "#e7eded") : this.#tok("--_muted", "#90a1a1");
     g.textAlign = "center"; g.textBaseline = "middle";
-    const top = this.#cy - (lines.length - 1) * lh / 2;
+    const top = this.#cy - (lines.length - 1) * lh / 2 - (way ? HINT_H / 2 : 0);
     lines.forEach((line, k) => g.fillText(line, this.#cx, top + k * lh));
-  }
-
-  /* A name runs to 71 characters and the hub is about a hundred across, so the
-     label steps down the sizes and wraps until it fits, clipping only when
-     nothing does. Every line has to clear the chord at the block's edge rather
-     than the diameter, which is why the budget narrows as a line is added.
-     Sets the font on `g` as it goes. */
-  #fitHub(g, text) {
-    const mono = this.#tok("--_mono", "monospace");
-    const r = this.#r0 - 5;
-    for (const px of [12, 11, 10, 9, 8]) {
-      g.font = `500 ${px}px ${mono}`;
-      const lh = px + 2;
-      for (let n = 1; n <= 3 && n * lh < 2 * r; n++) {
-        const lines = this.#wrap(g, text, 2 * Math.sqrt(r * r - (n * lh / 2) ** 2), n);
-        if (lines) return { lines, lh };
-      }
-    }
-    g.font = `500 8px ${mono}`;
-    return { lines: this.#wrap(g, text, 1.4 * r, 3, true), lh: 10 };
-  }
-
-  /* Greedy by word, null when the text needs more than `n` lines. Under `hard`
-     a word too long for a line is cut and the overflow dropped instead, both
-     marked with an ellipsis; that is the last resort under the smallest font. */
-  #wrap(g, text, w, n, hard = false) {
-    const cut = word => {
-      let s = word;
-      while (s.length > 1 && g.measureText(s + "…").width > w) s = s.slice(0, -1);
-      return s + "…";
-    };
-    const out = [];
-    let line = "";
-    for (const word of text.split(" ")) {
-      const join = line ? line + " " + word : word;
-      if (g.measureText(join).width <= w) { line = join; continue; }
-      if (line) out.push(line);
-      if (out.length === n) {
-        if (!hard) return null;
-        out[n - 1] = cut(out[n - 1]);
-        return out;
-      }
-      if (g.measureText(word).width <= w) line = word;
-      else if (hard) line = cut(word);
-      else return null;
-    }
-    if (line) out.push(line);
-    return out;
+    if (!way) return;
+    g.font = `500 ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
+    g.fillStyle = this.#tok("--_accent", "#59b491");
+    g.fillText("\u2191 up", this.#cx, top + (lines.length - 1) * lh + HINT_H);
   }
 
   /* Angles nest, so a point maps to a ring by radius and to one node in that

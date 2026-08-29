@@ -28,7 +28,8 @@ globalThis.customElements = { define() {} };
 globalThis.self = globalThis;
 globalThis.postMessage = () => {};
 
-const MODULES = ["disc-paint.js", "disc-search.js", "disc-worker.js", "hypernym-disc.js"];
+const MODULES = ["disc-label.js", "disc-paint.js", "disc-search.js", "disc-worker.js",
+                 "hypernym-disc.js"];
 for (const name of MODULES) {
   try { await import(mod(name)); }
   catch (e) { problems.push(`web/${name} does not load — ${e.constructor.name}: ${e.message}`); }
@@ -157,6 +158,47 @@ check(find("zzz").length === 0, "a query that matches nothing returned hits");
    twice rather than being folded into one. */
 check(new Search(["bank", "bank"]).query("bank").length === 2,
       "a repeated name collapsed to one hit");
+
+/* The hub's label, which wraps rather than draws. A monospace stub stands in
+   for the canvas, so a width is a character count and the expected lines can be
+   written down. What is asserted is that nothing is dropped without a mark:
+   a break inside a word carries a hyphen, a break on a space does not. */
+const { fit, wrap } = await import(mod("disc-label.js"));
+const CH = 6;
+const mono = { font: "", measureText: s => ({ width: s.length * CH }) };
+const lines = (text, w, n, hard) => wrap(mono, text, w * CH, n, hard);
+
+check(lines("cat", 10, 1)?.join("|") === "cat", "a short name did not come back whole");
+check(lines("domestic cat", 8, 2)?.join("|") === "domestic|cat",
+      `wrapped to ${lines("domestic cat", 8, 2)}`);
+check(lines("domestic cat", 8, 1) === null, "a name needing two lines fitted in one");
+check(lines("dichlorodiphenyl", 8, 2) === null, "a long word broke without hard set");
+
+/* The one the hyphen is for: a single word too long for any line. */
+check(lines("dichlorodiphenyltrichloroethane", 8, 3, true).join("|")
+        === "dichlor-|odiphen-|yltrich-",
+      `hyphenated to ${lines("dichlorodiphenyltrichloroethane", 8, 3, true)}`);
+check(lines("dichlorodiphenyl", 8, 3, true).every(l => l.length <= 8),
+      "a hyphenated line ran past the width");
+check(lines("united nations educational scientific", 10, 2, true).join("|")
+        === "united|nations e-",
+      `broke to ${lines("united nations educational scientific", 10, 2, true)}`);
+/* A break landing on a space must not invent a hyphen inside the name. */
+check(lines("aa bb cc", 6, 1, true).join("|") === "aa bb",
+      `a break on a space came back as ${lines("aa bb cc", 6, 1, true)}`);
+/* No ellipsis survives anywhere. */
+for (const t of ["dichlorodiphenyltrichloroethane", "united nations educational scientific",
+                 "blood-oxygenation level dependent functional magnetic resonance imaging"])
+  check(!lines(t, 9, 3, true).join("").includes("\u2026"), `an ellipsis came back for ${t}`);
+
+/* And the ladder above it: a short name gets the big size, a long one is
+   pushed down to the smallest and still comes back with something to draw. */
+const big = fit(mono, "cat", 60, "monospace");
+const small = fit(mono, "blood-oxygenation level dependent functional magnetic resonance imaging",
+                  60, "monospace");
+check(big.lh > small.lh, `a short name took ${big.lh} against a long name's ${small.lh}`);
+check(small.lines.length > 0 && small.lines.every(l => l.length > 0),
+      "the longest name in WordNet left the hub with nothing to draw");
 
 if (problems.length) {
   for (const said of problems) console.error(`web: ${said}`);

@@ -118,7 +118,20 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   highlight on a leaf that Enter landed beside.
 - The hub names the node under the pointer and otherwise the current root, at
   every level rather than only at the top, muted so the name of the view never
-  reads as a selection. Clicking it still goes up a level; it no longer says so.
+  reads as a selection. Under that name sits the way out, in the crumb
+  buttons' accent, and only where clicking does something: never at the root,
+  where a click on the hub is a no-op, and never with the pointer on a wedge,
+  where the room is wanted for that wedge's name. The name is fitted to a
+  radius short of the hint, so the two cannot collide however long it runs.
+- `disc-label.js` fits that name: it steps down five sizes and up to three
+  lines, and breaks a word only when nothing else fits. A forced break carries
+  a trailing hyphen and the word carries on below, including on the last line,
+  where an ellipsis used to sit. A hyphen says the word goes on; the ellipsis
+  said the rest was gone. A break landing on a space takes no hyphen, since
+  that would invent one inside the name. It is its own module because it is
+  the part of the hub with edge cases, and only a context's `font` and
+  `measureText` are touched, so `check_web.mjs` measures it with a monospace
+  stub where a width is a character count.
 - Below the disc the element prints the crumb path and nothing else. The line
   of counts that sat under it is gone: the hub already names whatever the
   pointer or the search is on, and `disc-hover` still carries the depth and the
@@ -241,6 +254,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/hypernym-disc.js           the nested-arc element
     web/disc-paint.js              the draw pipeline, no DOM
     web/disc-search.js             ranked name lookup, no DOM
+    web/disc-label.js              the hub's text fitting, no DOM
     web/disc-worker.js             hosts it on its own thread
     web/index.html                 its harness, the disc and nothing else
     tools/export_tree.py           writes the tree and names for it
