@@ -24,7 +24,11 @@ SVGS := $(patsubst %,$(OUT)/%.svg,$(CATEGORIES))
 # is empty and the dependency simply is not there.
 SOURCES := $(wildcard src/wordchain/*.py) $(CONFIG)
 
-.PHONY: all check clean list
+# The flat tree <hypernym-disc> reads. It lives outside the SVG pipeline:
+# nothing in `all` depends on it.
+TREE := $(OUT)/wordnet-tree.json
+
+.PHONY: all check clean list tree
 
 all: $(SVGS)
 
@@ -43,6 +47,14 @@ check:
 	@mypy
 	@RUST_LOG=warn taplo check
 	@python tools/check_schema.py
+
+# The exporter walks all 82,115 noun synsets, so it is a prerequisite rather
+# than a recipe line: it reruns when lexicon.py or the exporter itself moves,
+# and not on every serve.
+$(TREE): tools/export_tree.py src/wordchain/lexicon.py
+	@python tools/export_tree.py --out $(OUT)
+
+tree: $(TREE)
 
 list:
 	@printf '%s\n' $(CATEGORIES)
