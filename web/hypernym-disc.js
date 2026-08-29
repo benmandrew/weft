@@ -49,6 +49,9 @@ import { fit } from "./disc-label.js";
 // The "up" hint under the hub's name: its size, and the room it takes from the
 // name above it.
 const HINT_PX = 9, HINT_H = 12;
+// The search column beside the disc, and the gutter to it. Landscape is worth
+// taking only once the frame is this much wider than a disc filling its height.
+const ASIDE_MIN = 200, ASIDE_GAP = 18;
 
 const TPL = document.createElement("template");
 TPL.innerHTML = `
@@ -76,6 +79,24 @@ TPL.innerHTML = `
   :host([fit]){height:100%}
   :host([fit]) .frame{display:flex;flex-direction:column;height:100%}
   :host([fit]) .stage{flex:1;min-height:0;width:auto;max-width:100%;align-self:center}
+  /* Side by side once the frame is wider than a square disc needs. The
+     suggestions then sit beside the disc rather than over it, and the disc gets
+     back the height the search box was taking. Under fit only: without a height
+     there is no landscape to find. The class is set from the resize observer,
+     since the test is the frame's own shape and a container cannot query
+     itself. */
+  :host([fit]) .frame.wide{display:grid;column-gap:18px;
+    grid-template-columns:minmax(200px,280px) minmax(0,1fr);
+    grid-template-rows:minmax(0,1fr) auto}
+  :host([fit]) .frame.wide .find{grid-area:1/1;margin-bottom:0;
+    display:flex;flex-direction:column;min-height:0}
+  :host([fit]) .frame.wide .hits{position:static;margin-top:6px;box-shadow:none;
+    flex:0 1 auto;min-height:0;max-height:none}
+  /* A 240 px column has no room for a name and its parent on one line. */
+  :host([fit]) .frame.wide .hits li{display:block}
+  :host([fit]) .frame.wide .hits .p{display:block;margin-left:0}
+  :host([fit]) .frame.wide .stage{grid-area:1/2;height:100%;justify-self:center}
+  :host([fit]) .frame.wide .bar{grid-area:2/1/3/-1}
   .find{position:relative;margin-bottom:8px}
   :host([search="off"]) .find{display:none}
   .find input{width:100%;font-family:var(--_font);font-size:12.5px;line-height:1.5;
@@ -128,7 +149,7 @@ TPL.innerHTML = `
 class HypernymDisc extends HTMLElement {
   static observedAttributes = ["src", "names-src", "start", "hue-depth", "merge", "rings"];
 
-  #sr; #base; #over; #crumb; #ro; #q; #hits;
+  #sr; #base; #over; #crumb; #ro; #q; #hits; #frame;
   // Built on the first query rather than when the names land, so a page that
   // never searches never pays for the lowercased copy.
   #search = null; #sug = []; #pick = -1;
@@ -156,6 +177,7 @@ class HypernymDisc extends HTMLElement {
     this.#crumb = this.#sr.querySelector(".crumb");
     this.#q = this.#sr.querySelector(".q");
     this.#hits = this.#sr.querySelector(".hits");
+    this.#frame = this.#sr.querySelector(".frame");
   }
 
   connectedCallback() {
@@ -345,8 +367,18 @@ class HypernymDisc extends HTMLElement {
     return Math.min(want, this.#maxDepth - this.#depth[this.#root] + 1);
   }
 
+  /* Whether the suggestions get a column of their own. Measured off the frame
+     rather than the stage, so toggling the class cannot change the answer and
+     the observer settles in one more pass. */
+  #shape() {
+    const f = this.#frame.getBoundingClientRect();
+    this.#frame.classList.toggle("wide",
+      this.hasAttribute("fit") && f.width - f.height >= ASIDE_MIN + ASIDE_GAP);
+  }
+
   #fit() {
     if (!this.#ready) return;
+    this.#shape();
     const box = this.#sr.querySelector(".stage").getBoundingClientRect();
     if (!box.width || !box.height) return;
     this.#dpr = Math.min(window.devicePixelRatio || 1, 2);

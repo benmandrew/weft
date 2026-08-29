@@ -141,6 +141,18 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   neither: it is one disc with a search box, no controls and no timings. Both
   attributes still work, so a comparison is one attribute away in the
   inspector, and `check_web.mjs` is what holds the other merge modes honest.
+- Once the frame is 218 px wider than a disc filling its height, the search box
+  and its suggestions move into a column beside the disc rather than a strip
+  above it. That stops the suggestions covering the disc, and hands the disc
+  back the height the search box was taking. It is under `fit` only, since
+  without a definite height there is no landscape to find, and no portrait
+  phone reaches the threshold, so a narrow screen keeps the stacked layout and
+  the suggestions overlay the disc there as any combobox does. The class is
+  toggled from the resize observer rather than a container query, because the
+  test is the frame's own shape and a container cannot query itself; measuring
+  the frame rather than the stage is what stops the toggle changing its own
+  answer. In the column a suggestion puts its parent on a second line, since
+  200 px has no room for both on one.
 - The `fit` attribute makes the element fill the box it is given, with the
   stage taking whatever height the search box and the crumbs leave and staying
   square against whichever dimension binds first. Without it the stage is a
