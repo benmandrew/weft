@@ -101,12 +101,26 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   interned into a palette once per theme and root rather than built per node per
   frame, since the string is what canvas has to parse; that alone was a fifth of
   the frame. `merge` then decides how sub-pixel wedges are drawn: `density` (the
-  default) merges adjacent same-coloured runs thinner than a pixel and cuts each
-  run back up at pixel boundaries, `on` merges each run flat, `off` draws every
-  node. Density takes 82,115 arcs to about 8,500 and the frame to a fifteenth;
-  `on` reaches 6,800 and is only there for comparison. Gaps between subtrees
-  break every run, so the fringe still reads as many nodes. All of it is cached
-  on root, tint, radius, theme and the mode, so a repeated repaint pays nothing.
+  default) merges adjacent runs thinner than a pixel and cuts each run back up
+  at pixel boundaries, `on` merges each run flat, `off` draws every node.
+  Density takes 82,115 arcs to about 8,500 and the frame to a fifteenth; `on`
+  reaches 6,800 and is only there for comparison. Gaps between subtrees break
+  every run, so the fringe still reads as many nodes. All of it is cached on
+  root, tint, radius, theme and the mode, so a repeated repaint pays nothing.
+- A merged piece takes the circular mean of its members' hues, which is what
+  lets a run ignore colour. Matching on colour instead left nothing to merge
+  above `hue-depth` 2, since above that depth every node takes its own angle as
+  its hue and no two neighbours ever share a fill, so the draw paid all 82,115
+  arcs and interned 82,115 colour strings. Blending holds it at 7,823 arcs at
+  every hue depth, 0 through 19, and takes the palette at hue-depth 19 to 7,329
+  strings. Hue wraps, so the mean has to be a vector sum rather than an average.
+  `#retint` keeps each node's hue as a cosine and a sine, so a piece costs two
+  adds per member instead of trigonometry per frame. The blended hue is then
+  rounded to a slice one pixel wide at the fringe, because a continuous hue
+  cannot be interned; neighbouring slices differ by 0.16°, and a wedge wide
+  enough to read as its own arc cannot collide with its neighbour at that step.
+  Only `merge=off` fills in a per-node colour now, since the other two modes
+  colour the run and filling it in would be 82,115 lookups nothing reads.
 - Merging gains accuracy rather than spending it, because the rasteriser has a
   cliff. Coverage for abutting wedges falls smoothly from 0.903 at 2 px to 0.580
   at 0.25 px and then to exactly zero before 0.1 px, where every pixel comes out

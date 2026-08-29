@@ -87,7 +87,7 @@ class HypernymDisc extends HTMLElement {
 
   #sr; #base; #over; #crumb; #tip; #ro;
   #names = []; #par = []; #kids = [];
-  #depth; #leaves; #a0; #a1; #tint; #byDepth = []; #maxDepth = 0;
+  #depth; #leaves; #a0; #a1; #tint; #tcos; #tsin; #byDepth = []; #maxDepth = 0;
   #root = 0; #hover = -1; #cursor = 0;
   #buildMs = 0; #drawMs = 0; #drawn = 0; #hitUs = 0;
   #structureMs = 0; #namesMs = 0;
@@ -95,7 +95,7 @@ class HypernymDisc extends HTMLElement {
   // it do not each start the same request.
   #loadedSrc = null; #loadedNames = null;
   #palette = []; #paletteKey = new Map(); #fillId = null; #seg = null;
-  #prepKey = ""; #prepMs = 0; #tintKey = 0; #sat = .55; #val = .88;
+  #prepKey = ""; #prepMs = 0; #tintKey = 0; #sat = .55; #val = .88; #hueQ = 1;
   #cx = 0; #cy = 0; #r0 = 0; #rw = 1; #rmax = 1; #dpr = 1; #ready = false;
 
   constructor() {
@@ -266,8 +266,24 @@ class HypernymDisc extends HTMLElement {
     for (let i = 0; i < N; i++)
       this.#tint[i] = this.#depth[i] <= hd
         ? ((this.#a0[i] + this.#a1[i]) / 2) / TAU : this.#tint[this.#par[i]];
+    // Merged pieces average their members' hues, and hue is an angle, so each
+    // node's is kept as a vector rather than turned into one per piece per
+    // frame. Radius plays no part, so this survives a resize and a zoom.
+    this.#tcos = new Float64Array(N); this.#tsin = new Float64Array(N);
+    for (let i = 0; i < N; i++) {
+      this.#tcos[i] = Math.cos(this.#tint[i] * TAU);
+      this.#tsin[i] = Math.sin(this.#tint[i] * TAU);
+    }
     this.#tintKey++;
   }
+
+  /* A blended hue is a continuous value, and a colour is a string the canvas
+     has to parse, so hues are rounded to a slice one pixel wide at the fringe
+     and interned. That is the same threshold that decides two wedges cannot be
+     told apart: neighbouring slices differ by 0.16°, and a wedge wide enough to
+     read as its own arc cannot collide with its neighbour at that step. */
+  #quant(h) { const w = ((h % 1) + 1) % 1; return Math.round(w * this.#hueQ) / this.#hueQ; }
+  #hue(i) { return this.#quant(this.#tint[i]); }
 
   /* density (the default) splits a merged run at pixel boundaries and shades
      each piece by how many wedges fell in it; on merges each run flat; off
@@ -300,18 +316,25 @@ class HypernymDisc extends HTMLElement {
     this.#palette = [];
     this.#paletteKey = new Map();
     this.#fillId = new Int32Array(N);
+    this.#hueQ = Math.max(1, Math.round(TAU * this.#rmax / MERGE_PX));
+    // Only the unmerged draw reads a per-node fill; a merged one colours the
+    // run, so filling this in would be 82,115 lookups nothing goes on to read.
+    if (this.#mode() !== "off") return;
     const base = this.#depth[this.#root];
     for (let i = 0; i < N; i++)
-      this.#fillId[i] = this.#colourId(this.#tint[i], this.#depth[i] - base, RAMP_STEPS);
+      this.#fillId[i] = this.#colourId(this.#hue(i), this.#depth[i] - base, RAMP_STEPS);
   }
 
-  /* Adjacent wedges of one colour thinner than a pixel are one shape to the
-     rasteriser, which below about 0.1 px draws them as nothing at all, so they
-     are drawn as one. A gap between subtrees breaks every run, which is what
+  /* Adjacent wedges thinner than a pixel are one shape to the rasteriser,
+     which below about 0.1 px draws them as nothing at all, so they are drawn as
+     one and take the mean of their hues. Blending is what lets a run ignore
+     colour, and matching on it instead left nothing to merge above hue-depth 2,
+     where every node takes its own angle: the draw paid all 82,115 arcs there
+     rather than 7,823. A gap between subtrees breaks every run, which is what
      keeps the fringe reading as many nodes. In density mode a run is then cut
-     at pixel boundaries and each piece keeps its own count, so a flat block
-     becomes a ramp showing where the tree is packed. Runs are found off
-     `#byDepth`, already sorted by start angle for hit testing. */
+     at pixel boundaries and each piece keeps its own count and its own blend,
+     so a flat block becomes a ramp showing where the tree is packed. Runs are
+     found off `#byDepth`, already sorted by start angle for hit testing. */
   #remerge() {
     const mode = this.#mode();
     if (mode === "off") { this.#seg = null; return; }
@@ -325,18 +348,25 @@ class HypernymDisc extends HTMLElement {
       const rel = d - base;
       const r1 = this.#r0 + (rel + 1) * this.#rw;
       const thin = k => (this.#a1[k] - this.#a0[k]) * sc * r1 < MERGE_PX;
+      // Hue wraps, so the mean of 0.99 and 0.01 has to come out at 0 rather
+      // than 0.5, which is why the members are summed as vectors.
+      const blend = (lo, hi) => {
+        if (lo === hi) return this.#hue(arr[lo]);
+        let cx = 0, cy = 0;
+        for (let k = lo; k <= hi; k++) { cx += this.#tcos[arr[k]]; cy += this.#tsin[arr[k]]; }
+        return this.#quant(Math.atan2(cy, cx) / TAU);
+      };
       let i = 0;
       while (i < arr.length) {
         if (!this.#inView(arr[i])) { i++; continue; }
         let j = i;
         while (thin(arr[j]) && j + 1 < arr.length && this.#inView(arr[j + 1]) && thin(arr[j + 1])
-               && this.#fillId[arr[j + 1]] === this.#fillId[arr[i]]
                && Math.abs(this.#a0[arr[j + 1]] - this.#a1[arr[j]]) < 1e-9) j++;
         const from = this.#a0[arr[i]], to = this.#a1[arr[j]];
         if (j === i || !dense) {
           // A wedge that stayed whole is fully covered, and only it is wide
           // enough to earn a hairline.
-          s0.push(from); s1.push(to); sd.push(rel); st.push(this.#tint[arr[i]]);
+          s0.push(from); s1.push(to); sd.push(rel); st.push(blend(i, j));
           sn.push(0); sw.push(j === i && (to - from) * sc > .012 ? 1 : 0);
         } else {
           const pieces = Math.max(1, Math.round((to - from) * sc * r1));
@@ -344,10 +374,16 @@ class HypernymDisc extends HTMLElement {
           let m = i;
           for (let q = 0; q < pieces; q++) {
             const a = from + q * width, b = a + width;
-            let count = 0;
-            while (m <= j && (this.#a0[arr[m]] + this.#a1[arr[m]]) / 2 < b) { count++; m++; }
+            let count = 0, cx = 0, cy = 0;
+            while (m <= j && (this.#a0[arr[m]] + this.#a1[arr[m]]) / 2 < b) {
+              cx += this.#tcos[arr[m]]; cy += this.#tsin[arr[m]]; count++; m++;
+            }
             if (count > peak) peak = count;
-            s0.push(a); s1.push(b); sd.push(rel); st.push(this.#tint[arr[i]]);
+            s0.push(a); s1.push(b); sd.push(rel);
+            // A piece no midpoint fell in lies under one wedge, so it takes
+            // that wedge's hue rather than the mean of nothing.
+            st.push(count ? this.#quant(Math.atan2(cy, cx) / TAU)
+                          : this.#hue(arr[Math.min(m, j)]));
             sn.push(count || 1); sw.push(0);
           }
         }
