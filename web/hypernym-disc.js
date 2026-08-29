@@ -4,14 +4,20 @@
  * i's parent and every parent precedes its children, so each pass below is a
  * single loop rather than a traversal.
  *
- *   <hypernym-disc src="wordnet-tree.json"></hypernym-disc>
+ *   <hypernym-disc src="wordnet-tree.json"
+ *                   names-src="wordnet-names.txt"></hypernym-disc>
  *   <hypernym-disc> wrapping an application/json script child holding {…}
  *   document.querySelector("hypernym-disc").data = {names, par};
  *
- * Attributes: src, readout="off", hue-depth (default 2), start (node name).
+ * The disc lays out and paints without a single name, so `src` carries the
+ * structure alone and `names-src` is fetched after the first paint. Until it
+ * lands, a node answers to `#index`.
+ *
+ * Attributes: src, names-src, readout="off", hue-depth (default 2), start.
  * Properties: data, index, names. Methods: zoomTo(i), up(), reset(), repaint(), path(i).
  * Events: disc-hover {index,name,depth,leaves}, disc-zoom {index,name,path},
- *         disc-render {nodes,drawn,buildMs,drawMs,hitUs,name} after every repaint.
+ *         disc-render {nodes,drawn,buildMs,drawMs,hitUs,name} after every repaint,
+ *         disc-names {count,ms} once the names arrive.
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
@@ -67,13 +73,17 @@ const hsv = (h, s, v) => {
 const TAU = Math.PI * 2;
 
 class HypernymDisc extends HTMLElement {
-  static observedAttributes = ["src", "start", "hue-depth"];
+  static observedAttributes = ["src", "names-src", "start", "hue-depth"];
 
   #sr; #base; #over; #crumb; #tip; #ro;
   #names = []; #par = []; #kids = [];
   #depth; #leaves; #a0; #a1; #tint; #byDepth = []; #maxDepth = 0;
   #root = 0; #hover = -1; #cursor = 0;
   #buildMs = 0; #drawMs = 0; #drawn = 0; #hitUs = 0;
+  #structureMs = 0; #namesMs = 0;
+  // Which URLs have been fetched, so the upgrade and the connect that follow
+  // it do not each start the same request.
+  #loadedSrc = null; #loadedNames = null;
   #cx = 0; #cy = 0; #r0 = 0; #rw = 1; #rmax = 1; #dpr = 1; #ready = false;
 
   constructor() {
@@ -108,6 +118,7 @@ class HypernymDisc extends HTMLElement {
   attributeChangedCallback(n, was, now) {
     if (was === now) return;
     if (n === "src") this.#load();
+    if (n === "names-src" && this.#ready) this.#loadNames();
     if (n === "start" && this.#ready) this.#applyStart();
     if (n === "hue-depth" && this.#ready) { this.#retint(); this.#draw(); this.#overlay(); }
   }
@@ -115,19 +126,46 @@ class HypernymDisc extends HTMLElement {
   #repaint = () => { this.#draw(); this.#overlay(); };
 
   async #load() {
-    const inline = this.querySelector('script[type="application/json"]');
     const src = this.getAttribute("src");
     try {
-      if (src) this.data = await (await fetch(src)).json();
-      else if (inline) this.data = JSON.parse(inline.textContent);
+      if (src) {
+        if (src === this.#loadedSrc) return;
+        this.#loadedSrc = src;
+        const t0 = performance.now();
+        this.data = await (await fetch(src)).json();
+        this.#structureMs = performance.now() - t0;
+      } else {
+        if (this.#ready) return;
+        const inline = this.querySelector('script[type="application/json"]');
+        if (!inline) return;
+        this.data = JSON.parse(inline.textContent);
+      }
     } catch (err) {
       this.#tip.innerHTML = `<b>Could not load the tree.</b> ${err.message}`;
+      return;
+    }
+    this.#loadNames();
+  }
+
+  /* Deliberately after the first paint: the disc is already on screen and
+     interactive by the time this lands, and nothing in the layout wants it. */
+  async #loadNames() {
+    const src = this.getAttribute("names-src");
+    if (!src || src === this.#loadedNames) return;
+    this.#loadedNames = src;
+    try {
+      const t0 = performance.now();
+      const text = await (await fetch(src)).text();
+      this.#namesMs = performance.now() - t0;
+      this.names = text;
+    } catch (err) {
+      this.#tip.innerHTML = `<b>Could not load the names.</b> ${err.message}`;
     }
   }
 
   set data(d) {
     if (!d || !d.par) return;
-    this.#names = typeof d.names === "string" ? d.names.split("\n") : d.names;
+    if (d.names !== undefined) this.#setNames(d.names);
     this.#par = d.par;
     this.#build();
     this.#ready = true;
@@ -140,13 +178,30 @@ class HypernymDisc extends HTMLElement {
      repaint actually put on the canvas. Zooming in draws far fewer. */
   get stats() {
     return { nodes: this.#par.length, drawn: this.#drawn,
-             buildMs: this.#buildMs, drawMs: this.#drawMs, hitUs: this.#hitUs };
+             buildMs: this.#buildMs, drawMs: this.#drawMs, hitUs: this.#hitUs,
+             structureMs: this.#structureMs, namesMs: this.#namesMs,
+             named: this.#names.length > 0 };
   }
   get names() { return this.#names; }
+  /* Names can arrive at any point, including never. Setting them re-resolves
+     `start`, which can only be matched by name, and refreshes what is on
+     screen; the geometry is untouched. */
+  set names(v) {
+    this.#setNames(v);
+    if (!this.#ready) return;
+    this.#applyStart();
+    this.#draw();
+    this.#overlay();
+    this.#emit("disc-names", { count: this.#names.length, ms: this.#namesMs });
+  }
+  #setNames(v) {
+    this.#names = typeof v === "string" ? v.split("\n") : Array.from(v);
+  }
+  #label(i) { return this.#names[i] ?? `#${i}`; }
 
   #applyStart() {
     const want = this.getAttribute("start");
-    const i = want ? this.#names.indexOf(want) : 0;
+    const i = want && this.#names.length ? this.#names.indexOf(want) : 0;
     this.#root = i >= 0 ? i : 0;
     this.#cursor = this.#root;
     this.#crumbs();
@@ -261,10 +316,11 @@ class HypernymDisc extends HTMLElement {
     g.fillStyle = this.#tok("--_muted", "#90a1a1");
     g.font = `500 11px ${this.#tok("--_mono", "monospace")}`;
     g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(this.#root === 0 ? this.#names[0] : "↑ up", this.#cx, this.#cy);
+    const centre = this.#root === 0 ? (this.#names[0] ?? "root") : "↑ up";
+    g.fillText(centre, this.#cx, this.#cy);
     this.#drawn = drawn;
     this.#drawMs = performance.now() - t0;
-    this.#emit("disc-render", { ...this.stats, name: this.#names[this.#root] });
+    this.#emit("disc-render", { ...this.stats, name: this.#label(this.#root) });
   }
 
   #overlay() {
@@ -321,7 +377,7 @@ class HypernymDisc extends HTMLElement {
     if (h === this.#hover) return;
     this.#hover = h; this.#overlay(); this.#say(h);
     if (h >= 0) this.#emit("disc-hover", {
-      index: h, name: this.#names[h], depth: this.#depth[h], leaves: this.#leaves[h] });
+      index: h, name: this.#label(h), depth: this.#depth[h], leaves: this.#leaves[h] });
   };
   #onLeave = () => { this.#hover = -1; this.#overlay(); this.#say(-1); };
   #onClick = ev => {
@@ -344,7 +400,7 @@ class HypernymDisc extends HTMLElement {
     ev.preventDefault();
     if (next != null) {
       this.#cursor = next; this.#overlay(); this.#say(next);
-      this.#over.setAttribute("aria-label", this.#names[next]);
+      this.#over.setAttribute("aria-label", this.#label(next));
     }
   };
 
@@ -352,7 +408,7 @@ class HypernymDisc extends HTMLElement {
     if (!(i >= 0) || i >= this.#par.length) return;
     this.#root = i; this.#cursor = i; this.#hover = -1;
     this.#draw(); this.#overlay(); this.#crumbs(); this.#say(-1);
-    this.#emit("disc-zoom", { index: i, name: this.#names[i], path: this.path(i) });
+    this.#emit("disc-zoom", { index: i, name: this.#label(i), path: this.path(i) });
   }
   up() { if (this.#root !== 0) this.zoomTo(Math.max(0, this.#par[this.#root])); }
   reset() { this.zoomTo(0); }
@@ -361,7 +417,7 @@ class HypernymDisc extends HTMLElement {
   repaint() { this.#draw(); this.#overlay(); }
   path(i) {
     const out = [];
-    for (let c = i; c >= 0; c = this.#par[c]) out.unshift(this.#names[c]);
+    for (let c = i; c >= 0; c = this.#par[c]) out.unshift(this.#label(c));
     return out;
   }
 
@@ -373,14 +429,14 @@ class HypernymDisc extends HTMLElement {
     for (let c = this.#root; c >= 0; c = this.#par[c]) path.unshift(c);
     this.#crumb.innerHTML = path.map((i, k) =>
       (k ? "<i>›</i>" : "") + (i === this.#root
-        ? `<span>${this.#names[i]}</span>`
-        : `<button type="button" data-i="${i}">${this.#names[i]}</button>`)).join("");
+        ? `<span>${this.#label(i)}</span>`
+        : `<button type="button" data-i="${i}">${this.#label(i)}</button>`)).join("");
   }
   #say(i) {
     const j = i >= 0 ? i : this.#cursor;
     if (j < 0 || !this.#ready) { this.#tip.textContent = ""; return; }
     const n = this.#leaves[j], k = this.#kids[j].length;
-    this.#tip.innerHTML = `<b>${this.#names[j]}</b> <em>· depth ${this.#depth[j]}`
+    this.#tip.innerHTML = `<b>${this.#label(j)}</b> <em>· depth ${this.#depth[j]}`
       + ` · ${n.toLocaleString("en-GB")} leaf node${n === 1 ? "" : "s"} below`
       + ` · ${k.toLocaleString("en-GB")} direct child${k === 1 ? "" : "ren"}</em>`;
   }

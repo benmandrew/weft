@@ -4,16 +4,22 @@ The element nests arcs, and nesting needs a tree, so the hypernym DAG is cut
 down to one: every synset keeps its first hypernym and the other 2,313 edges go.
 All 82,115 nodes survive that cut; only the cross-links do.
 
-The output is `{"names": "a\\nb\\n...", "par": [-1, 0, 0, ...]}` where `par[i]`
-indexes `i`'s parent. Nodes come out ordered by rank, then by descending subtree
-size, which guarantees a parent's index is below every one of its children's:
-that ordering is the whole contract, and it lets the element compute depths,
-leaf counts and angles in flat loops instead of walking the tree.
+The output is two files, because the disc lays itself out without reading a
+single name. `wordnet-tree.json` is `{"par": [-1, 0, 0, ...]}` where `par[i]`
+indexes `i`'s parent, and `wordnet-names.txt` is the names for those same
+indices, one per line. Structure is 129 KB over the wire against 306 KB of
+names, so splitting them lets the element paint from the smaller file and fetch
+the larger one afterwards.
+
+Nodes come out ordered by rank, then by descending subtree size, which
+guarantees a parent's index is below every one of its children's: that ordering
+is the whole contract, and it lets the element compute depths, leaf counts and
+angles in flat loops instead of walking the tree.
 
 Rank is the longest path down from `entity.n.01`, not the shortest, so a synset
 with two parents sits below the deeper of them and no edge ever points forwards.
 
-    python tools/export_tree.py            # writes out/wordnet-tree.json
+    python tools/export_tree.py            # writes both files into out/
     python tools/export_tree.py --out DIR
 """
 
@@ -23,7 +29,6 @@ import argparse
 import json
 from collections import deque
 from pathlib import Path
-from typing import Any
 
 from wordchain.lexicon import Synset, _wordnet
 
@@ -87,7 +92,8 @@ def _label(name: str) -> str:
     return name.rsplit(".", 2)[0].replace("_", " ")
 
 
-def build() -> dict[str, Any]:
+def build() -> tuple[list[str], list[int]]:
+    """The names and the parent indices, in the order the contract requires."""
     wordnet = _wordnet()
     synsets: list[Synset] = list(wordnet.all_synsets("n"))
     parents = _parents(synsets)
@@ -96,10 +102,14 @@ def build() -> dict[str, Any]:
 
     laid_out = sorted(parents, key=lambda name: (rank[name], -size[name], name))
     index = {name: i for i, name in enumerate(laid_out)}
-    return {
-        "names": "\n".join(_label(name) for name in laid_out),
-        "par": [index[parents[name][0]] if parents[name] else -1 for name in laid_out],
-    }
+    return (
+        [_label(name) for name in laid_out],
+        [index[parents[name][0]] if parents[name] else -1 for name in laid_out],
+    )
+
+
+def _kb(path: Path) -> str:
+    return f"{path.stat().st_size / 1024:.0f} KB"
 
 
 def main() -> int:
@@ -107,14 +117,16 @@ def main() -> int:
     parser.add_argument("--out", default="out", type=Path, help="directory to write into")
     args = parser.parse_args()
 
-    tree = build()
+    names, par = build()
     args.out.mkdir(parents=True, exist_ok=True)
-    path = args.out / "wordnet-tree.json"
-    path.write_text(json.dumps(tree, separators=(",", ":")))
+    structure = args.out / "wordnet-tree.json"
+    labels = args.out / "wordnet-names.txt"
+    structure.write_text(json.dumps({"par": par}, separators=(",", ":")))
+    labels.write_text("\n".join(names))
 
-    nodes = len(tree["par"])
-    dropped = sum(1 for p in tree["par"] if p < 0)
-    print(f"{path}: {nodes} nodes, {nodes - dropped} edges, {path.stat().st_size / 1e6:.2f} MB")
+    roots = sum(1 for parent in par if parent < 0)
+    print(f"{structure}: {len(par)} nodes, {len(par) - roots} edges, {_kb(structure)}")
+    print(f"{labels}: {len(names)} names, {_kb(labels)}")
     return 0
 
 

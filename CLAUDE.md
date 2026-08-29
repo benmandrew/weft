@@ -80,17 +80,23 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   on its first line with `#:schema`, since an editor may never find
   `taplo.toml`. The schema owns the per-key descriptions and `wordchain.toml`
   carries none, so a new setting is documented there and nowhere else.
-- `<hypernym-disc>` reads a tree as `{names, par}` with every parent's index
-  below its children's. That ordering is the whole contract: it lets the element
-  find depths, leaf counts and angles in flat loops instead of a traversal, so
-  82,115 nodes lay out in one frame. Nesting needs a tree and the hypernyms are
-  a DAG, so `export_tree.py` keeps each synset's first hypernym and drops the
-  other 2,313 edges; every node survives, only cross-links go. The file is
-  generated into `out/` and never committed, and `make serve` watches `web/`
-  and reloads the browser on save. Hit testing binary-searches the nodes at one
-  depth by start angle, and zooming rescales angles rather than laying out
-  again, so neither needs a spatial index. Nothing in `all` depends on any of
-  it.
+- `<hypernym-disc>` reads a tree as `par`, an array where every parent's index
+  is below all of its children's. That ordering is the whole contract: it lets
+  the element find depths, leaf counts and angles in flat loops instead of a
+  traversal, so 82,115 nodes lay out in one frame. Nesting needs a tree and the
+  hypernyms are a DAG, so `export_tree.py` keeps each synset's first hypernym
+  and drops the other 2,313 edges; every node survives, only cross-links go.
+- The layout never reads a name, so the export is two files and the element
+  fetches them in that order: `wordnet-tree.json` is the structure at 129 KB
+  brotli, `wordnet-names.txt` the names for the same indices at 306 KB. First
+  paint waits on the smaller one and a node answers to `#index` until the
+  larger arrives, which is why `start` is re-resolved when it does. Both are
+  generated into `out/` and never committed. Keep them index-aligned: the names
+  file is positional, with no key to catch a mismatch.
+- Hit testing binary-searches the nodes at one depth by start angle, and zooming
+  rescales angles rather than laying out again, so neither needs a spatial
+  index. `make serve` watches `web/` and reloads the browser on save. Nothing in
+  `all` depends on any of it.
 - The Makefile's `all` renders one SVG per category and takes its parallelism
   from make's own `-j`, never from a `MAKEFLAGS` line in the file. Its target
   list comes from `wordchain categories` at parse time, so every invocation pays
@@ -116,7 +122,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 
     web/hypernym-disc.js           the nested-arc element, no dependencies
     web/index.html                 its harness, with the render timings
-    tools/export_tree.py           writes out/wordnet-tree.json for it
+    tools/export_tree.py           writes the tree and names for it
     tools/serve.py                 serves web/ and reloads it on save
 
 `graph.py` holds the structural claim the whole project rests on: a word is an

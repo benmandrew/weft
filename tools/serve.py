@@ -173,9 +173,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 def _watch_roots(extra: list[Path]) -> Iterator[Path]:
     yield WEB
-    tree = OUT / "wordnet-tree.json"
-    if tree.exists():
-        yield tree
+    for name in ("wordnet-tree.json", "wordnet-names.txt"):
+        if (OUT / name).exists():
+            yield OUT / name
     yield from extra
 
 
@@ -193,8 +193,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not (OUT / "wordnet-tree.json").exists():
-        print("out/wordnet-tree.json is missing. Run: make tree")
+    missing = [
+        name for name in ("wordnet-tree.json", "wordnet-names.txt") if not (OUT / name).exists()
+    ]
+    if missing:
+        print(f"out/{', out/'.join(missing)} missing. Run: make tree")
         return 1
 
     watcher = Watcher(list(_watch_roots(args.watch)), args.interval)

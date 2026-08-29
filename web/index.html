@@ -69,12 +69,14 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--live);outline-
 <div class="wrap">
   <header>
     <h1>hypernym-disc</h1>
-    <span class="path">web/hypernym-disc.js &middot; out/wordnet-tree.json</span>
+    <span class="path">web/hypernym-disc.js &middot; wordnet-tree.json + wordnet-names.txt</span>
     <span class="live" id="live">waiting for the watcher</span>
   </header>
 
   <main>
-    <hypernym-disc id="disc" src="/out/wordnet-tree.json"></hypernym-disc>
+    <hypernym-disc id="disc"
+                   src="/out/wordnet-tree.json"
+                   names-src="/out/wordnet-names.txt"></hypernym-disc>
   </main>
 
   <aside>
@@ -83,12 +85,14 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--live);outline-
       <dl class="metrics">
         <dt>nodes in tree</dt><dd id="m-nodes">&mdash;</dd>
         <dt>arcs drawn</dt><dd id="m-drawn">&mdash;</dd>
+        <dt>structure fetch</dt><dd id="m-struct">&mdash;</dd>
         <dt>build</dt><dd id="m-build">&mdash;</dd>
+        <dt>first paint</dt><dd id="m-first">&mdash;</dd>
+        <dt>names fetch</dt><dd id="m-names">&mdash;</dd>
         <dt>last draw</dt><dd id="m-draw">&mdash;</dd>
         <dt>median of <span id="m-n">0</span></dt><dd id="m-med">&mdash;</dd>
         <dt>slowest</dt><dd id="m-max">&mdash;</dd>
         <dt>hit test</dt><dd id="m-hit">&mdash;</dd>
-        <dt>first paint</dt><dd id="m-first">&mdash;</dd>
       </dl>
       <canvas class="spark" id="spark" width="600" height="76"></canvas>
       <p class="hint">Every bar is one repaint. The line is one 60&nbsp;fps frame, 16.7&nbsp;ms.</p>
@@ -130,6 +134,7 @@ disc.addEventListener("disc-render", e => {
   if (draws.length > 120) draws.shift();
   $("m-nodes").textContent = s.nodes.toLocaleString("en-GB");
   $("m-drawn").textContent = s.drawn.toLocaleString("en-GB");
+  $("m-struct").textContent = s.structureMs ? ms(s.structureMs) : "inline";
   $("m-build").textContent = ms(s.buildMs);
   $("m-draw").textContent = ms(s.drawMs);
   $("m-draw").classList.toggle("hot", s.drawMs > 16.7);
@@ -175,17 +180,17 @@ $("huebtns").addEventListener("click", e => {
 $("redraw").addEventListener("click", () => { for (let i = 0; i < 10; i++) disc.repaint(); });
 $("reset").addEventListener("click", () => disc.reset());
 
-// The select is filled once the element has its data, which the first render
-// is the signal for.
-disc.addEventListener("disc-render", function fill() {
-  disc.removeEventListener("disc-render", fill);
+// Names arrive after the disc is already painted and interactive, so anything
+// that needs one waits for this rather than for the first render.
+disc.addEventListener("disc-names", e => {
+  $("m-names").textContent = ms(e.detail.ms);
   const want = ["entity", "physical entity", "abstraction", "organism", "animal",
                 "plant", "artifact", "instrumentality", "substance", "person"];
   $("start").innerHTML = want
     .filter(n => disc.names.indexOf(n) >= 0)
     .map(n => `<option value="${disc.names.indexOf(n)}">${n}</option>`).join("");
-  $("start").addEventListener("change", e => { draws = []; disc.zoomTo(+e.target.value); });
-});
+  $("start").addEventListener("change", ev => { draws = []; disc.zoomTo(+ev.target.value); });
+}, { once: true });
 </script>
 </body>
 </html>
