@@ -38,6 +38,23 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   stored shape changes, so stale files miss rather than mislead. Every command
   reads and writes it, so there is nothing to warm by hand and no `warm`
   subcommand to add.
+- `lexicon.EXTRA_WORDS` tops a category up by hand, on top of what the closure
+  yields, since WordNet is a lexical database rather than a game word list and
+  can miss a word every player would offer: "grey" is a lemma of no colour
+  synset, so the colour category returns "gray" alone. It ships empty, with one
+  commented line for the shape. An entry bypasses every filter — the Zipf cut,
+  the polysemy dominance and rank filter, the depth cut — because a word
+  written down by hand was chosen rather than survived, and it joins after the
+  sliding frequency cut in `_resolve`, so it never counts towards `--target`
+  and never displaces a word the closure earned. `--multiword` still governs
+  it, since that flag decides whether the whole graph chains on outer letters.
+  It carries wordfreq's real Zipf rather than a stand-in, so `words` prints the
+  truth about it, and a word wordfreq has never seen scores zero, sorts last,
+  and needs a larger `--limit` to be drawn. A duplicate of a word WordNet
+  already yielded is dropped; the cache is keyed on the category's entry, so
+  editing the table misses rather than serving a list resolved before the edit;
+  and `_check_extras` refuses an unknown category name or an unplayable word at
+  import, rather than letting a typo silently add nothing.
 - Wedge order is `render._fan_key`, and `web.py` sorts the same way: the tail
   letter, rotated to start just before the wedge's own letter, running
   backwards. Plain tail-letter order starts every wedge at A and makes the

@@ -55,10 +55,34 @@ CATEGORIES: dict[str, tuple[str, ...]] = {
     "river": ("river.n.01",),
 }
 
+# Words added to a category by hand, on top of what WordNet yields.
+EXTRA_WORDS: dict[str, tuple[str, ...]] = {
+    "plant": ("arabidopsis",),
+}
+
+
 # Lemma names arrive with underscores for spaces. Anything left holding a digit,
 # a hyphen or an apostrophe is a taxonomic label rather than a word anyone would
 # play, so the pattern drops it.
 _PLAYABLE = re.compile(r"[a-z]+(?: [a-z]+)*")
+
+
+def _check_extras() -> None:
+    """Refuse a bad EXTRA_WORDS entry at import rather than at render time.
+
+    Nothing downstream would notice a typo: an unknown category silently adds
+    nothing, and a word carrying a digit or an apostrophe is one the closure
+    would have dropped, so it would reach the disc looking deliberate.
+    """
+    for category, words in EXTRA_WORDS.items():
+        if category not in CATEGORIES:
+            raise ValueError(f"EXTRA_WORDS names no such category: {category}")
+        for text in words:
+            if len(text) < 2 or not _PLAYABLE.fullmatch(text):
+                raise ValueError(f"EXTRA_WORDS[{category!r}]: {text!r} is not a playable word")
+
+
+_check_extras()
 
 
 # nltk ships no type information, so a WordNet synset is opaque here. The alias
@@ -296,7 +320,37 @@ def _resolve(
 
     candidates.sort(key=lambda w: (-w.zipf, w.text))
     common = [word for word in candidates if word.zipf >= min_zipf]
-    return common if len(common) >= target else candidates[:target]
+    kept = common if len(common) >= target else candidates[:target]
+    return _with_extras(kept, category, allow_multiword)
+
+
+def _with_extras(words: list[Word], category: str, allow_multiword: bool) -> list[Word]:
+    """The resolved words with the category's hand-added ones merged in.
+
+    They join after the frequency cut rather than before it, so an added word
+    neither counts towards `target` nor displaces one the closure earned. The
+    multiword flag still governs them, since it decides whether the whole graph
+    chains on outer letters.
+
+    An added word carries wordfreq's Zipf rather than a stand-in, so `words`
+    prints the truth about it. The list is ordered by frequency and `build
+    --limit` keeps the head, so a word wordfreq has never seen scores zero,
+    sorts last, and needs a larger limit to be drawn.
+    """
+    extra = EXTRA_WORDS.get(category, ())
+    if not extra:
+        return words
+
+    from wordfreq import zipf_frequency
+
+    seen = {word.text for word in words}
+    merged = list(words)
+    for text in extra:
+        if text in seen or (" " in text and not allow_multiword):
+            continue
+        merged.append(Word(text, zipf_frequency(text, "en")))
+    merged.sort(key=lambda w: (-w.zipf, w.text))
+    return merged
 
 
 def members(
@@ -319,11 +373,13 @@ def members(
     its taxonomy. min_dominance and max_rank control
     the polysemy filter described on _in_category, min_depth the shallow-layer
     cut described on _closure, and target with zipf_floor the sliding cut
-    described on _resolve.
+    described on _resolve. EXTRA_WORDS then adds the category's hand-picked
+    words, which no filter above can drop.
 
-    The result is cached on disk against the category, every argument above, and
-    the WordNet build it came from. A hit skips the 1.3 s the database takes to
-    parse, which is the single largest cost in the whole tool.
+    The result is cached on disk against the category, every argument above, the
+    category's EXTRA_WORDS entry, and the WordNet build it came from. A hit skips
+    the 1.3 s the database takes to parse, which is the single largest cost in
+    the whole tool.
     """
     if category not in CATEGORIES:
         raise UnknownCategory(category)
@@ -336,6 +392,9 @@ def members(
         "allow_multiword": allow_multiword,
         "target": target,
         "zipf_floor": zipf_floor,
+        # Keyed on the additions too, so editing EXTRA_WORDS misses the cache
+        # rather than serving a list resolved before the edit.
+        "extra": EXTRA_WORDS.get(category, ()),
     }
     path = _cache_file(category, params)
     if cache:

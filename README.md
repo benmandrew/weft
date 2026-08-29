@@ -45,4 +45,7 @@ Scalable Vector Graphics (SVG) is the default because the disc zooms, so a label
 
 animal, bird, body-part, building, city, clothing, colour, country, disease, dog, drink, drug, element, fabric, fish, flower, food, fruit, furniture, game, insect, instrument, job, language, mammal, metal, mineral, plant, reptile, river, sport, tool, toy, tree, vegetable, vehicle, weapon.
 
+A category can be topped up by hand. `EXTRA_WORDS` in `src/wordchain/lexicon.py` maps a category to words added on top of the WordNet closure, for the ones a lexical database misses: *grey* is a lemma of no colour synset, so the colour category offers *gray* alone until somebody writes the other spelling down.
+The table ships empty. Such a word bypasses the filters, having been chosen rather than survived them, and it still carries its real wordfreq frequency, so a rare addition sorts to the tail of the list and needs a larger `--limit` to be drawn.
+
 The 26-node graph was fixed before any word list existed, and a category only decides which of its edges are populated and how heavily. Everything the tool draws is a way of asking which letters are worth steering an opponent towards.
