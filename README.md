@@ -29,6 +29,8 @@ The three selection commands share the filters that decide which words a categor
 
 `make -j` renders every category, one file each, so editing a module redraws all 37 and an untouched tree redraws none. `make clean` removes the output directory, `OUT=` moves it, and `CONFIG=` names a config file.
 
+`make web-dist` gathers everything a page needs to run the disc element into one flat directory, `out/web-dist` unless `DIST=` names another: the five browser modules and the three data files they fetch. The modules are found by glob rather than listed by name, so a site that embeds the disc copies the directory instead of keeping its own list of filenames in step with this one; `index.html` stays behind, as the local harness a host page replaces with its own markup.
+
 ## Outputs
 
 `build` writes one file, `out/<category>.svg`: the word graph in wedges by first letter, the 110 commonest words by default. The analysis is a command away, with `stats` printing it and `words` printing the list.

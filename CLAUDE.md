@@ -285,6 +285,23 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   for that, `make clean` included. A config file reaches it through `CONFIG=`,
   never a `--config` hardcoded on the recipe line: the variable is both the
   argument and the prerequisite, and hardcoding the flag passes it twice.
+- `make web-dist` stages everything a page needs to run `<hypernym-disc>` flat
+  in one directory, `out/web-dist` unless `DIST=` names another, which `make
+  clean` removes with the rest of `out/`. Its contents are every `web/*.js`
+  module, five today, and the three exported data files. The module list is a
+  glob rather than names written out, which is the whole point of the target:
+  a consuming site copies the directory instead of keeping its own list of
+  filenames in step with this one, where a sixth module added here leaves that
+  site running five of six and nothing says so. `index.html` is left out,
+  since it is the local harness and a host page carries its own markup. The
+  directory is emptied and refilled rather than copied into, and `web/.` is a
+  prerequisite alongside the modules, because a directory's timestamp moves
+  when a file enters or leaves it and that is the only thing that catches a
+  module deleted upstream. Flat works because the modules import each other by
+  relative path and the worker resolves through `import.meta.url`, so the
+  directory runs wherever it is served from. The three data files are one
+  grouped target (`&:`) rather than three rules, so the exporter walks the
+  corpus once rather than three times.
 
 ## Shape
 
