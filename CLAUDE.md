@@ -86,10 +86,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   82,115 nodes lay out in one frame. Nesting needs a tree and the hypernyms are
   a DAG, so `export_tree.py` keeps each synset's first hypernym and drops the
   other 2,313 edges; every node survives, only cross-links go. The file is
-  generated into `out/` and never committed. Hit testing binary-searches the
-  nodes at one depth by start angle, and zooming rescales angles rather than
-  laying out again, so neither needs a spatial index. Nothing in `all` depends
-  on any of it.
+  generated into `out/` and never committed, and `make serve` watches `web/`
+  and reloads the browser on save. Hit testing binary-searches the nodes at one
+  depth by start angle, and zooming rescales angles rather than laying out
+  again, so neither needs a spatial index. Nothing in `all` depends on any of
+  it.
 - The Makefile's `all` renders one SVG per category and takes its parallelism
   from make's own `-j`, never from a `MAKEFLAGS` line in the file. Its target
   list comes from `wordchain categories` at parse time, so every invocation pays
@@ -114,7 +115,9 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     tools/check_schema.py          holds the schema to config.py
 
     web/hypernym-disc.js           the nested-arc element, no dependencies
+    web/index.html                 its harness, with the render timings
     tools/export_tree.py           writes out/wordnet-tree.json for it
+    tools/serve.py                 serves web/ and reloads it on save
 
 `graph.py` holds the structural claim the whole project rests on: a word is an
 edge from its first letter to its last, so the game lives on 26 nodes and the

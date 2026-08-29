@@ -24,11 +24,11 @@ SVGS := $(patsubst %,$(OUT)/%.svg,$(CATEGORIES))
 # is empty and the dependency simply is not there.
 SOURCES := $(wildcard src/wordchain/*.py) $(CONFIG)
 
-# The flat tree <hypernym-disc> reads. It lives outside the SVG pipeline:
-# nothing in `all` depends on it.
+# The flat tree <hypernym-disc> reads, and the dev server that watches it.
+# Both live outside the SVG pipeline: nothing in `all` depends on them.
 TREE := $(OUT)/wordnet-tree.json
 
-.PHONY: all check clean list tree
+.PHONY: all check clean list tree serve
 
 all: $(SVGS)
 
@@ -55,6 +55,11 @@ $(TREE): tools/export_tree.py src/wordchain/lexicon.py
 	@python tools/export_tree.py --out $(OUT)
 
 tree: $(TREE)
+
+# Serves web/ with a watcher that reloads the browser on save. ARGS= passes
+# flags through, as in `make serve ARGS='--port 9000 --open'`.
+serve: $(TREE)
+	@python tools/serve.py $(ARGS)
 
 list:
 	@printf '%s\n' $(CATEGORIES)

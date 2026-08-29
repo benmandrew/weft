@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>hypernym-disc — test harness</title>
+<style>
+:root{
+  --ground:#0c1112; --panel:#141b1c; --ink:#e7eded; --muted:#90a1a1;
+  --faint:#33413f; --live:#59b491; --dead:#e8705f;
+  --rule:rgba(231,237,237,.11); --pill:rgba(89,180,145,.15);
+  --sat:.55; --val:.88;
+  --display:"Iowan Old Style",Palatino,Georgia,serif;
+  --body:"Avenir Next",Avenir,"Helvetica Neue",system-ui,sans-serif;
+  --data:Menlo,"SF Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:light){:root{
+  --ground:#eef1f0; --panel:#fbfcfc; --ink:#131a1b; --muted:#5d6d6e;
+  --faint:#b3c0bf; --live:#2c7359; --dead:#b8342a;
+  --rule:rgba(19,26,27,.10); --pill:rgba(44,115,89,.13);
+  --sat:.62; --val:.60;
+}}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);margin:0;
+     font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:26px 22px 60px;
+      display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:22px;align-items:start}
+@media(max-width:880px){.wrap{grid-template-columns:1fr}}
+header{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;
+       border-bottom:1px solid var(--rule);padding-bottom:12px}
+h1{font-family:var(--display);font-size:20px;font-weight:600;margin:0;letter-spacing:-.01em}
+header .path{font-family:var(--data);font-size:11.5px;color:var(--muted)}
+header .live{margin-left:auto;font-family:var(--data);font-size:11px;color:var(--muted);
+  display:inline-flex;align-items:center;gap:6px}
+header .live::before{content:"";width:7px;height:7px;border-radius:50%;
+  background:var(--faint);transition:background .2s}
+header .live.on::before{background:var(--live)}
+
+hypernym-disc{
+  --disc-ground:var(--ground); --disc-panel:var(--panel); --disc-ink:var(--ink);
+  --disc-muted:var(--muted); --disc-accent:var(--live);
+  --disc-sat:var(--sat); --disc-val:var(--val);
+  --disc-font:var(--body); --disc-mono:var(--data);
+}
+aside{display:flex;flex-direction:column;gap:16px;position:sticky;top:22px}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:3px;padding:14px 16px}
+.card h2{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;margin:0 0 11px;font-family:var(--body)}
+.metrics{display:grid;grid-template-columns:1fr auto;gap:6px 14px;
+  font-family:var(--data);font-size:12px;font-variant-numeric:tabular-nums}
+.metrics dt{color:var(--muted)}
+.metrics dd{margin:0;text-align:right;color:var(--ink)}
+.metrics dd.hot{color:var(--dead)}
+.row{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.row+.row{margin-top:10px}
+label{font-size:11px;color:var(--muted);flex:0 0 100%}
+button,select{font-family:var(--body);font-size:12.5px;color:var(--muted);
+  background:var(--ground);border:1px solid var(--rule);border-radius:2px;
+  padding:4px 10px;cursor:pointer}
+button:hover,select:hover{color:var(--ink);border-color:var(--faint)}
+button[aria-pressed="true"]{color:var(--live);border-color:var(--live);background:var(--pill)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--live);outline-offset:2px}
+.spark{display:block;width:100%;height:38px;margin-top:10px}
+.hint{font-size:11.5px;color:var(--muted);margin:10px 0 0;line-height:1.55}
+.hint code{font-family:var(--data);font-size:.92em;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>hypernym-disc</h1>
+    <span class="path">web/hypernym-disc.js &middot; out/wordnet-tree.json</span>
+    <span class="live" id="live">waiting for the watcher</span>
+  </header>
+
+  <main>
+    <hypernym-disc id="disc" src="/out/wordnet-tree.json"></hypernym-disc>
+  </main>
+
+  <aside>
+    <div class="card">
+      <h2>Time to render</h2>
+      <dl class="metrics">
+        <dt>nodes in tree</dt><dd id="m-nodes">&mdash;</dd>
+        <dt>arcs drawn</dt><dd id="m-drawn">&mdash;</dd>
+        <dt>build</dt><dd id="m-build">&mdash;</dd>
+        <dt>last draw</dt><dd id="m-draw">&mdash;</dd>
+        <dt>median of <span id="m-n">0</span></dt><dd id="m-med">&mdash;</dd>
+        <dt>slowest</dt><dd id="m-max">&mdash;</dd>
+        <dt>hit test</dt><dd id="m-hit">&mdash;</dd>
+        <dt>first paint</dt><dd id="m-first">&mdash;</dd>
+      </dl>
+      <canvas class="spark" id="spark" width="600" height="76"></canvas>
+      <p class="hint">Every bar is one repaint. The line is one 60&nbsp;fps frame, 16.7&nbsp;ms.</p>
+    </div>
+
+    <div class="card">
+      <h2>Controls</h2>
+      <div class="row">
+        <label for="hue">hue-depth &mdash; how deep a node picks its own colour</label>
+        <span id="huebtns"></span>
+      </div>
+      <div class="row">
+        <label for="start">jump to</label>
+        <select id="start"></select>
+      </div>
+      <div class="row">
+        <button id="redraw" type="button">Repaint &times;10</button>
+        <button id="reset" type="button">Reset to root</button>
+      </div>
+      <p class="hint">Save <code>hypernym-disc.js</code> and the page reloads itself. Measurements start again from a cold build.</p>
+    </div>
+  </aside>
+</div>
+
+<script type="module" src="/hypernym-disc.js"></script>
+<script type="module">
+const disc = document.getElementById("disc");
+const $ = id => document.getElementById(id);
+const t0 = performance.now();
+let first = null, draws = [];
+
+const ms = v => v < 10 ? v.toFixed(2) + " ms" : v.toFixed(1) + " ms";
+const med = a => a.length ? a.slice().sort((x, y) => x - y)[a.length >> 1] : 0;
+
+disc.addEventListener("disc-render", e => {
+  const s = e.detail;
+  if (first === null) { first = performance.now() - t0; $("m-first").textContent = ms(first); }
+  draws.push(s.drawMs);
+  if (draws.length > 120) draws.shift();
+  $("m-nodes").textContent = s.nodes.toLocaleString("en-GB");
+  $("m-drawn").textContent = s.drawn.toLocaleString("en-GB");
+  $("m-build").textContent = ms(s.buildMs);
+  $("m-draw").textContent = ms(s.drawMs);
+  $("m-draw").classList.toggle("hot", s.drawMs > 16.7);
+  $("m-n").textContent = draws.length;
+  $("m-med").textContent = ms(med(draws));
+  $("m-max").textContent = ms(Math.max(...draws));
+  spark();
+});
+disc.addEventListener("disc-hover", () => {
+  const u = disc.stats.hitUs;
+  $("m-hit").textContent = u < 1000 ? u.toFixed(0) + " µs" : ms(u / 1000);
+});
+
+function spark() {
+  const c = $("spark"), g = c.getContext("2d");
+  const css = getComputedStyle(document.documentElement);
+  const w = c.width, h = c.height;
+  g.clearRect(0, 0, w, h);
+  const top = Math.max(20, Math.max(...draws) * 1.15);
+  const bw = Math.max(1, Math.min(9, w / Math.max(draws.length, 1) - 1));
+  draws.forEach((v, i) => {
+    const x = i * (bw + 1), y = h - (v / top) * h;
+    g.fillStyle = css.getPropertyValue(v > 16.7 ? "--dead" : "--live").trim();
+    g.fillRect(x, y, bw, h - y);
+  });
+  const fy = h - (16.7 / top) * h;
+  g.strokeStyle = css.getPropertyValue("--faint").trim();
+  g.setLineDash([3, 3]); g.beginPath(); g.moveTo(0, fy); g.lineTo(w, fy); g.stroke();
+  g.setLineDash([]);
+}
+
+const HUES = [0, 2, 4, 8, 19];
+$("huebtns").innerHTML = HUES.map(h =>
+  `<button type="button" data-h="${h}" aria-pressed="${h === 2}">${h}</button>`).join(" ");
+$("huebtns").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  draws = [];
+  document.querySelectorAll("#huebtns button").forEach(x =>
+    x.setAttribute("aria-pressed", String(x === b)));
+  disc.setAttribute("hue-depth", b.dataset.h);
+});
+
+$("redraw").addEventListener("click", () => { for (let i = 0; i < 10; i++) disc.repaint(); });
+$("reset").addEventListener("click", () => disc.reset());
+
+// The select is filled once the element has its data, which the first render
+// is the signal for.
+disc.addEventListener("disc-render", function fill() {
+  disc.removeEventListener("disc-render", fill);
+  const want = ["entity", "physical entity", "abstraction", "organism", "animal",
+                "plant", "artifact", "instrumentality", "substance", "person"];
+  $("start").innerHTML = want
+    .filter(n => disc.names.indexOf(n) >= 0)
+    .map(n => `<option value="${disc.names.indexOf(n)}">${n}</option>`).join("");
+  $("start").addEventListener("change", e => { draws = []; disc.zoomTo(+e.target.value); });
+});
+</script>
+</body>
+</html>
