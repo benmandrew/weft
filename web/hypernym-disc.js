@@ -137,6 +137,7 @@ TPL.innerHTML = `
     cursor:pointer;text-decoration:underline;text-underline-offset:2px}
   .crumb span{color:var(--_ink)}
   .crumb i{font-style:normal;color:var(--_muted);opacity:.5;padding:0 4px}
+  .crumb i:first-child{padding-left:0}
   .crumb b{color:var(--_ink);font-weight:600}
 </style>
 <div class="frame">
@@ -774,8 +775,10 @@ class HypernymDisc extends HTMLElement {
   #crumbs() {
     const path = [];
     for (let c = this.#root; c >= 0; c = this.#par[c]) path.unshift(c);
-    this.#crumb.innerHTML = path.map((i, k) =>
-      (k ? "<i>›</i>" : "") + (i === this.#root
+    // A separator before every step, the first included, so the path reads as
+    // a path rather than as a name with a trail after it.
+    this.#crumb.innerHTML = path.map(i =>
+      "<i>›</i>" + (i === this.#root
         ? `<span>${this.#label(i)}</span>`
         : `<button type="button" data-i="${i}">${this.#label(i)}</button>`)).join("");
   }
