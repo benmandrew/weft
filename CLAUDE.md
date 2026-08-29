@@ -99,8 +99,8 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   is the exception, because zooming into one shows an empty disc: Enter on a
   leaf goes to its parent and leaves the cursor on the leaf, which is the one
   thing clicking cannot do and the reason to search for a word at all. A picked
-  node outside the current zoom is named in the readout but not highlighted,
-  since there is nowhere on the disc to draw it; Enter brings it into view.
+  node outside the current zoom is not highlighted, since there is nowhere on
+  the disc to draw it; Enter brings it into view.
 - `disc-search.js` scores every name in one pass rather than holding an index:
   2.6 to 4.4 ms over 82,115 names depending on the query, plus 4.4 ms to lower
   them on the first query, and the input is debounced to one scan per frame.
@@ -110,6 +110,22 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   every penalty is capped below 1,000, so a weaker kind of match can never
   outrank a stronger one however long the name it sits in; that ordering is
   what `check_web.mjs` asserts, not the scores.
+- Below the disc the element prints the crumb path and nothing else. The line
+  of counts that sat under it is gone: the hub already names whatever the
+  pointer or the search is on, and `disc-hover` still carries the depth and the
+  leaf count, so a host that wants them can print its own. That is also where
+  a failed fetch now reports.
+- `hue-depth` defaults to 8 and `merge` to density, and the harness sets
+  neither: it is one disc with a search box, no controls and no timings. Both
+  attributes still work, so a comparison is one attribute away in the
+  inspector, and `check_web.mjs` is what holds the other merge modes honest.
+- The `fit` attribute makes the element fill the box it is given, with the
+  stage taking whatever height the search box and the crumbs leave and staying
+  square against whichever dimension binds first. Without it the stage is a
+  square of the element's width, which is the only thing that works when the
+  host gives the element no height of its own; with it the host has to, so it
+  is opt-in rather than the default. The harness sets it and never names a
+  pixel count, since a page that guesses at its own chrome guesses wrong.
 - Hit testing binary-searches the nodes at one depth by start angle, and zooming
   rescales angles rather than laying out again, so neither needs a spatial
   index. `make serve` watches `web/` and reloads the browser on save. Nothing in
@@ -120,7 +136,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   calls the same class on the main thread where a worker cannot be had, so the
   fallback cannot drift from the fast path. The layout stays with the element
   rather than moving to the worker, because hit testing, the crumbs, the
-  keyboard and the readout all have to answer without a round trip. The layout
+  keyboard and the crumbs all have to answer without a round trip. The layout
   crosses once per tree and the hue depth only when it changes, so a repaint is
   a small message however large the tree, and `byDepth` crosses as typed arrays,
   since a nested plain array of 82,115 numbers is the slowest thing structured
@@ -205,7 +221,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/disc-paint.js              the draw pipeline, no DOM
     web/disc-search.js             ranked name lookup, no DOM
     web/disc-worker.js             hosts it on its own thread
-    web/index.html                 its harness, with the render timings
+    web/index.html                 its harness, the disc and nothing else
     tools/export_tree.py           writes the tree and names for it
     tools/serve.py                 serves web/ and reloads it on save
     tools/check_web.mjs            loads web/ the way a browser does

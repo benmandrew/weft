@@ -24,8 +24,8 @@
  * parent and leaves the cursor on the leaf, which is where clicking cannot take
  * you and is the whole reason to search for a word.
  *
- * Attributes: src, names-src, readout="off", search="off", hue-depth
- *             (default 2), start,
+ * Attributes: src, names-src, readout="off", search="off", fit, hue-depth
+ *             (default 8), start,
  *             merge: "density" (default) splits merged runs at pixel
  *             boundaries and shades each by how many wedges it holds, "on"
  *             merges each run flat, "off" draws every wedge separately.
@@ -57,6 +57,14 @@ TPL.innerHTML = `
       --_accent:var(--disc-accent,#2c7359);
       --_sat:var(--disc-sat,.62); --_val:var(--disc-val,.60)}}
   .frame{display:block}
+  /* Under the fit attribute the element fills the box it is given and the
+     stage takes whatever height the search box and crumbs leave, so the disc
+     is as large as both dimensions allow rather than as large as a page's
+     guess at the chrome. Off by default, since a host that gives the element
+     no height would collapse the stage to nothing. */
+  :host([fit]){height:100%}
+  :host([fit]) .frame{display:flex;flex-direction:column;height:100%}
+  :host([fit]) .stage{flex:1;min-height:0;width:auto;max-width:100%;align-self:center}
   .find{position:relative;margin-bottom:8px}
   :host([search="off"]) .find{display:none}
   .find input{width:100%;font-family:var(--_font);font-size:12.5px;line-height:1.5;
@@ -81,7 +89,7 @@ TPL.innerHTML = `
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   canvas.over{cursor:pointer;outline:none;touch-action:none}
   canvas.over:focus-visible{outline:2px solid var(--_accent);outline-offset:3px;border-radius:50%}
-  .bar{display:flex;flex-direction:column;gap:3px;min-height:2.9em;font-size:12px;margin-top:8px}
+  .bar{min-height:1.7em;font-size:12px;margin-top:7px}
   :host([readout="off"]) .bar{display:none}
   .crumb{font-family:var(--_mono);font-size:11px;color:var(--_muted);line-height:1.6;
     white-space:nowrap;overflow-x:auto;scrollbar-width:none}
@@ -90,10 +98,7 @@ TPL.innerHTML = `
     cursor:pointer;text-decoration:underline;text-underline-offset:2px}
   .crumb span{color:var(--_ink)}
   .crumb i{font-style:normal;color:var(--_muted);opacity:.5;padding:0 4px}
-  .tip{color:var(--_muted);line-height:1.4}
-  .tip b{color:var(--_ink);font-weight:600}
-  .tip em{font-style:normal;font-family:var(--_mono);font-size:11px;
-    font-variant-numeric:tabular-nums}
+  .crumb b{color:var(--_ink);font-weight:600}
 </style>
 <div class="frame">
   <div class="find">
@@ -106,14 +111,14 @@ TPL.innerHTML = `
     <canvas class="base" aria-hidden="true"></canvas>
     <canvas class="over" tabindex="0" role="application"></canvas>
   </div>
-  <div class="bar"><div class="crumb"></div><div class="tip"></div></div>
+  <div class="bar"><div class="crumb"></div></div>
 </div>`;
 
 
 class HypernymDisc extends HTMLElement {
   static observedAttributes = ["src", "names-src", "start", "hue-depth", "merge"];
 
-  #sr; #base; #over; #crumb; #tip; #ro; #q; #hits;
+  #sr; #base; #over; #crumb; #ro; #q; #hits;
   // Built on the first query rather than when the names land, so a page that
   // never searches never pays for the lowercased copy.
   #search = null; #sug = []; #pick = -1;
@@ -139,7 +144,6 @@ class HypernymDisc extends HTMLElement {
     this.#base = this.#sr.querySelector(".base");
     this.#over = this.#sr.querySelector(".over");
     this.#crumb = this.#sr.querySelector(".crumb");
-    this.#tip = this.#sr.querySelector(".tip");
     this.#q = this.#sr.querySelector(".q");
     this.#hits = this.#sr.querySelector(".hits");
   }
@@ -208,7 +212,7 @@ class HypernymDisc extends HTMLElement {
         this.data = JSON.parse(inline.textContent);
       }
     } catch (err) {
-      this.#tip.innerHTML = `<b>Could not load the tree.</b> ${err.message}`;
+      this.#crumb.innerHTML = `<b>Could not load the tree.</b> ${err.message}`;
       return;
     }
     this.#loadNames();
@@ -226,7 +230,7 @@ class HypernymDisc extends HTMLElement {
       this.#namesMs = performance.now() - t0;
       this.names = text;
     } catch (err) {
-      this.#tip.innerHTML = `<b>Could not load the names.</b> ${err.message}`;
+      this.#crumb.innerHTML = `<b>Could not load the names.</b> ${err.message}`;
     }
   }
 
@@ -279,7 +283,6 @@ class HypernymDisc extends HTMLElement {
     this.#root = i >= 0 ? i : 0;
     this.#cursor = this.#root;
     this.#crumbs();
-    this.#say(-1);
   }
 
   /* Every pass is one forward or one backward loop, because a parent's index
@@ -369,7 +372,7 @@ class HypernymDisc extends HTMLElement {
     this.#rw = (this.#rmax - this.#r0) / (this.#maxDepth - this.#depth[this.#root] + 1);
     if (this.#route === undefined) return this.#openPainter();
     if (this.#route === "wait") return;
-    const hd = Math.max(0, +(this.getAttribute("hue-depth") ?? 2));
+    const hd = Math.max(0, +(this.getAttribute("hue-depth") ?? 8));
     const msg = {};
     if (this.#sent !== this.#layoutKey) {
       this.#sent = this.#layoutKey;
@@ -561,7 +564,6 @@ class HypernymDisc extends HTMLElement {
   #preview(i) {
     this.#hover = i;
     this.#overlay();
-    this.#say(i);
     if (i >= 0) this.#emit("disc-hover", {
       index: i, name: this.#label(i), depth: this.#depth[i], leaves: this.#leaves[i] });
   }
@@ -584,7 +586,7 @@ class HypernymDisc extends HTMLElement {
     else return;
     ev.preventDefault();
     if (next != null) {
-      this.#cursor = next; this.#overlay(); this.#say(next);
+      this.#cursor = next; this.#overlay();
       this.#over.setAttribute("aria-label", this.#label(next));
     }
   };
@@ -630,7 +632,7 @@ class HypernymDisc extends HTMLElement {
     if (this.#kids[i].length) this.zoomTo(i);
     else if (this.#par[i] >= 0) {
       this.zoomTo(this.#par[i]);
-      this.#cursor = i; this.#overlay(); this.#say(i);
+      this.#cursor = i; this.#overlay();
     }
     this.#over.setAttribute("aria-label", this.#label(i));
     this.#over.focus();
@@ -693,7 +695,7 @@ class HypernymDisc extends HTMLElement {
   zoomTo(i) {
     if (!(i >= 0) || i >= this.#par.length) return;
     this.#root = i; this.#cursor = i; this.#hover = -1;
-    this.#draw(); this.#overlay(); this.#crumbs(); this.#say(-1);
+    this.#draw(); this.#overlay(); this.#crumbs();
     this.#emit("disc-zoom", { index: i, name: this.#label(i), path: this.path(i) });
   }
   up() { if (this.#root !== 0) this.zoomTo(Math.max(0, this.#par[this.#root])); }
@@ -717,14 +719,6 @@ class HypernymDisc extends HTMLElement {
       (k ? "<i>›</i>" : "") + (i === this.#root
         ? `<span>${this.#label(i)}</span>`
         : `<button type="button" data-i="${i}">${this.#label(i)}</button>`)).join("");
-  }
-  #say(i) {
-    const j = i >= 0 ? i : this.#cursor;
-    if (j < 0 || !this.#ready) { this.#tip.textContent = ""; return; }
-    const n = this.#leaves[j], k = this.#kids[j].length;
-    this.#tip.innerHTML = `<b>${this.#label(j)}</b> <em>· depth ${this.#depth[j]}`
-      + ` · ${n.toLocaleString("en-GB")} leaf node${n === 1 ? "" : "s"} below`
-      + ` · ${k.toLocaleString("en-GB")} direct child${k === 1 ? "" : "ren"}</em>`;
   }
 }
 customElements.define("hypernym-disc", HypernymDisc);
