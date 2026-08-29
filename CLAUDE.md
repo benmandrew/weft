@@ -103,11 +103,19 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   nodes share 145 of them; that alone was a fifth of the frame. Adjacent wedges
   of one colour thinner than a pixel are then merged into single arcs, which
   takes 82,115 arcs to about 6,600 and the frame to a tenth. Gaps between
-  subtrees break every run, so the fringe still reads as many nodes; what
-  changes is that merged regions come out solid instead of losing coverage to
-  antialiasing between abutting fills. `merge="off"` restores exact per-node
-  drawing. Both are cached on root, tint, radius, theme and the attribute, so a
-  repeated repaint pays for neither.
+  subtrees break every run, so the fringe still reads as many nodes.
+- Merging gains accuracy rather than spending it, which is the opposite of what
+  it looks like. A merged run's members are 0.0225 px wide at the median, and
+  the rasteriser cannot draw that: against the per-node path, merging paints
+  21,450 pixels that were dropped altogether, loses 5, and lifts mean alpha from
+  196 to 227 of 255 on the pixels both reach, with 47% of those partly
+  transparent per-node. So the 8.3% of pixels that differ are mostly subtree the
+  old path never drew. Do not try to reproduce that washing-out by tinting
+  merged arcs: no flat alpha fits, since some pixels want zero and some want
+  full, and a sweep bottoms out at 0.50 for an 8% RMS gain. `merge="off"` is
+  there for comparison, not as the faithful setting. Both passes are cached on
+  root, tint, radius, theme and the attribute, so a repeated repaint pays for
+  neither.
 - Do not batch the draw into one path per colour. It looks like the obvious win,
   145 fills against 82,115, and it is eight times slower: each colour's path
   holds hundreds of subpaths scattered across the whole disc, so the rasteriser
