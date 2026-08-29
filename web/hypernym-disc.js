@@ -13,7 +13,9 @@
  * structure alone and `names-src` is fetched after the first paint. Until it
  * lands, a node answers to `#index`.
  *
- * Attributes: src, names-src, readout="off", hue-depth (default 2), start.
+ * Attributes: src, names-src, readout="off", hue-depth (default 2), start,
+ *             merge="off" to draw every wedge separately rather than joining
+ *             sub-pixel runs of one colour.
  * Properties: data, index, names. Methods: zoomTo(i), up(), reset(), repaint(), path(i).
  * Events: disc-hover {index,name,depth,leaves}, disc-zoom {index,name,path},
  *         disc-render {nodes,drawn,buildMs,drawMs,hitUs,name} after every repaint,
@@ -71,9 +73,11 @@ const hsv = (h, s, v) => {
   return `rgb(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0})`;
 };
 const TAU = Math.PI * 2;
+// Below one pixel at its outer edge a wedge cannot be told from its neighbour.
+const MERGE_PX = 1;
 
 class HypernymDisc extends HTMLElement {
-  static observedAttributes = ["src", "names-src", "start", "hue-depth"];
+  static observedAttributes = ["src", "names-src", "start", "hue-depth", "merge"];
 
   #sr; #base; #over; #crumb; #tip; #ro;
   #names = []; #par = []; #kids = [];
@@ -84,6 +88,7 @@ class HypernymDisc extends HTMLElement {
   // Which URLs have been fetched, so the upgrade and the connect that follow
   // it do not each start the same request.
   #loadedSrc = null; #loadedNames = null;
+  #palette = []; #fillId = null; #seg = null; #prepKey = ""; #prepMs = 0; #tintKey = 0;
   #cx = 0; #cy = 0; #r0 = 0; #rw = 1; #rmax = 1; #dpr = 1; #ready = false;
 
   constructor() {
@@ -121,6 +126,7 @@ class HypernymDisc extends HTMLElement {
     if (n === "names-src" && this.#ready) this.#loadNames();
     if (n === "start" && this.#ready) this.#applyStart();
     if (n === "hue-depth" && this.#ready) { this.#retint(); this.#draw(); this.#overlay(); }
+    if (n === "merge" && this.#ready) { this.#prepKey = ""; this.#draw(); this.#overlay(); }
   }
   #mq;
   #repaint = () => { this.#draw(); this.#overlay(); };
@@ -179,6 +185,7 @@ class HypernymDisc extends HTMLElement {
   get stats() {
     return { nodes: this.#par.length, drawn: this.#drawn,
              buildMs: this.#buildMs, drawMs: this.#drawMs, hitUs: this.#hitUs,
+             prepMs: this.#prepMs, segments: this.#seg ? this.#seg.f.length : 0,
              structureMs: this.#structureMs, namesMs: this.#namesMs,
              named: this.#names.length > 0 };
   }
@@ -251,6 +258,73 @@ class HypernymDisc extends HTMLElement {
     for (let i = 0; i < N; i++)
       this.#tint[i] = this.#depth[i] <= hd
         ? ((this.#a0[i] + this.#a1[i]) / 2) / TAU : this.#tint[this.#par[i]];
+    this.#tintKey++;
+  }
+
+  /* A colour is a string, and a string is what the canvas has to parse, so
+     they are interned once per theme and root instead of rebuilt per node per
+     frame. At the default hue-depth 82,115 nodes share 145 of them. */
+  #repalette() {
+    const N = this.#par.length;
+    const S = parseFloat(this.#tok("--_sat", ".55"));
+    const V = parseFloat(this.#tok("--_val", ".88"));
+    const base = this.#depth[this.#root];
+    const seen = new Map();
+    this.#palette = [];
+    this.#fillId = new Int32Array(N);
+    for (let i = 0; i < N; i++) {
+      const value = Math.max(.22, V * (1 - (this.#depth[i] - base) * .035));
+      const str = hsv(this.#tint[i], S, value);
+      let id = seen.get(str);
+      if (id === undefined) { id = this.#palette.length; seen.set(str, id); this.#palette.push(str); }
+      this.#fillId[i] = id;
+    }
+  }
+
+  /* Adjacent wedges that share a colour and are each thinner than a pixel are
+     one shape to the rasteriser, so they are drawn as one: 82,115 arcs become
+     about 6,600. A gap between subtrees breaks every run, which is what keeps
+     the fringe reading as many nodes rather than a solid band. Runs are found
+     off `#byDepth`, already sorted by start angle for hit testing. */
+  #remerge() {
+    if (this.getAttribute("merge") === "off") { this.#seg = null; return; }
+    const base = this.#depth[this.#root];
+    const sc = TAU / (this.#a1[this.#root] - this.#a0[this.#root]);
+    const s0 = [], s1 = [], sd = [], sf = [], sw = [];
+    for (let d = base; d <= this.#maxDepth; d++) {
+      const arr = this.#byDepth[d];
+      const r1 = this.#r0 + (d - base + 1) * this.#rw;
+      const thin = k => (this.#a1[k] - this.#a0[k]) * sc * r1 < MERGE_PX;
+      let i = 0;
+      while (i < arr.length) {
+        if (!this.#inView(arr[i])) { i++; continue; }
+        let j = i;
+        while (thin(arr[j]) && j + 1 < arr.length && this.#inView(arr[j + 1]) && thin(arr[j + 1])
+               && this.#fillId[arr[j + 1]] === this.#fillId[arr[i]]
+               && Math.abs(this.#a0[arr[j + 1]] - this.#a1[arr[j]]) < 1e-9) j++;
+        s0.push(this.#a0[arr[i]]); s1.push(this.#a1[arr[j]]);
+        sd.push(d - base); sf.push(this.#fillId[arr[i]]);
+        // Only a wedge that stayed whole is wide enough to earn its hairline.
+        sw.push(j === i && (this.#a1[arr[i]] - this.#a0[arr[i]]) * sc > .012 ? 1 : 0);
+        i = j + 1;
+      }
+    }
+    this.#seg = { s0: Float64Array.from(s0), s1: Float64Array.from(s1),
+                  d: Int16Array.from(sd), f: Int32Array.from(sf), w: Uint8Array.from(sw) };
+  }
+
+  /* Palette and runs survive anything that leaves angles, depths, colours and
+     radius alone, so a repeated repaint pays for neither. */
+  #prepare() {
+    const key = [this.#root, this.#tintKey, this.#rmax.toFixed(1),
+                 this.#tok("--_sat", ""), this.#tok("--_val", ""),
+                 this.getAttribute("merge") ?? ""].join("|");
+    if (key === this.#prepKey) return;
+    this.#prepKey = key;
+    const t0 = performance.now();
+    this.#repalette();
+    this.#remerge();
+    this.#prepMs = performance.now() - t0;
   }
 
   #fit() {
@@ -289,28 +363,49 @@ class HypernymDisc extends HTMLElement {
 
   #draw() {
     if (!this.#ready) return;
+    this.#rw = (this.#rmax - this.#r0) / (this.#maxDepth - this.#depth[this.#root] + 1);
+    this.#prepare();
     const t0 = performance.now();
     let drawn = 0;
     const g = this.#base.getContext("2d");
     g.setTransform(this.#dpr, 0, 0, this.#dpr, 0, 0);
     g.clearRect(0, 0, this.#base.width, this.#base.height);
-    const S = parseFloat(this.#tok("--_sat", ".55")), V = parseFloat(this.#tok("--_val", ".88"));
     const panel = this.#tok("--_panel", "#141b1c");
-    this.#rw = (this.#rmax - this.#r0) / (this.#maxDepth - this.#depth[this.#root] + 1);
-    for (let i = 0; i < this.#par.length; i++) {
-      if (!this.#inView(i)) continue;
-      const [s, e, r0, r1] = this.#geom(i);
-      const d = this.#depth[i] - this.#depth[this.#root];
+    const sc = TAU / (this.#a1[this.#root] - this.#a0[this.#root]);
+    const half = Math.PI / 2;
+    let cur = -1;
+
+    const wedge = (s, e, r0, r1) => {
       g.beginPath();
       g.arc(this.#cx, this.#cy, r1, s, e);
       g.arc(this.#cx, this.#cy, r0, e, s, true);
       g.closePath();
-      g.fillStyle = hsv(this.#tint[i], S, Math.max(.22, V * (1 - d * .035)));
-      g.fill();
-      drawn++;
-      // A hairline on a sub-pixel wedge would cover the fill it separates.
-      if (e - s > .012) { g.strokeStyle = panel; g.lineWidth = .6; g.stroke(); }
+    };
+
+    if (this.#seg) {
+      const { s0, s1, d: sd, f, w } = this.#seg;
+      for (let i = 0; i < f.length; i++) {
+        const s = (s0[i] - this.#a0[this.#root]) * sc - half;
+        const e = (s1[i] - this.#a0[this.#root]) * sc - half;
+        wedge(s, e, this.#r0 + sd[i] * this.#rw, this.#r0 + (sd[i] + 1) * this.#rw);
+        if (f[i] !== cur) { cur = f[i]; g.fillStyle = this.#palette[cur]; }
+        g.fill();
+        drawn++;
+        if (w[i]) { g.strokeStyle = panel; g.lineWidth = .6; g.stroke(); }
+      }
+    } else {
+      for (let i = 0; i < this.#par.length; i++) {
+        if (!this.#inView(i)) continue;
+        const [s, e, r0, r1] = this.#geom(i);
+        wedge(s, e, r0, r1);
+        if (this.#fillId[i] !== cur) { cur = this.#fillId[i]; g.fillStyle = this.#palette[cur]; }
+        g.fill();
+        drawn++;
+        // A hairline on a sub-pixel wedge would cover the fill it separates.
+        if (e - s > .012) { g.strokeStyle = panel; g.lineWidth = .6; g.stroke(); }
+      }
     }
+
     g.beginPath(); g.arc(this.#cx, this.#cy, this.#r0 - 3, 0, TAU);
     g.fillStyle = panel; g.fill();
     g.fillStyle = this.#tok("--_muted", "#90a1a1");

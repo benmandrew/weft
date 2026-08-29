@@ -85,6 +85,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--live);outline-
       <dl class="metrics">
         <dt>nodes in tree</dt><dd id="m-nodes">&mdash;</dd>
         <dt>arcs drawn</dt><dd id="m-drawn">&mdash;</dd>
+        <dt>prepare</dt><dd id="m-prep">&mdash;</dd>
         <dt>structure fetch</dt><dd id="m-struct">&mdash;</dd>
         <dt>build</dt><dd id="m-build">&mdash;</dd>
         <dt>first paint</dt><dd id="m-first">&mdash;</dd>
@@ -109,6 +110,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--live);outline-
         <select id="start"></select>
       </div>
       <div class="row">
+        <label>merge sub-pixel runs of one colour</label>
+        <button id="merge" type="button" aria-pressed="true">on</button>
         <button id="redraw" type="button">Repaint &times;10</button>
         <button id="reset" type="button">Reset to root</button>
       </div>
@@ -135,6 +138,7 @@ disc.addEventListener("disc-render", e => {
   $("m-nodes").textContent = s.nodes.toLocaleString("en-GB");
   $("m-drawn").textContent = s.drawn.toLocaleString("en-GB");
   $("m-struct").textContent = s.structureMs ? ms(s.structureMs) : "inline";
+  $("m-prep").textContent = s.prepMs ? ms(s.prepMs) : "cached";
   $("m-build").textContent = ms(s.buildMs);
   $("m-draw").textContent = ms(s.drawMs);
   $("m-draw").classList.toggle("hot", s.drawMs > 16.7);
@@ -177,6 +181,13 @@ $("huebtns").addEventListener("click", e => {
   disc.setAttribute("hue-depth", b.dataset.h);
 });
 
+$("merge").addEventListener("click", e => {
+  const on = e.target.getAttribute("aria-pressed") !== "true";
+  e.target.setAttribute("aria-pressed", String(on));
+  e.target.textContent = on ? "on" : "off";
+  draws = [];
+  if (on) disc.removeAttribute("merge"); else disc.setAttribute("merge", "off");
+});
 $("redraw").addEventListener("click", () => { for (let i = 0; i < 10; i++) disc.repaint(); });
 $("reset").addEventListener("click", () => disc.reset());
 

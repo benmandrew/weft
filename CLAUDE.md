@@ -97,6 +97,21 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   rescales angles rather than laying out again, so neither needs a spatial
   index. `make serve` watches `web/` and reloads the browser on save. Nothing in
   `all` depends on any of it.
+- The draw path has been measured, and two of its choices are not obvious.
+  Colours are interned into a palette once per theme and root rather than built
+  per node per frame, since the string is what canvas has to parse and 82,115
+  nodes share 145 of them; that alone was a fifth of the frame. Adjacent wedges
+  of one colour thinner than a pixel are then merged into single arcs, which
+  takes 82,115 arcs to about 6,600 and the frame to a tenth. Gaps between
+  subtrees break every run, so the fringe still reads as many nodes; what
+  changes is that merged regions come out solid instead of losing coverage to
+  antialiasing between abutting fills. `merge="off"` restores exact per-node
+  drawing. Both are cached on root, tint, radius, theme and the attribute, so a
+  repeated repaint pays for neither.
+- Do not batch the draw into one path per colour. It looks like the obvious win,
+  145 fills against 82,115, and it is eight times slower: each colour's path
+  holds hundreds of subpaths scattered across the whole disc, so the rasteriser
+  covers the full bounding box once per colour.
 - The Makefile's `all` renders one SVG per category and takes its parallelism
   from make's own `-j`, never from a `MAKEFLAGS` line in the file. Its target
   list comes from `wordchain categories` at parse time, so every invocation pays
