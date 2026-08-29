@@ -89,7 +89,7 @@ TPL.innerHTML = `
      itself. */
   :host([fit]) .frame.wide{display:grid;column-gap:18px;
     grid-template-columns:minmax(200px,280px) minmax(0,1fr);
-    grid-template-rows:minmax(0,1fr) auto}
+    grid-template-rows:minmax(0,1fr) auto auto}
   :host([fit]) .frame.wide .find{grid-area:1/1;margin-bottom:0;
     display:flex;flex-direction:column;min-height:0}
   :host([fit]) .frame.wide .hits{position:static;margin-top:6px;box-shadow:none;
@@ -97,8 +97,16 @@ TPL.innerHTML = `
   /* A 240 px column has no room for a name and its parent on one line. */
   :host([fit]) .frame.wide .hits li{display:block}
   :host([fit]) .frame.wide .hits .p{display:block;margin-left:0}
-  :host([fit]) .frame.wide .stage{grid-area:1/2;height:100%;justify-self:center}
-  :host([fit]) .frame.wide .bar{grid-area:2/1/3/-1}
+  :host([fit]) .frame.wide .stage{grid-area:1/2/3/3;height:100%;min-height:0;
+    justify-self:center}
+  /* The definition moves to the foot of the search column, so the only thing
+     under the disc is the crumb line and the disc keeps the 41 px the two
+     lines were taking. The stage spans both rows, so a longer definition
+     costs the suggestions their room rather than the disc its height, and it
+     is free to run past two lines here. */
+  :host([fit]) .frame.wide .gloss{grid-area:2/1;height:auto;-webkit-line-clamp:5;
+    margin-top:12px}
+  :host([fit]) .frame.wide .crumb{grid-area:3/1/4/-1;margin-top:7px}
   .find{position:relative;margin-bottom:8px}
   :host([search="off"]) .find{display:none}
   .find input{width:100%;font-family:var(--_font);font-size:12.5px;line-height:1.5;
@@ -122,16 +130,21 @@ TPL.innerHTML = `
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   canvas.over{cursor:pointer;touch-action:none}
-  .bar{font-size:12px;margin-top:7px;display:flex;flex-direction:column;gap:3px}
-  :host([readout="off"]) .bar{display:none}
-  /* Two lines, always, so zooming to a longer definition never resizes the
-     disc under the pointer. Nothing is reserved before the file lands. */
+  :host([readout="off"]) .gloss,:host([readout="off"]) .crumb{display:none}
+  /* The gloss and the crumb are children of the frame rather than a block of
+     their own, since grid placement is what moves the gloss into the search
+     column and it can only place a child of the grid.
+
+     Stacked under the disc it is two lines, always, so zooming to a longer
+     definition never resizes the disc under the pointer. Nothing is reserved
+     before the file lands. */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
-    overflow:hidden;
+    margin-top:7px;overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   .gloss:empty{display:none}
   .crumb{font-family:var(--_mono);font-size:11px;color:var(--_muted);line-height:1.6;
-    white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+    margin-top:3px;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+  .gloss:empty + .crumb{margin-top:7px}
   .crumb::-webkit-scrollbar{display:none}
   .crumb button{font:inherit;color:var(--_accent);background:none;border:0;padding:0;
     cursor:pointer;text-decoration:underline;text-underline-offset:2px}
@@ -151,7 +164,8 @@ TPL.innerHTML = `
     <canvas class="base" aria-hidden="true"></canvas>
     <canvas class="over" aria-hidden="true"></canvas>
   </div>
-  <div class="bar"><div class="gloss"></div><div class="crumb"></div></div>
+  <div class="gloss"></div>
+  <div class="crumb"></div>
 </div>`;
 
 

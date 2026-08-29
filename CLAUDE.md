@@ -141,14 +141,14 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   carries every synset rather than only the 16,922 that can be a root, because
   the definition follows the pointer and two thirds of what the pointer lands
   on are leaves: 1,428 KB over the wire against 298 KB for the roots alone.
-  Nothing on the disc waits for it. The block is a fixed two lines, so moving
-  to a longer definition never resizes the disc, and it reserves nothing until
-  the file lands. It reads in the ink colour a step above the crumb below it,
-  and its first letter is raised on 75,110 of the 82,115 — never where the
-  gloss opens on a parenthetical label such as `(mathematics)`, which 2,959 do
-  and which is conventionally lowercase, and never where the second letter is a
-  capital, which is what stops the 4 like "cDNA copy of the RNA genome" from
-  becoming "CDNA".
+  Nothing on the disc waits for it. Stacked under the disc the block is a fixed
+  two lines, so moving to a longer definition never resizes the disc, and it
+  reserves nothing until the file lands. It reads in the ink colour a step
+  above the crumb below it, and its first letter is raised on 75,110 of the
+  82,115 — never where the gloss opens on a parenthetical label such as
+  `(mathematics)`, which 2,959 do and which is conventionally lowercase, and
+  never where the second letter is a capital, which is what stops the 4 like
+  "cDNA copy of the RNA genome" from becoming "CDNA".
 - Below that the element prints the crumb path and nothing else. The line
   of counts that sat under it is gone: the hub already names whatever the
   pointer or the search is on, and `disc-hover` still carries the depth and the
@@ -160,16 +160,25 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   inspector, and `check_web.mjs` is what holds the other merge modes honest.
 - Once the frame is 218 px wider than a disc filling its height, the search box
   and its suggestions move into a column beside the disc rather than a strip
-  above it. That stops the suggestions covering the disc, and hands the disc
-  back the height the search box was taking. It is under `fit` only, since
-  without a definite height there is no landscape to find, and no portrait
-  phone reaches the threshold, so a narrow screen keeps the stacked layout and
-  the suggestions overlay the disc there as any combobox does. The class is
-  toggled from the resize observer rather than a container query, because the
-  test is the frame's own shape and a container cannot query itself; measuring
-  the frame rather than the stage is what stops the toggle changing its own
-  answer. In the column a suggestion puts its parent on a second line, since
-  200 px has no room for both on one.
+  above it, and the definition goes with them, to the foot of that column,
+  level with the bottom of the disc. That stops the suggestions covering the
+  disc, and hands the disc back the height the search box was taking and the
+  44 px the two gloss lines and their gaps were taking below it. The crumb line
+  alone then spans the width under the disc. The gloss and the crumb are two
+  children of the frame rather than one block of their own, because grid
+  placement is the only way to move the gloss into the column and grid places
+  only its own children. It is under `fit` only, since without a definite
+  height there is no landscape to find, and no portrait phone reaches the
+  threshold, so a narrow screen keeps the stacked layout and the suggestions
+  overlay the disc there as any combobox does. The class is toggled from the
+  resize observer rather than a container query, because the test is the
+  frame's own shape and a container cannot query itself; measuring the frame
+  rather than the stage is what stops the toggle changing its own answer. The
+  stage spans both rows of the column, the search box's and the gloss's, so a
+  longer definition costs the suggestion list its room rather than the disc its
+  height; that is why the gloss runs to five lines there, where two would clip
+  most definitions at 200 to 280 px wide. In the column a suggestion puts its
+  parent on a second line, since 200 px has no room for both on one.
 - The `fit` attribute makes the element fill the box it is given, with the
   stage taking whatever height the search box and the crumbs leave and staying
   square against whichever dimension binds first. Without it the stage is a
