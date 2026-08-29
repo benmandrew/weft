@@ -28,7 +28,7 @@ SOURCES := $(wildcard src/wordchain/*.py) $(CONFIG)
 # Both live outside the SVG pipeline: nothing in `all` depends on them.
 TREE := $(OUT)/wordnet-tree.json
 
-.PHONY: all check clean list tree serve
+.PHONY: all check clean list tree serve web
 
 all: $(SVGS)
 
@@ -41,12 +41,20 @@ $(OUT)/%.svg: $(SOURCES)
 # which is the check an editor runs, and check_schema.py reads that schema back
 # against config.py, since the schema repeats every field name, default and
 # bound the code already owns.
-check:
+check: web
 	@ruff check src/ tools/
 	@ruff format --check src/ tools/
 	@mypy
 	@RUST_LOG=warn taplo check
 	@python tools/check_schema.py
+
+# A prerequisite of check rather than a line in it, since it is the one part
+# that needs node. It loads every module in web/ the way a browser does, which
+# `node --check` does not: that parses a file without resolving private names,
+# so a reference left behind by a refactor passes it and then throws when the
+# browser evaluates the class, leaving the page blank.
+web:
+	@node tools/check_web.mjs
 
 # The exporter walks all 82,115 noun synsets, so it is a prerequisite rather
 # than a recipe line: it reruns when lexicon.py or the exporter itself moves,

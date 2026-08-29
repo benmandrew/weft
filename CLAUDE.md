@@ -190,6 +190,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/index.html                 its harness, with the render timings
     tools/export_tree.py           writes the tree and names for it
     tools/serve.py                 serves web/ and reloads it on save
+    tools/check_web.mjs            loads web/ the way a browser does
 
 `graph.py` holds the structural claim the whole project rests on: a word is an
 edge from its first letter to its last, so the game lives on 26 nodes and the
@@ -215,14 +216,30 @@ Tighten via `--min-dominance` / `--max-rank`, not by adding a stop-list.
 
 `make check` must pass before a commit: `ruff check`, `ruff format --check` and
 `mypy` over `src/` and `tools/`, then `taplo check`, which validates
-`wordchain.toml` against the schema as an editor would, and
-`tools/check_schema.py`, which reads the schema back against `config.py` and
-`palette.py`. mypy is strict over `src/wordchain` and `tools`, with `mypy_path =
-src` because `tools/` is not part of the package. nltk, wordfreq, pyvis and
-networkx ship no type information and have no stubs in nixpkgs, so `mypy.ini`
-declares them untyped and the values crossing those boundaries are annotated by
-hand — `lexicon.Synset` names the opaque WordNet type rather than leaving a bare
-`Any` at each call site.
+`wordchain.toml` against the schema as an editor would, `tools/check_schema.py`,
+which reads the schema back against `config.py` and `palette.py`, and `make
+web`, which loads `web/` the way a browser does. mypy is strict over
+`src/wordchain` and `tools`, with `mypy_path = src` because `tools/` is not part
+of the package. nltk, wordfreq, pyvis and networkx ship no type information and
+have no stubs in nixpkgs, so `mypy.ini` declares them untyped and the values
+crossing those boundaries are annotated by hand — `lexicon.Synset` names the
+opaque WordNet type rather than leaving a bare `Any` at each call site.
+
+`make web` is `node tools/check_web.mjs`. It is a prerequisite of `check` rather
+than a line in its recipe, since it is the one part that needs node, and
+`nodejs` is in the flake for it. `node --check` parses a file but does not run
+the early-error pass that resolves private names, so a `this.#gone` left behind
+by a refactor passes it and then throws SyntaxError in the browser when the
+class body is evaluated, leaving the custom element undefined and the page
+blank. That has happened. So the check imports every module in `web/` against a
+stubbed DOM, which fails exactly where the browser fails. It then runs the draw
+pipeline over a synthetic tree of 8,005 nodes, four subtrees of 2,000 leaves,
+which puts the fringe wedges at about a quarter of a pixel, and asserts the
+properties the pipeline rests on rather than exact counts, which move whenever
+the geometry does: that `merge=off` draws every node, that `density` and
+`merge=on` both merge, that a repeat draws the same, that a zoom draws less, and
+that hue-depth 19 still merges, which is what guards the hue blend. It needs no
+data files, so it does not depend on the exported tree.
 
 Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
 `src/` on the path, and the tree is clean under it; the pyright CLI is not in

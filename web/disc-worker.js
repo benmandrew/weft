@@ -14,7 +14,7 @@ import { Painter } from "./disc-paint.js";
 const painter = new Painter();
 let g = null;
 
-onmessage = ev => {
+self.onmessage = ev => {
   const m = ev.data;
   if (m.canvas) g = m.canvas.getContext("2d");
   if (m.layout) painter.layout(m.layout, m.hd);

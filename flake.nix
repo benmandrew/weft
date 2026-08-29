@@ -41,6 +41,10 @@
             # `taplo check` validates wordchain.toml against the schema that
             # taplo.toml names, which is the same check an editor runs.
             pkgs.taplo
+            # Only `make web` needs it. `node --check` parses a file without
+            # running the early-error pass a browser runs, so the check loads
+            # each module in web/ instead, which needs a JavaScript runtime.
+            pkgs.nodejs
           ];
 
           env = {
