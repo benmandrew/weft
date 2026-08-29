@@ -78,7 +78,7 @@ const BOX = 724, DPR = 2, R0 = BOX * .075, RMAX = BOX * .485;
 const view = mode => ({
   root: 0, w: Math.round(BOX * DPR), h: Math.round(BOX * DPR), dpr: DPR,
   cx: BOX / 2, cy: BOX / 2, r0: R0, rmax: RMAX,
-  rw: (RMAX - R0) / (maxDepth + 1), mode,
+  rw: (RMAX - R0) / (maxDepth + 1), rings: maxDepth + 1, mode,
   sat: ".55", val: ".88", panel: "#141b1c",
 });
 
@@ -110,6 +110,19 @@ check(flat.drawn > 0 && flat.drawn <= dense.drawn,
    depth that gives a whole branch one. */
 const deep = paint(fresh(19), view("density"));
 check(deep.drawn < N, `at hue-depth 19 density drew ${deep.drawn} of ${N}, so the merge went by colour`);
+
+/* The ring cap. Two rings of a three-ring tree is the root and its branches,
+   never the 8,000 leaves, and the painter has to re-merge rather than serve the
+   full-depth run it just cached. */
+const capped = paint(fresh(), { ...view("density"), rings: 2 });
+check(capped.drawn === 1 + BRANCHES,
+      `two rings drew ${capped.drawn}, not the root and its ${BRANCHES} branches`);
+const one = paint(fresh(), { ...view("density"), rings: 1 });
+check(one.drawn === 1, `one ring drew ${one.drawn}, not the root alone`);
+const shared = fresh();
+paint(shared, view("density"));
+check(paint(shared, { ...view("density"), rings: 2 }).drawn === 1 + BRANCHES,
+      "the cap did not re-merge over a cached full-depth run");
 
 /* Palette and runs survive a repeat, and a zoom is a different view. */
 const p = fresh();

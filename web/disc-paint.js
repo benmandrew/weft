@@ -11,8 +11,13 @@
  *
  *   const p = new Painter();
  *   p.layout({par, depth, a0, a1, byDepth, maxDepth}, hueDepth);
- *   const stats = p.paint(ctx, {root, w, h, cx, cy, r0, rmax, rw, dpr,
+ *   const stats = p.paint(ctx, {root, w, h, cx, cy, r0, rmax, rw, rings, dpr,
  *                              mode, sat, val, panel});
+ *
+ * `rings` is how many depths below the root are drawn. The element caps it
+ * because a deep tree's last rings hold almost nothing — WordNet's depth 19 is
+ * one node — and dividing the radius by every depth spends a quarter of it on
+ * a fringe too sparse to see. What is cut off is one zoom away.
  */
 export const TAU = Math.PI * 2;
 // Below one pixel at its outer edge a wedge cannot be told from its neighbour.
@@ -35,7 +40,7 @@ export class Painter {
   #hd = 2; #tint; #tcos; #tsin; #tintKey = 0;
   #palette = []; #paletteKey = new Map(); #fillId = null; #seg = null;
   #prepKey = ""; #prepMs = 0; #hueQ = 1; #sat = .55; #val = .88;
-  #root = 0; #r0 = 0; #rmax = 1; #rw = 1; #mode = "density";
+  #root = 0; #r0 = 0; #rmax = 1; #rw = 1; #rings = 1; #mode = "density";
 
   layout(l, hd = this.#hd) {
     this.#par = l.par; this.#depth = l.depth; this.#a0 = l.a0; this.#a1 = l.a1;
@@ -120,7 +125,8 @@ export class Painter {
     const sc = TAU / (this.#a1[this.#root] - this.#a0[this.#root]);
     const s0 = [], s1 = [], sd = [], st = [], sn = [], sw = [];
     let peak = 1;
-    for (let d = base; d <= this.#maxDepth; d++) {
+    const last = Math.min(this.#maxDepth, base + this.#rings - 1);
+    for (let d = base; d <= last; d++) {
       const arr = this.#byDepth[d];
       const rel = d - base;
       const r1 = this.#r0 + (rel + 1) * this.#rw;
@@ -183,7 +189,7 @@ export class Painter {
      radius alone, so a repeated repaint pays for neither. */
   #prepare(v) {
     const key = [this.#root, this.#tintKey, this.#rmax.toFixed(1),
-                 v.sat, v.val, this.#mode].join("|");
+                 this.#rings, v.sat, v.val, this.#mode].join("|");
     if (key === this.#prepKey) return;
     this.#prepKey = key;
     const t0 = performance.now();
@@ -193,7 +199,8 @@ export class Painter {
   }
 
   #inView(i) {
-    return this.#depth[i] >= this.#depth[this.#root]
+    const rel = this.#depth[i] - this.#depth[this.#root];
+    return rel >= 0 && rel < this.#rings
       && this.#a0[i] >= this.#a0[this.#root] - 1e-9
       && this.#a1[i] <= this.#a1[this.#root] + 1e-9;
   }
@@ -214,6 +221,7 @@ export class Painter {
     const c = g.canvas;
     if (c.width !== v.w || c.height !== v.h) { c.width = v.w; c.height = v.h; }
     this.#root = v.root; this.#r0 = v.r0; this.#rmax = v.rmax; this.#rw = v.rw;
+    this.#rings = v.rings ?? (this.#maxDepth - this.#depth[v.root] + 1);
     this.#mode = v.mode;
     this.#sat = parseFloat(v.sat); this.#val = parseFloat(v.val);
     this.#prepare(v);

@@ -126,6 +126,18 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   host gives the element no height of its own; with it the host has to, so it
   is opt-in rather than the default. The harness sets it and never names a
   pixel count, since a page that guesses at its own chrome guesses wrong.
+- Only `rings` depths below the root are drawn, 14 by default. WordNet is 20
+  deep and its outer rings are nearly empty — depth 13 spans 4.5% of the turn,
+  depth 19 is one node — so dividing the radius by every depth put the visible
+  mass at 75% of it and left a quarter of the frame blank. Capping fills the
+  frame, taking the disc at 1280x900 from about 520 px across to 725. Nothing
+  is lost: what falls off the edge is one zoom away, since zooming makes the
+  node the new root and the count starts again from it. The cap is in the view
+  the painter is sent and in its prepare key, because it changes which runs
+  merge and which colours are interned. The hub asks `#under`, which is
+  containment in the root's cone alone, so a node the search reached below the
+  last ring is still named; the highlight climbs to its deepest drawn ancestor
+  rather than showing nothing.
 - Hit testing binary-searches the nodes at one depth by start angle, and zooming
   rescales angles rather than laying out again, so neither needs a spatial
   index. `make serve` watches `web/` and reloads the browser on save. Nothing in

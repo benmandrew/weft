@@ -18,6 +18,12 @@
  * here where a worker cannot be had. The element keeps the layout either way,
  * because hit testing, the crumbs and the keyboard answer without a round trip.
  *
+ * Only `rings` depths below the root are drawn. A deep tree's last rings hold
+ * almost nothing — WordNet is 20 deep and its depth 19 is a single node — so
+ * dividing the radius by every depth spends a quarter of it on a fringe too
+ * sparse to see. Capping it fills the frame, and what falls off the edge is one
+ * zoom away, since zooming makes the node the new root and re-counts from it.
+ *
  * The search box takes the same two steps as the pointer. Picking a suggestion
  * previews it, which is the hover path and nothing else, and Enter is the
  * click: it zooms. A leaf has nothing to zoom into, so Enter on one goes to its
@@ -25,7 +31,7 @@
  * you and is the whole reason to search for a word.
  *
  * Attributes: src, names-src, readout="off", search="off", fit, hue-depth
- *             (default 8), start,
+ *             (default 8), rings (default 14), start,
  *             merge: "density" (default) splits merged runs at pixel
  *             boundaries and shades each by how many wedges it holds, "on"
  *             merges each run flat, "off" draws every wedge separately.
@@ -116,7 +122,7 @@ TPL.innerHTML = `
 
 
 class HypernymDisc extends HTMLElement {
-  static observedAttributes = ["src", "names-src", "start", "hue-depth", "merge"];
+  static observedAttributes = ["src", "names-src", "start", "hue-depth", "merge", "rings"];
 
   #sr; #base; #over; #crumb; #ro; #q; #hits;
   // Built on the first query rather than when the names land, so a page that
@@ -192,6 +198,7 @@ class HypernymDisc extends HTMLElement {
     if (n === "hue-depth" && this.#ready) { this.#draw(); this.#overlay(); }
     // The painter keys its prepare on the mode, so there is nothing to clear.
     if (n === "merge" && this.#ready) { this.#draw(); this.#overlay(); }
+    if (n === "rings" && this.#ready) { this.#draw(); this.#overlay(); }
   }
   #mq;
   #repaint = () => { this.#draw(); this.#overlay(); };
@@ -328,6 +335,12 @@ class HypernymDisc extends HTMLElement {
     const m = this.getAttribute("merge");
     return m === "off" || m === "on" ? m : "density";
   }
+  /* 14 by default, which is where WordNet's rings stop covering enough of the
+     turn to read: depth 13 spans 4.5% of it and depth 19 is one node. */
+  #rings() {
+    const want = Math.max(1, Math.round(+(this.getAttribute("rings") ?? 14)) || 14);
+    return Math.min(want, this.#maxDepth - this.#depth[this.#root] + 1);
+  }
 
   #fit() {
     if (!this.#ready) return;
@@ -349,10 +362,16 @@ class HypernymDisc extends HTMLElement {
     const v = getComputedStyle(this).getPropertyValue(n).trim();
     return v || f;
   }
-  #inView(i) {
+  #under(i) {
     return this.#depth[i] >= this.#depth[this.#root]
       && this.#a0[i] >= this.#a0[this.#root] - 1e-9
       && this.#a1[i] <= this.#a1[this.#root] + 1e-9;
+  }
+  /* Under the root and inside the rings being drawn. The hub asks #under
+     instead, so a node the search reached below the last ring is still named
+     even though there is no wedge on screen to outline. */
+  #inView(i) {
+    return this.#under(i) && this.#depth[i] - this.#depth[this.#root] < this.#rings();
   }
   /* Zooming is a change of angular scale, not a re-layout: node k's span is
      stretched to a full turn and its depth becomes ring zero. */
@@ -369,7 +388,7 @@ class HypernymDisc extends HTMLElement {
      message however large the tree. */
   #draw() {
     if (!this.#ready) return;
-    this.#rw = (this.#rmax - this.#r0) / (this.#maxDepth - this.#depth[this.#root] + 1);
+    this.#rw = (this.#rmax - this.#r0) / this.#rings();
     if (this.#route === undefined) return this.#openPainter();
     if (this.#route === "wait") return;
     const hd = Math.max(0, +(this.getAttribute("hue-depth") ?? 8));
@@ -384,6 +403,7 @@ class HypernymDisc extends HTMLElement {
     msg.view = {
       root: this.#root, w: this.#pw, h: this.#ph, dpr: this.#dpr,
       cx: this.#cx, cy: this.#cy, r0: this.#r0, rmax: this.#rmax, rw: this.#rw,
+      rings: this.#rings(),
       mode: this.#mode(), sat: this.#tok("--_sat", ".55"),
       val: this.#tok("--_val", ".88"), panel: this.#tok("--_panel", "#141b1c"),
     };
@@ -442,7 +462,8 @@ class HypernymDisc extends HTMLElement {
     g.setTransform(this.#dpr, 0, 0, this.#dpr, 0, 0);
     g.clearRect(0, 0, this.#over.width, this.#over.height);
     this.#hub(g);
-    const mark = this.#hover >= 0 ? this.#hover : this.#cursor;
+    let mark = this.#hover >= 0 ? this.#hover : this.#cursor;
+    while (mark >= 0 && this.#under(mark) && !this.#inView(mark)) mark = this.#par[mark];
     if (mark < 0 || !this.#inView(mark)) return;
     g.strokeStyle = this.#tok("--_ink", "#e7eded");
     g.lineWidth = 1.4;
@@ -468,7 +489,7 @@ class HypernymDisc extends HTMLElement {
   #hub(g) {
     const sel = this.#hover >= 0 ? this.#hover
       : this.#cursor !== this.#root ? this.#cursor : -1;
-    const named = sel >= 0 && this.#inView(sel);
+    const named = sel >= 0 && this.#under(sel);
     const text = named ? this.#label(sel)
       : this.#root === 0 ? (this.#names[0] ?? "root") : "↑ up";
     const { lines, lh } = this.#fitHub(g, text);
@@ -533,7 +554,7 @@ class HypernymDisc extends HTMLElement {
     const dx = px - this.#cx, dy = py - this.#cy, r = Math.hypot(dx, dy);
     if (r < this.#r0 || r > this.#rmax) return -1;
     const d = this.#depth[this.#root] + Math.floor((r - this.#r0) / this.#rw);
-    if (d > this.#maxDepth) return -1;
+    if (d > this.#maxDepth || d >= this.#depth[this.#root] + this.#rings()) return -1;
     let ang = Math.atan2(dy, dx) + Math.PI / 2;
     if (ang < 0) ang += TAU;
     const A = this.#a0[this.#root]
