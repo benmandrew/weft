@@ -132,7 +132,17 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   the part of the hub with edge cases, and only a context's `font` and
   `measureText` are touched, so `check_web.mjs` measures it with a monospace
   stub where a width is a character count.
-- Below the disc the element prints the crumb path and nothing else. The line
+- Above the crumb path sits the definition of what that path ends at, the
+  current root. It is a third export, `wordnet-glosses.txt`, index-aligned like
+  the names and fetched after them, since it is the largest of the three and
+  read by one line of text. It carries only the 16,922 synsets with a
+  definition and a child, blank for the other 65,193: the crumb names the root,
+  and only a synset with children can be one. That is 299 KB over the wire, the
+  same as the names, against 1,428 KB for every gloss in WordNet — take the
+  larger file only if the definition has to follow the pointer as well. The
+  block is a fixed two lines, so zooming to a longer definition never resizes
+  the disc, and it reserves nothing until the file lands.
+- Below that the element prints the crumb path and nothing else. The line
   of counts that sat under it is gone: the hub already names whatever the
   pointer or the search is on, and `disc-hover` still carries the depth and the
   leaf count, so a host that wants them can print its own. That is also where
@@ -269,7 +279,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/disc-label.js              the hub's text fitting, no DOM
     web/disc-worker.js             hosts it on its own thread
     web/index.html                 its harness, the disc and nothing else
-    tools/export_tree.py           writes the tree and names for it
+    tools/export_tree.py           writes the tree, its names and its glosses
     tools/serve.py                 serves web/ and reloads it on save
     tools/check_web.mjs            loads web/ the way a browser does
 

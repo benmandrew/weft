@@ -4,12 +4,18 @@ The element nests arcs, and nesting needs a tree, so the hypernym DAG is cut
 down to one: every synset keeps its first hypernym and the other 2,313 edges go.
 All 82,115 nodes survive that cut; only the cross-links do.
 
-The output is two files, because the disc lays itself out without reading a
+The output is three files, because the disc lays itself out without reading a
 single name. `wordnet-tree.json` is `{"par": [-1, 0, 0, ...]}` where `par[i]`
-indexes `i`'s parent, and `wordnet-names.txt` is the names for those same
-indices, one per line. Structure is 129 KB over the wire against 306 KB of
-names, so splitting them lets the element paint from the smaller file and fetch
-the larger one afterwards.
+indexes `i`'s parent, `wordnet-names.txt` is the names for those same indices
+one per line, and `wordnet-glosses.txt` the definitions. Structure is 129 KB
+over the wire against 306 KB of names, so splitting them lets the element paint
+from the smaller file and fetch the rest afterwards.
+
+The glosses file carries only the 16,936 synsets that have children, blank for
+the other 65,179, and holds a line per node either way so the three files stay
+index-aligned. It is what sits above the crumb path, which names the current
+root, and only a synset with children can be one. Every gloss would be 1,428 KB
+over the wire; these are 299 KB, the same as the names.
 
 Nodes come out ordered by rank, then by descending subtree size, which
 guarantees a parent's index is below every one of its children's: that ordering
@@ -86,14 +92,21 @@ def _sizes(parents: dict[str, list[str]], order: list[str]) -> dict[str, int]:
     return size
 
 
+def _gloss(synset: Synset) -> str:
+    """One line, since the file is positional. WordNet writes no newline into a
+    definition, but a stray one would silently shift every index below it."""
+    return str(synset.definition() or "").replace("\n", " ")
+
+
 def _label(name: str) -> str:
     """`domestic_dog.n.01` reads as `domestic dog`. The sense number is dropped
     because the disc shows names, and the caller keeps the index for identity."""
     return name.rsplit(".", 2)[0].replace("_", " ")
 
 
-def build() -> tuple[list[str], list[int]]:
-    """The names and the parent indices, in the order the contract requires."""
+def build() -> tuple[list[str], list[int], list[str]]:
+    """The names, the parent indices and the glosses, in the order the contract
+    requires."""
     wordnet = _wordnet()
     synsets: list[Synset] = list(wordnet.all_synsets("n"))
     parents = _parents(synsets)
@@ -102,9 +115,17 @@ def build() -> tuple[list[str], list[int]]:
 
     laid_out = sorted(parents, key=lambda name: (rank[name], -size[name], name))
     index = {name: i for i, name in enumerate(laid_out)}
+    par = [index[parents[name][0]] if parents[name] else -1 for name in laid_out]
+    has_kids = [False] * len(par)
+    for parent in par:
+        if parent >= 0:
+            has_kids[parent] = True
+
+    gloss = {synset.name(): _gloss(synset) for synset in synsets}
     return (
         [_label(name) for name in laid_out],
-        [index[parents[name][0]] if parents[name] else -1 for name in laid_out],
+        par,
+        [gloss[name] if has_kids[i] else "" for i, name in enumerate(laid_out)],
     )
 
 
@@ -117,16 +138,20 @@ def main() -> int:
     parser.add_argument("--out", default="out", type=Path, help="directory to write into")
     args = parser.parse_args()
 
-    names, par = build()
+    names, par, glosses = build()
     args.out.mkdir(parents=True, exist_ok=True)
     structure = args.out / "wordnet-tree.json"
     labels = args.out / "wordnet-names.txt"
+    defs = args.out / "wordnet-glosses.txt"
     structure.write_text(json.dumps({"par": par}, separators=(",", ":")))
     labels.write_text("\n".join(names))
+    defs.write_text("\n".join(glosses))
 
     roots = sum(1 for parent in par if parent < 0)
+    written = sum(1 for gloss in glosses if gloss)
     print(f"{structure}: {len(par)} nodes, {len(par) - roots} edges, {_kb(structure)}")
     print(f"{labels}: {len(names)} names, {_kb(labels)}")
+    print(f"{defs}: {written} glosses over {len(glosses)} lines, {_kb(defs)}")
     return 0
 
 

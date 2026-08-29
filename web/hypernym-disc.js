@@ -11,7 +11,10 @@
  *
  * The disc lays out and paints without a single name, so `src` carries the
  * structure alone and `names-src` is fetched after the first paint. Until it
- * lands, a node answers to `#index`.
+ * lands, a node answers to `#index`. `glosses-src` trails the names, being the
+ * largest of the three and read by one line of text: the definition of the node
+ * the crumb path ends at. It is blank for a node with no children, which cannot
+ * be a root and so never reaches it.
  *
  * The paint runs off this thread. disc-paint.js is the pipeline, disc-worker.js
  * hosts it against an OffscreenCanvas, and the element calls the same class
@@ -30,12 +33,12 @@
  * parent and leaves the cursor on the leaf, which is where clicking cannot take
  * you and is the whole reason to search for a word.
  *
- * Attributes: src, names-src, readout="off", search="off", fit, hue-depth
- *             (default 8), rings (default 14), start,
+ * Attributes: src, names-src, glosses-src, readout="off", search="off", fit,
+ *             hue-depth (default 8), rings (default 14), start,
  *             merge: "density" (default) splits merged runs at pixel
  *             boundaries and shades each by how many wedges it holds, "on"
  *             merges each run flat, "off" draws every wedge separately.
- * Properties: data, index, names. Methods: zoomTo(i), up(), reset(), repaint(), path(i).
+ * Properties: data, index, names, glosses. Methods: zoomTo(i), up(), reset(), repaint(), path(i).
  * Events: disc-hover {index,name,depth,leaves}, disc-zoom {index,name,path},
  *         disc-render {nodes,drawn,buildMs,drawMs,hitUs,name} after every repaint,
  *         disc-names {count,ms} once the names arrive.
@@ -120,8 +123,13 @@ TPL.innerHTML = `
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   canvas.over{cursor:pointer;touch-action:none}
-  .bar{min-height:1.7em;font-size:12px;margin-top:7px}
+  .bar{font-size:12px;margin-top:7px;display:flex;flex-direction:column;gap:3px}
   :host([readout="off"]) .bar{display:none}
+  /* Two lines, always, so zooming to a longer definition never resizes the
+     disc under the pointer. Nothing is reserved before the file lands. */
+  .gloss{color:var(--_muted);line-height:1.45;height:2.9em;overflow:hidden;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .gloss:empty{display:none}
   .crumb{font-family:var(--_mono);font-size:11px;color:var(--_muted);line-height:1.6;
     white-space:nowrap;overflow-x:auto;scrollbar-width:none}
   .crumb::-webkit-scrollbar{display:none}
@@ -142,25 +150,26 @@ TPL.innerHTML = `
     <canvas class="base" aria-hidden="true"></canvas>
     <canvas class="over" aria-hidden="true"></canvas>
   </div>
-  <div class="bar"><div class="crumb"></div></div>
+  <div class="bar"><div class="gloss"></div><div class="crumb"></div></div>
 </div>`;
 
 
 class HypernymDisc extends HTMLElement {
-  static observedAttributes = ["src", "names-src", "start", "hue-depth", "merge", "rings"];
+  static observedAttributes = ["src", "names-src", "glosses-src", "start", "hue-depth",
+                              "merge", "rings"];
 
-  #sr; #base; #over; #crumb; #ro; #q; #hits; #frame;
+  #sr; #base; #over; #crumb; #ro; #q; #hits; #frame; #glossEl;
   // Built on the first query rather than when the names land, so a page that
   // never searches never pays for the lowercased copy.
   #search = null; #sug = []; #pick = -1;
-  #names = []; #par = []; #kids = [];
+  #names = []; #glosses = []; #par = []; #kids = [];
   #depth; #leaves; #a0; #a1; #byDepth = []; #maxDepth = 0;
   #root = 0; #hover = -1; #cursor = 0;
   #buildMs = 0; #drawMs = 0; #drawn = 0; #hitUs = 0;
   #structureMs = 0; #namesMs = 0;
   // Which URLs have been fetched, so the upgrade and the connect that follow
   // it do not each start the same request.
-  #loadedSrc = null; #loadedNames = null;
+  #loadedSrc = null; #loadedNames = null; #loadedGlosses = null;
   #prepMs = 0; #segments = 0; #colours = 0;
   // Where the paint goes: undefined until asked for, "wait" while the worker
   // is answering, then "worker" or "main" for the rest of the element's life.
@@ -178,6 +187,7 @@ class HypernymDisc extends HTMLElement {
     this.#q = this.#sr.querySelector(".q");
     this.#hits = this.#sr.querySelector(".hits");
     this.#frame = this.#sr.querySelector(".frame");
+    this.#glossEl = this.#sr.querySelector(".gloss");
   }
 
   connectedCallback() {
@@ -219,6 +229,7 @@ class HypernymDisc extends HTMLElement {
     if (was === now) return;
     if (n === "src") this.#load();
     if (n === "names-src" && this.#ready) this.#loadNames();
+    if (n === "glosses-src" && this.#ready) this.#loadGlosses();
     if (n === "start" && this.#ready) this.#applyStart();
     if (n === "hue-depth" && this.#ready) { this.#draw(); this.#overlay(); }
     // The painter keys its prepare on the mode, so there is nothing to clear.
@@ -264,6 +275,22 @@ class HypernymDisc extends HTMLElement {
     } catch (err) {
       this.#crumb.innerHTML = `<b>Could not load the names.</b> ${err.message}`;
     }
+    this.#loadGlosses();
+  }
+
+  /* Last of the three, and the only one nothing on the disc depends on: the
+     definition of whatever the crumb path ends at. Blank for a node with no
+     children, which cannot be a root and so never reaches this. */
+  async #loadGlosses() {
+    const src = this.getAttribute("glosses-src");
+    if (!src || src === this.#loadedGlosses) return;
+    this.#loadedGlosses = src;
+    try {
+      this.glosses = await (await fetch(src)).text();
+    } catch {
+      // A missing definition is worth no message: the disc is unaffected and
+      // the crumb below says what the view is.
+    }
   }
 
   set data(d) {
@@ -300,6 +327,12 @@ class HypernymDisc extends HTMLElement {
     this.#overlay();
     this.#emit("disc-names", { count: this.#names.length, ms: this.#namesMs });
   }
+  get glosses() { return this.#glosses; }
+  set glosses(v) {
+    this.#glosses = typeof v === "string" ? v.split("\n") : Array.from(v);
+    if (this.#ready) this.#showGloss();
+  }
+
   #setNames(v) {
     this.#names = typeof v === "string" ? v.split("\n") : Array.from(v);
     this.#search = null;
@@ -713,7 +746,12 @@ class HypernymDisc extends HTMLElement {
   #emit(name, detail) {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
+  /* The definition of what the crumb path ends at, which is the current root. */
+  #showGloss() {
+    this.#glossEl.textContent = this.#glosses[this.#root] ?? "";
+  }
   #crumbs() {
+    this.#showGloss();
     const path = [];
     for (let c = this.#root; c >= 0; c = this.#par[c]) path.unshift(c);
     this.#crumb.innerHTML = path.map((i, k) =>
