@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>hypernym-disc — test harness</title>
+<title>hypernym — test harness</title>
 <style>
 :root{
   --ground:#0c1112; --panel:#141b1c; --ink:#e7eded; --muted:#90a1a1;
@@ -32,7 +32,6 @@ body{overflow:hidden}
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;
        border-bottom:1px solid var(--rule);padding-bottom:8px;margin-bottom:12px}
 h1{font-family:var(--display);font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
-header .path{font-family:var(--data);font-size:11.5px;color:var(--muted)}
 header .live{margin-left:auto;font-family:var(--data);font-size:11px;color:var(--muted);
   display:inline-flex;align-items:center;gap:6px}
 header .live::before{content:"";width:7px;height:7px;border-radius:50%;
@@ -52,8 +51,7 @@ hypernym-disc{
 <body>
 <div class="wrap">
   <header>
-    <h1>hypernym-disc</h1>
-    <span class="path">web/hypernym-disc.js &middot; wordnet-tree.json + wordnet-names.txt</span>
+    <h1>hypernym</h1>
     <span class="live" id="live">waiting for the watcher</span>
   </header>
 
