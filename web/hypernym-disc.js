@@ -18,7 +18,14 @@
  * here where a worker cannot be had. The element keeps the layout either way,
  * because hit testing, the crumbs and the keyboard answer without a round trip.
  *
- * Attributes: src, names-src, readout="off", hue-depth (default 2), start,
+ * The search box takes the same two steps as the pointer. Picking a suggestion
+ * previews it, which is the hover path and nothing else, and Enter is the
+ * click: it zooms. A leaf has nothing to zoom into, so Enter on one goes to its
+ * parent and leaves the cursor on the leaf, which is where clicking cannot take
+ * you and is the whole reason to search for a word.
+ *
+ * Attributes: src, names-src, readout="off", search="off", hue-depth
+ *             (default 2), start,
  *             merge: "density" (default) splits merged runs at pixel
  *             boundaries and shades each by how many wedges it holds, "on"
  *             merges each run flat, "off" draws every wedge separately.
@@ -30,6 +37,7 @@
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
 import { Painter, TAU } from "./disc-paint.js";
+import { Search } from "./disc-search.js";
 
 const TPL = document.createElement("template");
 TPL.innerHTML = `
@@ -41,6 +49,7 @@ TPL.innerHTML = `
     --_sat:var(--disc-sat,.55); --_val:var(--disc-val,.88);
     --_font:var(--disc-font,system-ui,sans-serif);
     --_mono:var(--disc-mono,ui-monospace,Menlo,monospace);
+    --_edge:color-mix(in srgb,var(--_muted) 38%,transparent);
     color:var(--_ink);font-family:var(--_font)}
   @media (prefers-color-scheme:light){
     :host{--_ground:var(--disc-ground,#eef1f0); --_panel:var(--disc-panel,#fbfcfc);
@@ -48,6 +57,26 @@ TPL.innerHTML = `
       --_accent:var(--disc-accent,#2c7359);
       --_sat:var(--disc-sat,.62); --_val:var(--disc-val,.60)}}
   .frame{display:block}
+  .find{position:relative;margin-bottom:8px}
+  :host([search="off"]) .find{display:none}
+  .find input{width:100%;font-family:var(--_font);font-size:12.5px;line-height:1.5;
+    color:var(--_ink);background:var(--_panel);border:1px solid var(--_edge);
+    border-radius:2px;padding:5px 9px;-webkit-appearance:none;appearance:none}
+  .find input::placeholder{color:var(--_muted)}
+  .find input:disabled{opacity:.6}
+  .find input:focus-visible{outline:2px solid var(--_accent);outline-offset:-1px}
+  .hits{position:absolute;z-index:2;top:calc(100% + 3px);left:0;right:0;
+    margin:0;padding:3px;list-style:none;max-height:16em;overflow-y:auto;
+    background:var(--_panel);border:1px solid var(--_edge);border-radius:2px;
+    box-shadow:0 8px 26px rgba(0,0,0,.32)}
+  .hits[hidden]{display:none}
+  .hits li{display:flex;gap:10px;align-items:baseline;padding:3px 6px;
+    border-radius:2px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+  .hits li[aria-selected="true"]{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
+  .hits .n{overflow:hidden;text-overflow:ellipsis}
+  .hits .n b{font-weight:600;color:var(--_accent)}
+  .hits .p{margin-left:auto;font-family:var(--_mono);font-size:10.5px;
+    color:var(--_muted);overflow:hidden;text-overflow:ellipsis}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   canvas.over{cursor:pointer;outline:none;touch-action:none}
@@ -67,6 +96,12 @@ TPL.innerHTML = `
     font-variant-numeric:tabular-nums}
 </style>
 <div class="frame">
+  <div class="find">
+    <input class="q" type="search" role="combobox" autocomplete="off"
+           spellcheck="false" aria-controls="hits" aria-expanded="false"
+           aria-autocomplete="list" placeholder="Waiting for names…" disabled>
+    <ul class="hits" id="hits" role="listbox" hidden></ul>
+  </div>
   <div class="stage">
     <canvas class="base" aria-hidden="true"></canvas>
     <canvas class="over" tabindex="0" role="application"></canvas>
@@ -78,7 +113,10 @@ TPL.innerHTML = `
 class HypernymDisc extends HTMLElement {
   static observedAttributes = ["src", "names-src", "start", "hue-depth", "merge"];
 
-  #sr; #base; #over; #crumb; #tip; #ro;
+  #sr; #base; #over; #crumb; #tip; #ro; #q; #hits;
+  // Built on the first query rather than when the names land, so a page that
+  // never searches never pays for the lowercased copy.
+  #search = null; #sug = []; #pick = -1;
   #names = []; #par = []; #kids = [];
   #depth; #leaves; #a0; #a1; #byDepth = []; #maxDepth = 0;
   #root = 0; #hover = -1; #cursor = 0;
@@ -102,6 +140,8 @@ class HypernymDisc extends HTMLElement {
     this.#over = this.#sr.querySelector(".over");
     this.#crumb = this.#sr.querySelector(".crumb");
     this.#tip = this.#sr.querySelector(".tip");
+    this.#q = this.#sr.querySelector(".q");
+    this.#hits = this.#sr.querySelector(".hits");
   }
 
   connectedCallback() {
@@ -112,6 +152,20 @@ class HypernymDisc extends HTMLElement {
     this.#crumb.addEventListener("click", e => {
       const b = e.target.closest("button");
       if (b) this.zoomTo(+b.dataset.i);
+    });
+    this.#q.addEventListener("input", this.#onQuery);
+    this.#q.addEventListener("keydown", this.#onFindKey);
+    this.#q.addEventListener("blur", this.#closeFind);
+    // Taking the pointer down inside the list would blur the input and close
+    // the list out from under the click, so the list never takes focus.
+    this.#hits.addEventListener("pointerdown", e => e.preventDefault());
+    this.#hits.addEventListener("pointermove", e => {
+      const li = e.target.closest("li");
+      if (li && +li.dataset.k !== this.#pick) this.#setPick(+li.dataset.k);
+    });
+    this.#hits.addEventListener("click", e => {
+      const li = e.target.closest("li");
+      if (li) this.#go(this.#sug[+li.dataset.k].i);
     });
     this.#ro = new ResizeObserver(() => this.#fit());
     this.#ro.observe(this.#sr.querySelector(".stage"));
@@ -212,6 +266,10 @@ class HypernymDisc extends HTMLElement {
   }
   #setNames(v) {
     this.#names = typeof v === "string" ? v.split("\n") : Array.from(v);
+    this.#search = null;
+    this.#closeFind();
+    this.#q.disabled = this.#names.length === 0;
+    if (!this.#q.disabled) this.#q.placeholder = "Search names…";
   }
   #label(i) { return this.#names[i] ?? `#${i}`; }
 
@@ -494,11 +552,19 @@ class HypernymDisc extends HTMLElement {
   #onMove = ev => {
     const h = this.#hit(...this.#at(ev));
     if (h === this.#hover) return;
-    this.#hover = h; this.#overlay(); this.#say(h);
-    if (h >= 0) this.#emit("disc-hover", {
-      index: h, name: this.#label(h), depth: this.#depth[h], leaves: this.#leaves[h] });
+    this.#preview(h);
   };
-  #onLeave = () => { this.#hover = -1; this.#overlay(); this.#say(-1); };
+  #onLeave = () => this.#preview(-1);
+  /* Everything a pointer over node i does, and nothing else: the highlighted
+     path, the hub, the readout, the event. The search box calls this so a
+     picked suggestion looks exactly like a hover, -1 to put it back. */
+  #preview(i) {
+    this.#hover = i;
+    this.#overlay();
+    this.#say(i);
+    if (i >= 0) this.#emit("disc-hover", {
+      index: i, name: this.#label(i), depth: this.#depth[i], leaves: this.#leaves[i] });
+  }
   #onClick = ev => {
     const [px, py] = this.#at(ev);
     if (Math.hypot(px - this.#cx, py - this.#cy) < this.#r0) return this.up();
@@ -521,6 +587,107 @@ class HypernymDisc extends HTMLElement {
       this.#cursor = next; this.#overlay(); this.#say(next);
       this.#over.setAttribute("aria-label", this.#label(next));
     }
+  };
+
+  /* Straight through, not deferred to a frame. The scan is 4.4 ms at worst over
+     82,115 names, so coalescing keystrokes through requestAnimationFrame would
+     save a fraction of one frame and buy a stall everywhere that callback is
+     throttled, which is where a hidden or background tab leaves it. */
+  #onQuery = () => {
+    if (!this.#ready || !this.#names.length) return;
+    this.#search ??= new Search(this.#names);
+    this.#sug = this.#search.query(this.#q.value, 12);
+    this.#pick = -1;
+    this.#drawHits();
+    // The top hit is picked outright, so typing highlights and Enter needs no
+    // arrow key first.
+    this.#setPick(this.#sug.length ? 0 : -1);
+  };
+
+  #onFindKey = ev => {
+    const n = this.#sug.length;
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      if (!n) return;
+      ev.preventDefault();
+      this.#setPick((this.#pick + (ev.key === "ArrowDown" ? 1 : n - 1)) % n);
+    } else if (ev.key === "Enter") {
+      if (this.#pick < 0) return;
+      ev.preventDefault();
+      this.#go(this.#sug[this.#pick].i);
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      if (n) this.#closeFind();
+      else { this.#q.value = ""; this.#preview(-1); }
+    }
+  };
+
+  /* The click, for a node reached by name. Zooming into a leaf would show an
+     empty disc, so a leaf goes to its parent with the cursor left on the leaf:
+     the word stays highlighted and named in the hub. Focus follows to the
+     canvas, where the arrow keys carry on from there. */
+  #go(i) {
+    this.#closeFind();
+    if (this.#kids[i].length) this.zoomTo(i);
+    else if (this.#par[i] >= 0) {
+      this.zoomTo(this.#par[i]);
+      this.#cursor = i; this.#overlay(); this.#say(i);
+    }
+    this.#over.setAttribute("aria-label", this.#label(i));
+    this.#over.focus();
+  }
+
+  #drawHits() {
+    const q = this.#q.value.trim().toLowerCase();
+    this.#hits.replaceChildren(...this.#sug.map((hit, k) => {
+      const li = document.createElement("li");
+      li.id = `hit-${k}`;
+      li.dataset.k = k;
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-selected", "false");
+      const name = document.createElement("span");
+      name.className = "n";
+      // Marks the run the query matched outright. A fuzzy hit has no such run,
+      // and is left plain rather than marked letter by letter.
+      const at = hit.name.toLowerCase().indexOf(q);
+      if (at < 0) name.textContent = hit.name;
+      else {
+        const b = document.createElement("b");
+        b.textContent = hit.name.slice(at, at + q.length);
+        name.append(hit.name.slice(0, at), b, hit.name.slice(at + q.length));
+      }
+      // The parent, because a WordNet name is not unique: four synsets are
+      // called "bank" and only their parents tell them apart.
+      const par = document.createElement("span");
+      par.className = "p";
+      par.textContent = this.#par[hit.i] >= 0 ? this.#label(this.#par[hit.i]) : "";
+      li.append(name, par);
+      return li;
+    }));
+    this.#hits.hidden = this.#sug.length === 0;
+    this.#q.setAttribute("aria-expanded", String(this.#sug.length > 0));
+  }
+
+  #setPick(k) {
+    this.#pick = k;
+    for (const [j, li] of [...this.#hits.children].entries())
+      li.setAttribute("aria-selected", String(j === k));
+    if (k < 0) {
+      this.#q.removeAttribute("aria-activedescendant");
+      this.#preview(-1);
+      return;
+    }
+    this.#q.setAttribute("aria-activedescendant", `hit-${k}`);
+    this.#hits.children[k].scrollIntoView({ block: "nearest" });
+    this.#preview(this.#sug[k].i);
+  }
+
+  #closeFind = () => {
+    if (this.#pick >= 0) this.#preview(-1);
+    this.#sug = []; this.#pick = -1;
+    this.#hits.replaceChildren();
+    this.#hits.hidden = true;
+    this.#q.setAttribute("aria-expanded", "false");
+    this.#q.removeAttribute("aria-activedescendant");
   };
 
   zoomTo(i) {

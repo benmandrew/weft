@@ -93,6 +93,23 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   larger arrives, which is why `start` is re-resolved when it does. Both are
   generated into `out/` and never committed. Keep them index-aligned: the names
   file is positional, with no key to catch a mismatch.
+- The search box reaches a node by name, and it does exactly what the pointer
+  does: picking a suggestion calls the same `#preview` the pointer calls, so the
+  highlighted path cannot drift from the hover, and Enter is the click. A leaf
+  is the exception, because zooming into one shows an empty disc: Enter on a
+  leaf goes to its parent and leaves the cursor on the leaf, which is the one
+  thing clicking cannot do and the reason to search for a word at all. A picked
+  node outside the current zoom is named in the readout but not highlighted,
+  since there is nowhere on the disc to draw it; Enter brings it into view.
+- `disc-search.js` scores every name in one pass rather than holding an index:
+  2.6 to 4.4 ms over 82,115 names depending on the query, plus 4.4 ms to lower
+  them on the first query, and the input is debounced to one scan per frame.
+  A sorted index would answer a prefix in log time for a 23 ms sort, but the
+  weakest band is a subsequence match, which no ordering of the names prunes —
+  it reads all 82,115 however the index is built. Bands sit 1,000 apart and
+  every penalty is capped below 1,000, so a weaker kind of match can never
+  outrank a stronger one however long the name it sits in; that ordering is
+  what `check_web.mjs` asserts, not the scores.
 - Hit testing binary-searches the nodes at one depth by start angle, and zooming
   rescales angles rather than laying out again, so neither needs a spatial
   index. `make serve` watches `web/` and reloads the browser on save. Nothing in
@@ -186,6 +203,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 
     web/hypernym-disc.js           the nested-arc element
     web/disc-paint.js              the draw pipeline, no DOM
+    web/disc-search.js             ranked name lookup, no DOM
     web/disc-worker.js             hosts it on its own thread
     web/index.html                 its harness, with the render timings
     tools/export_tree.py           writes the tree and names for it
@@ -238,8 +256,10 @@ which puts the fringe wedges at about a quarter of a pixel, and asserts the
 properties the pipeline rests on rather than exact counts, which move whenever
 the geometry does: that `merge=off` draws every node, that `density` and
 `merge=on` both merge, that a repeat draws the same, that a zoom draws less, and
-that hue-depth 19 still merges, which is what guards the hue blend. It needs no
-data files, so it does not depend on the exported tree.
+that hue-depth 19 still merges, which is what guards the hue blend. Last it
+queries the search over eight names written down in the file, asserting the
+order of the bands rather than the scores, which move whenever a penalty is
+retuned. It needs no data files, so it does not depend on the exported tree.
 
 Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
 `src/` on the path, and the tree is clean under it; the pyright CLI is not in

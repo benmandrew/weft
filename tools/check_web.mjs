@@ -28,7 +28,7 @@ globalThis.customElements = { define() {} };
 globalThis.self = globalThis;
 globalThis.postMessage = () => {};
 
-const MODULES = ["disc-paint.js", "disc-worker.js", "hypernym-disc.js"];
+const MODULES = ["disc-paint.js", "disc-search.js", "disc-worker.js", "hypernym-disc.js"];
 for (const name of MODULES) {
   try { await import(mod(name)); }
   catch (e) { problems.push(`web/${name} does not load — ${e.constructor.name}: ${e.message}`); }
@@ -119,6 +119,31 @@ check(again.drawn === first.drawn, `a repeat drew ${again.drawn} against ${first
 const zoomed = paint(p, { ...view("density"), root: 1 });
 check(zoomed.drawn > 0 && zoomed.drawn < first.drawn,
       `zooming into a subtree drew ${zoomed.drawn} against ${first.drawn}`);
+
+/* The search box, which is scored rather than drawn. The order of the bands is
+   what the assertions are on: a stronger kind of match outranks a weaker one
+   however long the name it sits in. */
+const { Search } = await import(mod("disc-search.js"));
+const NAMES = ["cat", "catamaran", "domestic cat", "polecat", "concatenate",
+               "dog", "waterfowl", "wildcat hunting"];
+const find = (q, n) => new Search(NAMES).query(q, n).map(h => h.name);
+
+check(find("cat")[0] === "cat", `an exact name is not first: ${find("cat")[0]}`);
+check(find("cat")[1] === "catamaran", `the shorter prefix is not second: ${find("cat")[1]}`);
+check(find("cat").indexOf("domestic cat") < find("cat").indexOf("polecat"),
+      "a word in the name did not beat a match inside one");
+check(find("cat").indexOf("polecat") < find("cat").indexOf("concatenate"),
+      "an earlier match inside the name did not win");
+check(find("CaT")[0] === "cat", "the query is case sensitive");
+check(find("wtrfl").length === 1 && find("wtrfl")[0] === "waterfowl",
+      `letters in order did not reach waterfowl: ${find("wtrfl")}`);
+check(find("cat", 2).length === 2, "the limit was not kept");
+check(find("   ").length === 0 && find("").length === 0, "an empty query matched");
+check(find("zzz").length === 0, "a query that matches nothing returned hits");
+/* Names repeat in WordNet, so the same name at two indices has to come back
+   twice rather than being folded into one. */
+check(new Search(["bank", "bank"]).query("bank").length === 2,
+      "a repeated name collapsed to one hit");
 
 if (problems.length) {
   for (const said of problems) console.error(`web: ${said}`);
