@@ -127,7 +127,8 @@ TPL.innerHTML = `
   :host([readout="off"]) .bar{display:none}
   /* Two lines, always, so zooming to a longer definition never resizes the
      disc under the pointer. Nothing is reserved before the file lands. */
-  .gloss{color:var(--_muted);line-height:1.45;height:2.9em;overflow:hidden;
+  .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
+    overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   .gloss:empty{display:none}
   .crumb{font-family:var(--_mono);font-size:11px;color:var(--_muted);line-height:1.6;
@@ -746,9 +747,16 @@ class HypernymDisc extends HTMLElement {
   #emit(name, detail) {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
-  /* The definition of what the crumb path ends at, which is the current root. */
+  /* The definition of what the crumb path ends at, which is the current root.
+     WordNet writes its glosses lowercase, so the first letter is raised here.
+     Two kinds are left alone: the 569 that open on a parenthetical label like
+     "(mathematics)", where the first character is not a letter and the label is
+     conventionally lowercase, and a first letter whose neighbour is a capital,
+     which is the one gloss reading "pH values below 7". */
   #showGloss() {
-    this.#glossEl.textContent = this.#glosses[this.#root] ?? "";
+    const g = this.#glosses[this.#root] ?? "";
+    this.#glossEl.textContent =
+      /^[a-z](?![A-Z])/.test(g) ? g[0].toUpperCase() + g.slice(1) : g;
   }
   #crumbs() {
     this.#showGloss();

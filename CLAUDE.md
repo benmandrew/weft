@@ -141,7 +141,12 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   same as the names, against 1,428 KB for every gloss in WordNet — take the
   larger file only if the definition has to follow the pointer as well. The
   block is a fixed two lines, so zooming to a longer definition never resizes
-  the disc, and it reserves nothing until the file lands.
+  the disc, and it reserves nothing until the file lands. It reads in the ink
+  colour a step above the crumb below it, and its first letter is raised, since
+  WordNet writes its glosses lowercase — except where the gloss opens on a
+  parenthetical label such as `(mathematics)`, which 569 do and which is
+  conventionally lowercase, and except where the second letter is a capital,
+  which is the single gloss reading "pH values below 7".
 - Below that the element prints the crumb path and nothing else. The line
   of counts that sat under it is gone: the hub already names whatever the
   pointer or the search is on, and `disc-hover` still carries the depth and the
