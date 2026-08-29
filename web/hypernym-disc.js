@@ -149,6 +149,7 @@ TPL.innerHTML = `
   .crumb button{font:inherit;color:var(--_accent);background:none;border:0;padding:0;
     cursor:pointer;text-decoration:underline;text-underline-offset:2px}
   .crumb span{color:var(--_ink)}
+  .crumb em{font-style:normal}
   .crumb i{font-style:normal;color:var(--_muted);opacity:.5;padding:0 4px}
   .crumb i:first-child{padding-left:0}
   .crumb b{color:var(--_ink);font-weight:600}
@@ -180,6 +181,12 @@ class HypernymDisc extends HTMLElement {
   #names = []; #glosses = []; #par = []; #kids = [];
   #depth; #leaves; #a0; #a1; #byDepth = []; #maxDepth = 0;
   #root = 0; #hover = -1; #cursor = 0;
+  // The crumb path in two parts: the head is the way out and moves only on a
+  // zoom, the tail follows the pointer. #crumbSel is the tail's node, so the
+  // pointer crossing a wedge writes to the DOM once rather than per pixel, and
+  // #failed holds a load error in the crumb until a zoom, as it did when the
+  // line was written whole.
+  #head = ""; #crumbSel = -2; #failed = false;
   #buildMs = 0; #drawMs = 0; #drawn = 0; #hitUs = 0;
   #structureMs = 0; #namesMs = 0;
   // Which URLs have been fetched, so the upgrade and the connect that follow
@@ -271,6 +278,7 @@ class HypernymDisc extends HTMLElement {
       }
     } catch (err) {
       this.#crumb.innerHTML = `<b>Could not load the tree.</b> ${err.message}`;
+      this.#failed = true;
       return;
     }
     this.#loadNames();
@@ -289,6 +297,7 @@ class HypernymDisc extends HTMLElement {
       this.names = text;
     } catch (err) {
       this.#crumb.innerHTML = `<b>Could not load the names.</b> ${err.message}`;
+      this.#failed = true;
     }
     this.#loadGlosses();
   }
@@ -551,6 +560,7 @@ class HypernymDisc extends HTMLElement {
   #overlay() {
     if (!this.#ready) return;
     this.#showGloss();
+    this.#showTail();
     const g = this.#over.getContext("2d");
     g.setTransform(this.#dpr, 0, 0, this.#dpr, 0, 0);
     g.clearRect(0, 0, this.#over.width, this.#over.height);
@@ -791,10 +801,29 @@ class HypernymDisc extends HTMLElement {
     for (let c = this.#root; c >= 0; c = this.#par[c]) path.unshift(c);
     // A separator before every step, the first included, so the path reads as
     // a path rather than as a name with a trail after it.
-    this.#crumb.innerHTML = path.map(i =>
+    this.#head = path.map(i =>
       "<i>›</i>" + (i === this.#root
         ? `<span>${this.#label(i)}</span>`
         : `<button type="button" data-i="${i}">${this.#label(i)}</button>`)).join("");
+    this.#failed = false;
+    this.#crumbSel = -2;
+    this.#showTail();
+  }
+
+  /* The chain of whatever the hub is naming, carried on past the root the way
+     clicking it would leave the path. It is muted where the path to the root
+     is not, so what you are looking at still reads as the view and the rest as
+     a pointer passing over. #focus is what answers, so the name in the hub,
+     the definition and this can never be of different nodes. */
+  #showTail() {
+    if (this.#failed) return;
+    const sel = this.#focus();
+    if (sel === this.#crumbSel) return;
+    this.#crumbSel = sel;
+    const tail = [];
+    for (let c = sel; c >= 0 && c !== this.#root; c = this.#par[c]) tail.unshift(c);
+    this.#crumb.innerHTML = this.#head +
+      tail.map(i => `<i>›</i><em>${this.#label(i)}</em>`).join("");
   }
 }
 customElements.define("hypernym-disc", HypernymDisc);

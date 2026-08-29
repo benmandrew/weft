@@ -149,11 +149,24 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `(mathematics)`, which 2,959 do and which is conventionally lowercase, and
   never where the second letter is a capital, which is what stops the 4 like
   "cDNA copy of the RNA genome" from becoming "CDNA".
-- Below that the element prints the crumb path and nothing else. The line
-  of counts that sat under it is gone: the hub already names whatever the
-  pointer or the search is on, and `disc-hover` still carries the depth and the
-  leaf count, so a host that wants them can print its own. That is also where
-  a failed fetch now reports.
+- Below that the element prints the crumb path and nothing else. The path
+  carries on past the current root with the chain of whatever the hub is
+  naming, the node under the pointer or the one the search left the cursor on,
+  so the path a click would land on is legible before the click. That tail is
+  muted, where the way out down to the root keeps its accent buttons and its
+  ink-coloured root, so the view's own path still reads as where the disc is
+  and the tail as a pointer passing over. The tail comes off `#focus`, the same
+  method the hub's name and the gloss come off, so the three can never be of
+  different nodes, and `#focus` answers -1 for a node outside the current zoom,
+  so a searched node elsewhere in the tree adds no tail — the same rule that
+  leaves it unhighlighted on the disc. The line is rendered in two parts: the
+  head is rebuilt only on a zoom and the tail only when the focus moves, so a
+  pointer crossing a wedge writes to the DOM once rather than once per pixel.
+  The line of counts that sat under it is gone: the hub already names whatever
+  the pointer or the search is on, and `disc-hover` still carries the depth and
+  the leaf count, so a host that wants them can print its own. A failed fetch
+  still reports there, and a `#failed` flag holds that message until a zoom,
+  which is how long it survived when the line was written whole.
 - `hue-depth` defaults to 8 and `merge` to density, and the harness sets
   neither: it is one disc with a search box, no controls and no timings. Both
   attributes still work, so a comparison is one attribute away in the
