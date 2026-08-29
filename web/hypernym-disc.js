@@ -459,13 +459,10 @@ class HypernymDisc extends HTMLElement {
       }
     }
 
+    // The hub's ground only. Its label names whatever the pointer is over, so
+    // it is painted on the overlay instead of here.
     g.beginPath(); g.arc(this.#cx, this.#cy, this.#r0 - 3, 0, TAU);
     g.fillStyle = panel; g.fill();
-    g.fillStyle = this.#tok("--_muted", "#90a1a1");
-    g.font = `500 11px ${this.#tok("--_mono", "monospace")}`;
-    g.textAlign = "center"; g.textBaseline = "middle";
-    const centre = this.#root === 0 ? (this.#names[0] ?? "root") : "↑ up";
-    g.fillText(centre, this.#cx, this.#cy);
     this.#drawn = drawn;
     this.#drawMs = performance.now() - t0;
     this.#emit("disc-render", { ...this.stats, name: this.#label(this.#root) });
@@ -476,6 +473,7 @@ class HypernymDisc extends HTMLElement {
     const g = this.#over.getContext("2d");
     g.setTransform(this.#dpr, 0, 0, this.#dpr, 0, 0);
     g.clearRect(0, 0, this.#over.width, this.#over.height);
+    this.#hub(g);
     const mark = this.#hover >= 0 ? this.#hover : this.#cursor;
     if (mark < 0 || !this.#inView(mark)) return;
     g.strokeStyle = this.#tok("--_ink", "#e7eded");
@@ -492,6 +490,72 @@ class HypernymDisc extends HTMLElement {
       if (cur === this.#root) break;
       cur = this.#par[cur];
     }
+  }
+
+  /* The hub names what the readout names — the node under the pointer, or the
+     one the keyboard is on — and falls back to the way out of the view: up a
+     level when zoomed, the root's own name at the top. Drawing it on the
+     overlay is what makes it free to follow the pointer, since the base holds
+     every arc and the overlay only the path being highlighted. */
+  #hub(g) {
+    const sel = this.#hover >= 0 ? this.#hover
+      : this.#cursor !== this.#root ? this.#cursor : -1;
+    const named = sel >= 0 && this.#inView(sel);
+    const text = named ? this.#label(sel)
+      : this.#root === 0 ? (this.#names[0] ?? "root") : "↑ up";
+    const { lines, lh } = this.#fitHub(g, text);
+    g.fillStyle = named ? this.#tok("--_ink", "#e7eded") : this.#tok("--_muted", "#90a1a1");
+    g.textAlign = "center"; g.textBaseline = "middle";
+    const top = this.#cy - (lines.length - 1) * lh / 2;
+    lines.forEach((line, k) => g.fillText(line, this.#cx, top + k * lh));
+  }
+
+  /* A name runs to 71 characters and the hub is about a hundred across, so the
+     label steps down the sizes and wraps until it fits, clipping only when
+     nothing does. Every line has to clear the chord at the block's edge rather
+     than the diameter, which is why the budget narrows as a line is added.
+     Sets the font on `g` as it goes. */
+  #fitHub(g, text) {
+    const mono = this.#tok("--_mono", "monospace");
+    const r = this.#r0 - 5;
+    for (const px of [12, 11, 10, 9, 8]) {
+      g.font = `500 ${px}px ${mono}`;
+      const lh = px + 2;
+      for (let n = 1; n <= 3 && n * lh < 2 * r; n++) {
+        const lines = this.#wrap(g, text, 2 * Math.sqrt(r * r - (n * lh / 2) ** 2), n);
+        if (lines) return { lines, lh };
+      }
+    }
+    g.font = `500 8px ${mono}`;
+    return { lines: this.#wrap(g, text, 1.4 * r, 3, true), lh: 10 };
+  }
+
+  /* Greedy by word, null when the text needs more than `n` lines. Under `hard`
+     a word too long for a line is cut and the overflow dropped instead, both
+     marked with an ellipsis; that is the last resort under the smallest font. */
+  #wrap(g, text, w, n, hard = false) {
+    const cut = word => {
+      let s = word;
+      while (s.length > 1 && g.measureText(s + "…").width > w) s = s.slice(0, -1);
+      return s + "…";
+    };
+    const out = [];
+    let line = "";
+    for (const word of text.split(" ")) {
+      const join = line ? line + " " + word : word;
+      if (g.measureText(join).width <= w) { line = join; continue; }
+      if (line) out.push(line);
+      if (out.length === n) {
+        if (!hard) return null;
+        out[n - 1] = cut(out[n - 1]);
+        return out;
+      }
+      if (g.measureText(word).width <= w) line = word;
+      else if (hard) line = cut(word);
+      else return null;
+    }
+    if (line) out.push(line);
+    return out;
   }
 
   /* Angles nest, so a point maps to a ring by radius and to one node in that
