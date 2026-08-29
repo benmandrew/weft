@@ -1,8 +1,8 @@
 #:schema ./schemas/wordchain.schema.json
 
-# Every setting the disc has, at the value it defaults to. build reads this file
-# without a flag, so editing a number here changes the next render, and every
-# key is optional. What each one does is in the schema named above rather than
+# Every setting the disc has, at the value it defaults to. Every command reads
+# this file without a flag, so editing a number here changes the next render,
+# and every key is optional. What each one does is in the schema named above rather than
 # in a comment here, so an editor shows it on hover and it is written once.
 
 theme = "dark"
@@ -16,6 +16,19 @@ leading = 1.22
 wedge_band = 0.075
 glyph_width = 0.58
 disc_limit = 1.34
+
+[selection]
+# Which words a category yields, and how many of them the disc draws. Every
+# command reads these, so the count `categories` prints is the list `stats`
+# analyses and `build` draws from. Each has a flag that overrides it.
+min_zipf = 0.0
+min_dominance = 0.2
+max_rank = 2
+min_depth = 1
+target = 60
+zipf_floor = 0.0
+multiword = false
+limit = 110
 
 [palette]
 # The wheel is named or it is spelled out, never both. Comment this line out to

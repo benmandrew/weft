@@ -23,10 +23,9 @@ python -m wordchain words animal     # the word list with Zipf frequencies
 python -m wordchain build animal     # render the word graph
 ```
 
-`build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark`, which overrides the config file's `theme` and stands at dark with neither, `--limit N` (words in the disc, default 110) and `--config FILE`.
+`build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark`, which overrides the config file's `theme` and stands at dark with neither, and `--limit N`, the words in the disc, 110 unless the config file moves it.
 
-The three selection commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance` and `--max-rank`, so the counts `categories` prints match what `build` would draw. `--min-zipf` stands at zero, so a category yields every word wordfreq knows and the frequency order rather than a cut decides which 110 the disc draws.
-`--multiword` keeps entries like *polar bear* and chains them on their outer letters. Every command takes `--no-cache`.
+The three selection commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance` and `--max-rank`, so the counts `categories` prints match what `build` would draw. `--min-zipf` stands at zero, so a category yields every word wordfreq knows and the frequency order rather than a cut decides which 110 the disc draws. `--multiword` keeps entries like *polar bear* and chains them on their outer letters, and `--no-multiword` turns them back off. Every command takes `--no-cache` and `--config FILE`.
 
 `make -j` renders every category, one file each, so editing a module redraws all 37 and an untouched tree redraws none. `make clean` removes the output directory, `OUT=` moves it, and `CONFIG=` names a config file.
 
@@ -40,7 +39,7 @@ Scalable Vector Graphics (SVG) is the default because the disc zooms, so a label
 
 ## Configuration
 
-`build` loads `./wordchain.toml` when that file exists and uses the built-in defaults otherwise, and `--config FILE` names another, which has to exist. The file is Tom's Obvious Minimal Language (TOML), with a bare `theme` key and two tables, `[geometry]` for the disc's measurements and `[palette]` for the letter colours. Every key is optional, and anything absent keeps its default. Each setting is documented in `schemas/wordchain.schema.json`, which the file names on its first line, so an editor explains and completes the settings as they are typed. Validation refuses rather than ignores: an unknown key or an out-of-range value stops the build, answered with the closest name from `difflib`.
+Every command loads `./wordchain.toml` when that file exists and uses the built-in defaults otherwise, and `--config FILE` names another, which has to exist. The file is Tom's Obvious Minimal Language (TOML), with a bare `theme` key and three tables: `[geometry]` for the disc's measurements, `[palette]` for the letter colours and `[selection]` for the eight settings that decide which words a category yields and how many of them the disc draws, among them `min_zipf`, `target`, `multiword` and `limit`. All four commands read `[selection]`, so the counts `categories` prints still match what `build` draws, and a flag beats the file for one run, with `--min-zipf 2.0` overriding a file that sets it and `--no-multiword` turning off a file that switched it on. Every key is optional, and anything absent keeps its default. Each setting is documented in `schemas/wordchain.schema.json`, which the file names on its first line, so an editor explains and completes the settings as they are typed. Validation refuses rather than ignores: an unknown key or an out-of-range value stops the build, answered with the closest name from `difflib`.
 
 ## Categories
 

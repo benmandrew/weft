@@ -74,15 +74,43 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `svg.fonttype = "path"` in `render._typeface`, since naming the fonts would
   silently substitute a face on any machine without Iowan Old Style, Avenir and
   Menlo.
-- Geometry lives on `config.Geometry` and the letter colours on a
-  `palette.Wheel` of one or more `Arc`s carried by the `Theme`; a figure takes
-  each as an argument, never as a module constant. The config file is
-  `./wordchain.toml` or the file `--config` names, which must exist. `theme` is
-  a bare key at the top rather than a third table, because it names a ground
+- Geometry lives on `config.Geometry`, the word filters on `config.Selection`
+  beside it, and the letter colours on a `palette.Wheel` of one or more `Arc`s
+  carried by the `Theme`; a figure takes each as an argument, never as a module
+  constant. The config file is `./wordchain.toml` or the file `--config` names,
+  which must exist. `theme` is a bare key at the top rather than a fourth table
+  beside `[geometry]`, `[palette]` and `[selection]`, because it names a ground
   rather than a group of distances, and `--theme` overrides it.
+- `[selection]` holds the command line's own selection arguments — `min_zipf`,
+  `min_dominance`, `max_rank`, `min_depth`, `target`, `zipf_floor`, `multiword`
+  and `limit` — so a file can move them. Every command reads the table, not just
+  `build`, which is why `--config` sits on all four rather than on `build`
+  alone: `categories` prints a count, `stats` analyses that list and `build`
+  draws from it, and a table only `build` honoured would put the three out of
+  step. The file is read once in `main()` rather than per command, because
+  `categories` loads all 37 word lists and would otherwise parse the file 37
+  times. Precedence is the flag, then the file, then the built-in default, so
+  every selection flag defaults to None rather than to its value: a `--target
+  60` typed out and no `--target` at all have to reach a file that sets it
+  differently as different things. `--multiword` is
+  `argparse.BooleanOptionalAction` for the same reason, so `--no-multiword`
+  exists and turns off a file that switched it on. `limit` sits here rather
+  than in `[geometry]` because it counts words rather than measuring a
+  distance; `geometry.disc_limit` is the axis limit in data units and is
+  unrelated.
 - Unknown keys and values that are not positive numbers are refused, never
   ignored, since an ignored key redraws the same figure; `hue_start` and
-  `equalise` are the two settings that mean something at zero. In `[palette]` a
+  `equalise` are the two settings that mean something at zero. `[selection]`
+  inverts that rule: every numeric setting there allows its own minimum, since
+  a `min_zipf` of 0 is the whole vocabulary, a `min_dominance` of 0 asks
+  nothing of a word's senses and a `target` of 0 relaxes nothing. `limit` is
+  the exception at 1, since a disc of no words is a blank page, and the Zipf
+  ceiling is 8, because the
+  scale runs out there ("the" scores 7.7) and anything above it empties every
+  category. `config._SELECTION_BOUNDS` declares
+  each numeric setting's JSON type, minimum and maximum once, and both the
+  validator and `tools/check_schema.py` read it, so the schema is held to the
+  rule actually enforced rather than to a second copy of it. In `[palette]` a
   preset name and the arc's numbers are mutually exclusive, because a preset may
   hold two arcs and one arc's worth of keys cannot be layered over that. Presets
   are tuned on the dark ground, and `palette.with_wheel` shifts them for the
@@ -96,7 +124,14 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   editor validates the file as it is typed, and `wordchain.toml` names it again
   on its first line with `#:schema`, since an editor may never find
   `taplo.toml`. The schema owns the per-key descriptions and `wordchain.toml`
-  carries none, so a new setting is documented there and nowhere else.
+  carries none, so a new setting is documented there and nowhere else. The
+  check has a second job, holding `lexicon.members`'s keyword defaults to
+  `Selection`'s, since those are two copies of the same numbers; `multiword`
+  answers to `allow_multiword` there, and `limit` has no counterpart because
+  only `build` draws. It caught a real drift on its first run: `members` still
+  had `min_zipf=2.0` after the command line's default moved to 0.0.
+  `render.words_disc` takes `limit: int = DEFAULT_SELECTION.limit` and so
+  copies nothing.
 - `<hypernym-disc>` reads a tree as `par`, an array where every parent's index
   is below all of its children's. That ordering is the whole contract: it lets
   the element find depths, leaf counts and angles in flat loops instead of a

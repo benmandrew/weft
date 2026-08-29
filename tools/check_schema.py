@@ -12,6 +12,7 @@ Run it with `make check`, or `python tools/check_schema.py`.
 
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 from dataclasses import fields
@@ -19,7 +20,8 @@ from pathlib import Path
 from typing import Any
 
 # The private names are the point: the schema repeats what they hold.
-from wordchain.config import _TOP, _ZERO_OK, Geometry
+from wordchain.config import _FLAG, _SELECTION_BOUNDS, _TOP, _ZERO_OK, Geometry, Selection
+from wordchain.lexicon import members
 from wordchain.palette import DARK, PRESETS, THEMES, Arc
 
 SCHEMA = Path(__file__).resolve().parent.parent / "schemas" / "wordchain.schema.json"
@@ -86,6 +88,35 @@ def _geometry(report: Report, table: Table) -> None:
         _bounds(report, f"[geometry] {name}", prop, zero_ok=False, ceiling=None)
 
 
+def _selection(report: Report, table: Table) -> None:
+    """The word filters, whose bounds `config.py` declares rather than spells out.
+
+    `_SELECTION_BOUNDS` is what the validator enforces, so reading it here holds
+    the schema to the rule actually applied rather than to a second copy of it.
+    Every one of these allows its own minimum, so each carries `minimum` and
+    never `exclusiveMinimum`.
+    """
+    wanted = _defaults(Selection)
+    props = _properties(report, "[selection]", table, set(wanted))
+    for name, default in wanted.items():
+        prop = props.get(name)
+        if prop is None:
+            continue
+        where = f"[selection] {name}"
+        report.same(f"{where} default", prop.get("default"), default)
+        if name == _FLAG:
+            report.same(f"{where} type", prop.get("type"), "boolean")
+            continue
+        kind, low, high = _SELECTION_BOUNDS[name]
+        report.same(f"{where} type", prop.get("type"), kind)
+        report.same(f"{where} minimum", prop.get("minimum"), low)
+        report.check(
+            "exclusiveMinimum" not in prop,
+            f"{where}: has exclusiveMinimum as well as minimum",
+        )
+        report.same(f"{where} maximum", prop.get("maximum"), high)
+
+
 def _palette(report: Report, table: Table) -> None:
     wanted = _defaults(Arc)
     props = _properties(report, "[palette]", table, set(wanted) | {"preset"})
@@ -123,6 +154,31 @@ def _theme(report: Report, prop: Table) -> None:
     report.same("theme default", prop.get("default"), DARK.name)
 
 
+# `Selection` and `lexicon.members` state the same defaults, one for the file
+# and one as the library's own signature. `render.words_disc` takes its limit
+# from `Selection` and so copies nothing; `members` cannot, since its arguments
+# are its API. `allow_multiword` is the one that answers to a different name.
+_MEMBERS_NAMES = {"multiword": "allow_multiword"}
+
+
+def _library(report: Report) -> None:
+    """Hold `lexicon.members`'s defaults to the ones the file can move.
+
+    A `Selection` that has drifted from the signature it feeds is the same
+    failure the schema check exists for: two copies of a number, one of them
+    stale, and a config file that quietly changes what no flag admits to.
+    """
+    signature = inspect.signature(members)
+    for name, default in _defaults(Selection).items():
+        if name == "limit":
+            continue  # only `build` draws, so `members` never sees it
+        argument = signature.parameters.get(_MEMBERS_NAMES.get(name, name))
+        if argument is None:
+            report.fail(f"lexicon.members has no argument for [selection] {name}")
+            continue
+        report.same(f"lexicon.members {argument.name}", argument.default, default)
+
+
 def main() -> int:
     report = Report()
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
@@ -130,10 +186,13 @@ def main() -> int:
 
     if "geometry" in props:
         _geometry(report, props["geometry"])
+    if "selection" in props:
+        _selection(report, props["selection"])
     if "palette" in props:
         _palette(report, props["palette"])
     if "theme" in props:
         _theme(report, props["theme"])
+    _library(report)
 
     if report.problems:
         print(f"{SCHEMA.name} has drifted from config.py:", file=sys.stderr)

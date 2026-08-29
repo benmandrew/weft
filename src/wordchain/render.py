@@ -21,7 +21,7 @@ from matplotlib.patches import Circle, PathPatch
 from matplotlib.path import Path
 
 from . import palette
-from .config import DEFAULT, Geometry
+from .config import DEFAULT, DEFAULT_SELECTION, Geometry
 from .graph import LETTERS, letter_matrix, letter_stats, summary
 from .lexicon import Word
 from .palette import DARK, Theme
@@ -414,7 +414,7 @@ def words_disc(
     words: list[Word],
     out: FilePath,
     title: str,
-    limit: int = 110,
+    limit: int = DEFAULT_SELECTION.limit,
     theme: Theme = DARK,
     chrome: bool = False,
     geometry: Geometry = DEFAULT,

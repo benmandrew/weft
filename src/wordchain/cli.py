@@ -5,11 +5,14 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import TypeVar
 
 from .config import FILENAME, ConfigError, resolve
 from .graph import LETTERS, letter_stats, summary
 from .lexicon import CATEGORIES, UnknownCategory, Word, catalogue, members
 from .palette import DARK, THEMES, with_wheel
+
+T = TypeVar("T")
 
 
 def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> None:
@@ -18,58 +21,66 @@ def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> N
     parser.add_argument(
         "--min-zipf",
         type=float,
-        default=0.0,
         metavar="Z",
-        help="drop words rarer than this on wordfreq's Zipf scale (default 0.0, "
-        "which keeps every word wordfreq knows at all; 2.0 is about one "
-        "occurrence per ten million words); words wordfreq scores at zero are "
-        "dropped whatever this is set to",
+        help="drop words rarer than this on wordfreq's Zipf scale; overrides "
+        "[selection] min_zipf, which is 0.0 unless a file says otherwise, and "
+        "keeps every word wordfreq knows at all (2.0 is about one occurrence "
+        "per ten million words); words wordfreq scores at zero are dropped "
+        "whatever this is set to",
     )
     parser.add_argument(
         "--min-dominance",
         type=float,
-        default=0.2,
         metavar="D",
         help="for words WordNet has sense-tagged counts for, the share of uses "
-        "that must fall inside the category (default 0.2)",
+        "that must fall inside the category; overrides [selection] "
+        "min_dominance, which is 0.2 unless a file says otherwise",
     )
     parser.add_argument(
         "--max-rank",
         type=int,
-        default=2,
         metavar="N",
         help="for words with no counts, how far down the sense list the category "
-        "may sit (default 2)",
+        "may sit; overrides [selection] max_rank, which is 2 unless a file "
+        "says otherwise",
     )
     parser.add_argument(
         "--min-depth",
         type=int,
-        default=1,
         metavar="N",
-        help="hops below the category root a word must sit; 1 drops the category's "
-        "own name (default 1)",
+        help="hops below the category root a word must sit, where 1 drops the "
+        "category's own name; overrides [selection] min_depth, which is 1 "
+        "unless a file says otherwise",
     )
     parser.add_argument(
         "--target",
         type=int,
-        default=60,
         metavar="N",
-        help="relax --min-zipf until the category yields this many words "
-        "(default 60); inert at the default --min-zipf, which relaxes to "
-        "nothing, and it is categories with fewer common words that notice it",
+        help="relax --min-zipf until the category yields this many words; "
+        "overrides [selection] target, which is 60 unless a file says "
+        "otherwise, and is inert at the default --min-zipf, since there is "
+        "nothing below zero to relax to",
     )
     parser.add_argument(
         "--zipf-floor",
         type=float,
-        default=0.0,
         metavar="Z",
-        help="never relax past this, however few words a category has "
-        "(default 0.0, meaning any word wordfreq knows at all)",
+        help="never relax past this, however few words a category has; "
+        "overrides [selection] zipf_floor, which is 0.0 unless a file says "
+        "otherwise, meaning any word wordfreq knows at all",
     )
     parser.add_argument(
         "--multiword",
-        action="store_true",
-        help="keep entries like 'polar bear', chained on their outer letters",
+        action=argparse.BooleanOptionalAction,
+        help="keep entries like 'polar bear', chained on their outer letters; "
+        "overrides [selection] multiword, which is off unless a file says "
+        "otherwise, and --no-multiword turns a file's own back off",
+    )
+    parser.add_argument(
+        "--config",
+        metavar="FILE",
+        help=f"TOML file of settings; without it, ./{FILENAME} is used when it "
+        "exists and the built-in defaults otherwise",
     )
     parser.add_argument(
         "--no-cache",
@@ -78,22 +89,33 @@ def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> N
     )
 
 
+def _chosen(flag: T | None, fallback: T) -> T:
+    """The flag if it was given, the file's setting otherwise.
+
+    Every selection flag defaults to None rather than to its value, since a
+    `--target 60` typed out and no `--target` at all have to reach a file that
+    sets it differently as different things.
+    """
+    return fallback if flag is None else flag
+
+
 def _load_named(args: argparse.Namespace, category: str) -> list[Word]:
     args.category = category
     return _load(args)
 
 
 def _load(args: argparse.Namespace) -> list[Word]:
+    chosen = args.settings.selection
     try:
         return members(
             args.category,
-            min_zipf=args.min_zipf,
-            min_dominance=args.min_dominance,
-            max_rank=args.max_rank,
-            min_depth=args.min_depth,
-            allow_multiword=args.multiword,
-            target=args.target,
-            zipf_floor=args.zipf_floor,
+            min_zipf=_chosen(args.min_zipf, chosen.min_zipf),
+            min_dominance=_chosen(args.min_dominance, chosen.min_dominance),
+            max_rank=_chosen(args.max_rank, chosen.max_rank),
+            min_depth=_chosen(args.min_depth, chosen.min_depth),
+            allow_multiword=_chosen(args.multiword, chosen.multiword),
+            target=_chosen(args.target, chosen.target),
+            zipf_floor=_chosen(args.zipf_floor, chosen.zipf_floor),
             cache=not args.no_cache,
         )
     except UnknownCategory:
@@ -172,10 +194,7 @@ def _cmd_build(args: argparse.Namespace) -> None:
     # so `stats`, `words` and `categories` should never pay for it.
     from . import render
 
-    try:
-        config = resolve(args.config)
-    except ConfigError as err:
-        sys.exit(str(err))
+    config = args.settings
 
     # A [palette] table replaces the wheel the theme brought; without one the
     # theme's own stands, so a file that only sets geometry changes no colour.
@@ -197,7 +216,7 @@ def _cmd_build(args: argparse.Namespace) -> None:
         words,
         target,
         f"{name} — the word graph",
-        limit=args.limit,
+        limit=_chosen(args.limit, config.selection.limit),
         theme=theme,
         chrome=args.chrome,
         geometry=config.geometry,
@@ -249,15 +268,19 @@ def main(argv: list[str] | None = None) -> None:
         "is dark unless a file says otherwise",
     )
     build.add_argument(
-        "--limit", type=int, default=110, metavar="N", help="words in the disc (default 110)"
-    )
-    build.add_argument(
-        "--config",
-        metavar="FILE",
-        help=f"TOML file of disc geometry; without it, ./{FILENAME} is used when "
-        "it exists and the built-in defaults otherwise",
+        "--limit",
+        type=int,
+        metavar="N",
+        help="words in the disc; overrides [selection] limit, which is 110 "
+        "unless a file says otherwise",
     )
     build.set_defaults(func=_cmd_build)
 
     args = parser.parse_args(argv)
+    # Read once here rather than in each command: `categories` loads all 37
+    # word lists, and a file parsed per category would be parsed 37 times.
+    try:
+        args.settings = resolve(args.config)
+    except ConfigError as err:
+        sys.exit(str(err))
     args.func(args)

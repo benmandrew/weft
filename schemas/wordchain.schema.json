@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/benmandrew/wordchain/main/schemas/wordchain.schema.json",
   "title": "wordchain",
-  "description": "Everything wordchain.toml may say about the disc: the ground it draws on, the eight distances that place things, and the wheel that maps 26 letters to 26 hues. Every key is optional and anything left out keeps its default. Kept in step with src/wordchain/config.py by tools/check_schema.py.",
+  "description": "Everything wordchain.toml may say about the disc: the ground it draws on, the eight distances that place things, the wheel that maps 26 letters to 26 hues, and which words it draws. Every key is optional and anything left out keeps its default. Kept in step with src/wordchain/config.py by tools/check_schema.py.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -10,7 +10,10 @@
       "description": "The ground the figure draws on. The two are complete palettes rather than one inverted, and `build --theme` overrides this.",
       "type": "string",
       "default": "dark",
-      "enum": ["dark", "light"],
+      "enum": [
+        "dark",
+        "light"
+      ],
       "x-taplo": {
         "docs": {
           "enumValues": [
@@ -75,6 +78,63 @@
         }
       }
     },
+    "selection": {
+      "description": "Which words a category yields, and how many of them the disc draws. Every command reads this table, not just build, so the count categories prints is the list stats analyses and build draws from. Each setting has a flag that overrides it for one run.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min_zipf": {
+          "description": "Words rarer than this on wordfreq's Zipf scale are dropped, where 2.0 is about one occurrence per ten million words. Zero, the default, keeps every word wordfreq knows at all: the list is already ordered by frequency and the disc draws the commonest `limit` of them, so the order is a better instrument than a cut. A word wordfreq scores at exactly zero is dropped whatever this says, as the line between WordNet's vocabulary and its taxonomy. `build --min-zipf` overrides this.",
+          "type": "number",
+          "default": 0.0,
+          "minimum": 0,
+          "maximum": 8
+        },
+        "min_dominance": {
+          "description": "For a word WordNet has sense-tagged counts for, the share of its noun uses that must fall inside the category. It is what keeps a sense of \"world\" out of the animals. Raise it to tighten a category, rather than adding a stop-list. `build --min-dominance` overrides this.",
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_rank": {
+          "description": "For a word with no sense-tagged counts, how far down WordNet's sense list the category may sit. WordNet lists senses commonest first, so a category sense buried at position seven is not the everyday meaning. `build --max-rank` overrides this.",
+          "type": "integer",
+          "default": 2,
+          "minimum": 0
+        },
+        "min_depth": {
+          "description": "Hops below the category root a word must sit. One, the default, drops the root's own lemmas, which are the category's name: \"animal\" is not a playable answer in a game of animals. `build --min-depth` overrides this.",
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
+        "target": {
+          "description": "A category yielding fewer than this many words relaxes min_zipf down its own frequency order until it has them, stopping at zipf_floor. It is inert at the default min_zipf, which has nothing below it to relax to, and it is what stops a raised min_zipf gutting the rare categories. `build --target` overrides this.",
+          "type": "integer",
+          "default": 60,
+          "minimum": 0
+        },
+        "zipf_floor": {
+          "description": "However few words a category has, the sliding relaxation never goes below this. Zero, the default, means any word wordfreq knows at all. `build --zipf-floor` overrides this.",
+          "type": "number",
+          "default": 0.0,
+          "minimum": 0,
+          "maximum": 8
+        },
+        "multiword": {
+          "description": "Whether an entry like \"polar bear\" counts as a word, chained on its outer letters. Plant names are longer than animal names as a class, so this decides far more for some categories than for others. `build --multiword` and `--no-multiword` override this.",
+          "type": "boolean",
+          "default": false
+        },
+        "limit": {
+          "description": "Words in the disc, commonest first. Only build reads it, and a category holding more than this keeps the rest for `words` and `stats` to count. `build --limit` overrides this.",
+          "type": "integer",
+          "default": 110,
+          "minimum": 1
+        }
+      }
+    },
     "palette": {
       "description": "The wheel that maps 26 letters to 26 hues. Leave the whole table out and the theme keeps its own. Name a preset, or give the numbers for a single arc, and never both: a preset can hold two arcs, as duotone does, so there is no honest way to layer one arc's worth of keys over it.",
       "type": "object",
@@ -83,7 +143,13 @@
         "preset": {
           "description": "A named wheel, and the shorter of the two ways to set one: naming a preset is one string edit where the arc below is five. spectrum is what the theme brings on its own, so naming it changes nothing. Every preset is tuned against the dark ground; on the light one the same wheel is drawn with saturation up 0.07 and value down 0.28.",
           "type": "string",
-          "enum": ["duotone", "ember", "even", "spectrum", "tide"],
+          "enum": [
+            "duotone",
+            "ember",
+            "even",
+            "spectrum",
+            "tide"
+          ],
           "x-taplo": {
             "docs": {
               "enumValues": [
@@ -135,7 +201,11 @@
       "allOf": [
         {
           "$comment": "A preset and the arc's own numbers are mutually exclusive. Forbidding each key in turn, rather than negating the whole table, is what makes an editor underline the offending line instead of printing the clause back at you.",
-          "if": { "required": ["preset"] },
+          "if": {
+            "required": [
+              "preset"
+            ]
+          },
           "then": {
             "properties": {
               "hue_start": false,

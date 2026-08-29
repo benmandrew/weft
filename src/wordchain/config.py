@@ -1,4 +1,4 @@
-"""The disc's geometry and its colour wheel, as dataclasses and as a TOML file.
+"""The disc's settings, as dataclasses and as a TOML file.
 
 Eight numbers decide where the word disc puts things, and the good value for
 each depends on the category: 895 animals and 60 flowers do not want the same
@@ -8,6 +8,11 @@ frozen `Geometry` that a figure takes the way it already takes a `Theme`.
 
 The wheel that maps 26 letters to 26 hues went the same way. `[palette]` either
 names one of the presets in `palette.py` or gives the numbers for a single arc.
+
+`[selection]` is the third table, and it holds the command line's own defaults:
+which words a category yields and how many of them the disc draws. A flag beats
+the file for one run, and every command reads the table rather than `build`
+alone, so the count `categories` prints stays the list `stats` analyses.
 """
 
 from __future__ import annotations
@@ -66,11 +71,52 @@ DEFAULT = Geometry()
 
 
 @dataclass(frozen=True)
+class Selection:
+    """Which words a category yields, and how many of them the disc draws.
+
+    These are the command line's own defaults, held here so a file can move
+    them. Every command reads them, not just `build`: `categories` prints the
+    count `stats` analyses and `build` draws from, and a table only `build`
+    honoured would put the three out of step.
+    """
+
+    # Words rarer than this on wordfreq's Zipf scale are dropped. Zero keeps
+    # every word wordfreq knows at all, which is the line WordNet's taxonomy
+    # sits below rather than a tuned threshold.
+    min_zipf: float = 0.0
+
+    # Where a word has sense-tagged counts, the share of its uses that must fall
+    # inside the category; where it has none, how far down the sense list the
+    # category may sit.
+    min_dominance: float = 0.2
+    max_rank: int = 2
+
+    # Hops below the category root a word must sit. One drops the root's own
+    # lemmas, which are the category's name.
+    min_depth: int = 1
+
+    # A category yielding fewer than `target` words relaxes min_zipf down its
+    # own frequency order, never past `zipf_floor`.
+    target: int = 60
+    zipf_floor: float = 0.0
+
+    # Whether "polar bear" is a word, chained on its outer letters.
+    multiword: bool = False
+
+    # Words in the disc, commonest first. Only `build` reads it.
+    limit: int = 110
+
+
+DEFAULT_SELECTION = Selection()
+
+
+@dataclass(frozen=True)
 class Config:
     """What a file says. A wheel of None leaves the theme's own alone, and a
     theme of None leaves the command line's own."""
 
     geometry: Geometry = DEFAULT
+    selection: Selection = DEFAULT_SELECTION
     wheel: Wheel | None = None
     theme: str | None = None
 
@@ -80,8 +126,9 @@ FILENAME = "wordchain.toml"
 
 _GEOMETRY = "geometry"
 _PALETTE = "palette"
+_SELECTION = "selection"
 _THEME = "theme"
-_TABLES = (_GEOMETRY, _PALETTE)
+_TABLES = (_GEOMETRY, _PALETTE, _SELECTION)
 # `theme` names a ground rather than a group of distances, so it is a bare key
 # beside the two tables rather than a lone member of a third.
 _TOP = (_THEME, *_TABLES)
@@ -89,6 +136,28 @@ _TOP = (_THEME, *_TABLES)
 # `hue_start` of 0 is the top of the circle and `equalise` of 0 is no
 # correction, so unlike every other setting these two mean something at zero.
 _ZERO_OK = frozenset({"hue_start", "equalise"})
+
+# Every numeric `[selection]` setting, as the JSON type it takes, the lowest
+# value it allows and the highest if it has one. The validator below reads this
+# and so does `tools/check_schema.py`, which is what stops the schema's bounds
+# drifting from the ones actually enforced. Unlike `[geometry]`, each of these
+# allows its own minimum: a `min_zipf` of 0 is the whole vocabulary, a
+# `min_dominance` of 0 asks nothing of a word's senses, and a `target` of 0
+# relaxes nothing. `limit` is the exception and starts at 1, since a disc of no
+# words is a blank page. The Zipf ceiling is 8 because the scale runs out there —
+# "the" scores 7.7 — so anything above it empties every category.
+_SELECTION_BOUNDS: dict[str, tuple[str, float, float | None]] = {
+    "min_zipf": ("number", 0.0, 8.0),
+    "min_dominance": ("number", 0.0, 1.0),
+    "max_rank": ("integer", 0, None),
+    "min_depth": ("integer", 0, None),
+    "target": ("integer", 0, None),
+    "zipf_floor": ("number", 0.0, 8.0),
+    "limit": ("integer", 1, None),
+}
+
+# The one setting in the table that is a state rather than a quantity.
+_FLAG = "multiword"
 
 
 def _names(kind: type) -> list[str]:
@@ -134,6 +203,41 @@ def _fraction(key: str, value: object) -> float:
         wants = "0 and 1" if zero_ok else "0 and 1, and above 0"
         raise ConfigError(f"[{_PALETTE}] {key} must be between {wants}, not {value}")
     return number
+
+
+def _setting(key: str, value: object) -> float | int:
+    """One numeric `[selection]` setting, against the bounds declared above."""
+    kind, low, high = _SELECTION_BOUNDS[key]
+    if kind == "integer":
+        # A count of senses or of words. bool is an int subclass, and
+        # `max_rank = true` is a mistake rather than a 1.
+        if isinstance(value, bool) or not isinstance(value, int):
+            got = type(value).__name__
+            raise ConfigError(f"[{_SELECTION}] {key} must be a whole number, not a {got}")
+        number: float = value
+    else:
+        number = _float(_SELECTION, key, value)
+    if number < low or (high is not None and number > high):
+        wants = f"between {low} and {high}" if high is not None else f"{low} or more"
+        raise ConfigError(f"[{_SELECTION}] {key} must be {wants}, not {value}")
+    return int(number) if kind == "integer" else number
+
+
+def _flag(key: str, value: object) -> bool:
+    if not isinstance(value, bool):
+        got = type(value).__name__
+        raise ConfigError(f"[{_SELECTION}] {key} must be true or false, not a {got}")
+    return value
+
+
+def _selection(table: dict[str, object]) -> Selection:
+    valid = _names(Selection)
+    values: dict[str, object] = {}
+    for key, value in table.items():
+        if key not in valid:
+            raise ConfigError(f"[{_SELECTION}] has no setting called {key}{_suggest(key, valid)}")
+        values[key] = _flag(key, value) if key == _FLAG else _setting(key, value)
+    return Selection(**values)  # type: ignore[arg-type]
 
 
 def _theme(value: object) -> str:
@@ -199,7 +303,8 @@ def from_mapping(data: dict[str, object]) -> Config:
     """
     unknown = sorted(set(data) - set(_TOP))
     if unknown:
-        held = f"{_THEME}, " + " and ".join(f"[{name}]" for name in _TABLES)
+        tables = [f"[{name}]" for name in _TABLES]
+        held = ", ".join([_THEME, *tables[:-1]]) + f" and {tables[-1]}"
         raise ConfigError(f"unknown setting: {unknown[0]}; the file holds {held}")
 
     for name in _TABLES:
@@ -207,15 +312,21 @@ def from_mapping(data: dict[str, object]) -> Config:
             raise ConfigError(f"[{name}] must be a table")
 
     geometry = _geometry(data.get(_GEOMETRY, {}))  # type: ignore[arg-type]
+    selection = _selection(data.get(_SELECTION, {}))  # type: ignore[arg-type]
     palette = data.get(_PALETTE)
     theme = _theme(data[_THEME]) if _THEME in data else None
-    return Config(geometry, _wheel(palette) if isinstance(palette, dict) else None, theme)
+    return Config(
+        geometry=geometry,
+        selection=selection,
+        wheel=_wheel(palette) if isinstance(palette, dict) else None,
+        theme=theme,
+    )
 
 
 def load(path: Path) -> Config:
     """Read one TOML file. Every error carries the path, since a build names none."""
-    # tomllib is 5 ms to import and only `build` reads a config, so it stays
-    # here rather than at module load, for the same reason nltk does.
+    # tomllib is 5 ms to import and a checkout may have no file at all, so it
+    # stays here rather than at module load, for the same reason nltk does.
     import tomllib
 
     try:
@@ -236,6 +347,10 @@ def resolve(explicit: str | None, root: Path | None = None) -> Config:
     A named file has to exist, because a `--config` that silently falls back to
     the defaults is a typo that costs a render to notice. The one found by
     looking does not, since a checkout without one still has to draw.
+
+    Every command calls this, not just `build`, since `[selection]` decides the
+    word list that `categories` counts and `stats` analyses as much as the one
+    `build` draws.
     """
     if explicit is not None:
         return load(Path(explicit))
