@@ -456,7 +456,18 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `translate_path` looks a top-level name that is not in `web/` up in `out/`
   before giving up, which is what lets that one page run unchanged under `make
   serve` as well as out of the dist directory rather than carrying two sets of
-  paths. The Makefile names the page in `EMBED`
+  paths. Its `Server`, a subclass of `ThreadingHTTPServer`, returns from
+  `handle_error` for `BrokenPipeError` and `ConnectionResetError` and defers to
+  the base class for everything else: a reload makes the browser abandon the
+  sockets it has open, and the reset surfaces in `handle_one_request` reading the
+  request line, outside any handler code the file owns, so socketserver printed a
+  full traceback for the normal end of a connection and saving a file wrote a
+  stack trace into the terminal the watcher reports into, which is the one place
+  a real error has to be legible. `_stream` already swallowed the same two for
+  the reload channel; this is that rule applied where the read happens between
+  requests rather than inside one. A socket opened and abandoned with
+  `SO_LINGER 0` writes the traceback on the unpatched server and nothing on the
+  patched one, which goes on serving. The Makefile names the page in `EMBED`
   beside `MODULES`, so `$(DIST)` takes it as a prerequisite and copies it. The
   directory is emptied and refilled rather than copied into, and `web/.` is a
   prerequisite alongside the modules, because a directory's timestamp moves

@@ -29,6 +29,7 @@ import argparse
 import functools
 import http.server
 import posixpath
+import sys
 import threading
 import time
 import urllib.parse
@@ -182,6 +183,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         print(f"  {line}", flush=True)
 
 
+class Server(http.server.ThreadingHTTPServer):
+    """Quiet about a browser hanging up, loud about everything else.
+
+    A reload closes every socket the old page held, and a keep-alive one is
+    usually mid-read when that happens: the reset surfaces in
+    `handle_one_request`, outside any handler code this file owns, so
+    socketserver prints the whole traceback for something that is the normal
+    end of a connection. Saving a file therefore wrote a stack trace to the
+    terminal the watcher is reporting into, which is the one place a real error
+    has to be legible. `_stream` already swallows the same two exceptions for
+    the reload channel, and this is that rule applied where the read happens
+    between requests rather than inside one.
+    """
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        if isinstance(sys.exception(), (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 # What a harness needs to draw anything, and so what the watcher follows and
 # the run refuses to start without. The glosses are left out of both: the disc
 # is unaffected by their absence, and a page says so itself.
@@ -222,7 +243,7 @@ def main() -> int:
     Handler.watcher = watcher
     Handler.inject = not args.no_reload
     url = f"http://{args.host}:{args.port}/"
-    with http.server.ThreadingHTTPServer((args.host, args.port), handler) as server:
+    with Server((args.host, args.port), handler) as server:
         print(f"serving {WEB.relative_to(ROOT)}/ at {url}")
         print(f"watching {', '.join(str(p.relative_to(ROOT)) for p in watcher.roots)}")
         print("ctrl-c to stop")
