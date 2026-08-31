@@ -462,6 +462,29 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   rather than as a picture. Where the labels go, the hub names what the pointer
   is on and the search box reaches a word by name, so the disc is still played
   the same way.
+- Every word that could be played next is listed in the column beside the disc,
+  under the search box, where nothing was drawn before. The suggestions only
+  take that room while the box has something in it, and that is the rule between
+  the two: suggestions while you are typing, moves otherwise. `byHead` holds a
+  wedge commonest first, so the list is already in the order the disc drew it and
+  nothing is sorted. A word already played leaves the list and comes back when
+  play is wound off it, since `Chain.legal` is what fills it, the same method the
+  disc paints from. Hovering an entry is hovering its dot and clicking one is
+  clicking it, both through `#preview` and `play`, so the column and the disc
+  cannot describe different things. It earns its room where the disc cannot
+  label itself: uncapped, the 7 largest categories drop their labels, and the
+  column is then the only place the moves can be read rather than found among the
+  dots. It is also where it overflows. Animal's median word offers 60 replies and
+  its worst 187, against the 15 to 31 rows a column holds one up, so the list
+  runs two up and commonest first, and what scrolls out of sight is the tail
+  nobody reaches for. `MOVES_CAP` is 300 and truncates one thing only, the list
+  before the first move, which is the whole category rather than a set of replies
+  to anything. No wedge any of the 37 categories has comes near it, the largest
+  measured being animal's 187, and what is cut says how much rather than stopping
+  without a word. Landscape only, like the readout's placement: the stacked
+  layout has no column, and there the suggestions are a dropdown over the disc.
+  Nothing is built in that shape, since it would be several hundred elements
+  behind `display:none`.
 - `word-layout.js` is that figure's layout written a second time, so the browser
   and the SVG put the same word at the same angle: the same 3.5 degree gap, the
   same wedge order, the same `_fan_key`. `check_web.mjs` holds it to the Python's

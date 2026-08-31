@@ -93,8 +93,13 @@ class El {
     this._attr.delete(n);
   }
   scrollIntoView() {}
+  get childElementCount() {
+    return this.children.length;
+  }
+  // Settable, so a test can make the frame landscape and put the element
+  // through the shape it only takes beside a column.
   getBoundingClientRect() {
-    return { width: BOX, height: BOX };
+    return this._rect ?? { width: BOX, height: BOX };
   }
   querySelector(sel) {
     const want = sel.replace(".", "");
@@ -162,7 +167,9 @@ class Canvas extends El {
 const fragment = () => {
   const frame = new El("div", "frame");
   const find = new El("div", "find");
-  find.append(new El("input", "q"), new El("ul", "hits"));
+  const moves = new El("div", "moves");
+  moves.append(new El("div", "why"), new El("ul", "list"));
+  find.append(new El("input", "q"), new El("ul", "hits"), moves);
   const stage = new El("div", "stage");
   stage.append(new Canvas(), new Canvas());
   stage.children[0].className = "base";
@@ -738,12 +745,20 @@ const fire = (el, type, ev) => {
 
 const disc = new WordDisc();
 disc.connectedCallback();
+// Landscape and fitted, which is the only shape that has a column beside the
+// disc, so the moves list below is built rather than skipped. The stage's own
+// box is untouched, so every measurement above still holds.
+disc.setAttribute("fit", "");
+disc._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
 disc.data = { category: "test", words: WORDS, zipf: WORDS.map((_, i) => 8 - i) };
 
 const shadow = disc._shadow;
 const over = shadow.querySelector(".over");
 const gloss = shadow.querySelector(".gloss");
 const line = shadow.querySelector(".crumb").querySelector(".head");
+const moves = shadow.querySelector(".moves");
+const list = moves.querySelector(".list");
+const why = () => [...moves.querySelector(".why").children].map(c => c.textContent).join("");
 
 check(disc.words.join("|") === WORDS.join("|"), `the element drew ${disc.words}`);
 /* No attribute is every word the category has, not a cut at some count of
@@ -830,6 +845,46 @@ check(
 );
 check(!line.innerHTML.includes("warn"), "a step in the chain line was marked a repeat");
 
+/* The moves column: every word that could be played next, in the room the
+   search box leaves empty. `byHead` holds a wedge commonest first, so the list
+   comes out in the order the disc drew it and no sort is needed. */
+const listed = () => [...list.children].map(li => li.textContent);
+disc.clear();
+check(
+  listed().join("|") === WORDS.join("|"),
+  `before the first move the column is not the category: ${listed()}`,
+);
+check(why().includes("any one opens"), `an empty chain read as ${why()}`);
+
+point("cat");
+check(listed().join("|") === "tiger|toad|tuna|trout", `after cat the column held ${listed()}`);
+check(why() === "must start with T", `after cat the column said ${why()}`);
+/* A word already played is not a move, so it leaves the column when it is
+   played and comes back when play is wound off it. */
+point("tiger");
+check(!listed().includes("tiger"), `a played word stayed in the column: ${listed()}`);
+check(listed().join("|") === "rat", `after tiger the column held ${listed()}`);
+point("rat");
+check(listed().join("|") === "toad|tuna|trout", `after rat the column held ${listed()}`);
+disc.rewind(1);
+check(listed().includes("tiger"), `winding back did not put tiger back: ${listed()}`);
+
+/* A wedge run dry says so rather than emptying without a word. */
+disc.clear();
+point("emu");
+check(listed().length === 0, `a dead end listed ${listed()}`);
+check(why().includes("nothing left starting with U"), `a dead end read as ${why()}`);
+
+/* The suggestions and the moves want the same column, so the box owning
+   something takes it. */
+disc.clear();
+disc._shadow.querySelector(".q").value = "ca";
+fire(shadow.querySelector(".q"), "input", {});
+check(moves.hidden === true, "the moves column stayed under the suggestions");
+fire(shadow.querySelector(".q"), "keydown", { key: "Escape", preventDefault() {} });
+fire(shadow.querySelector(".q"), "keydown", { key: "Escape", preventDefault() {} });
+check(moves.hidden === false, "the moves column did not come back");
+
 /* The crumb path's root, which is the only way back to a different first word:
    a one-step chain renders its one step as the name you are at rather than as
    a button, so without a root there is nothing before it to click. The markup
@@ -899,6 +954,18 @@ const CROWD = Array.from(
 );
 disc.data = { category: "crowd", words: CROWD, zipf: CROWD.map((_, i) => -i) };
 check(disc.stats.words === CROWD.length, `the default drew ${disc.stats.words} of ${CROWD.length}`);
+/* The column is capped, and 900 words with nothing played is the only thing
+   that reaches the cap: no wedge any category has comes near it, so a set of
+   replies is never the thing truncated. What is cut says so rather than
+   stopping without a word. */
+check(
+  list.children.length === 301,
+  `900 words listed ${list.children.length}, not the cap and a line saying what is left`,
+);
+check(
+  list.children.at(-1).textContent === "and 600 more",
+  `the cut read as ${list.children.at(-1).textContent}`,
+);
 disc.setAttribute("limit", "0");
 disc.attributeChangedCallback("limit", null, "0");
 check(disc.stats.words === CROWD.length, `limit 0 drew ${disc.stats.words} of ${CROWD.length}`);

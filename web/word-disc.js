@@ -27,6 +27,11 @@
  * word-layout.js is the placement, word-chain.js the rule, and neither touches
  * the DOM, so tools/check_web.mjs runs both without a browser.
  *
+ * Beside the disc, where the frame is wide enough for a column, every word
+ * that could be played next is listed under the search box. It is where the
+ * moves can be read rather than found among the dots, which is what the larger
+ * categories need now that they are drawn unlabelled.
+ *
  * Attributes: src, limit (0, every word the category has; a count caps it),
  *             readout="off", search="off", fit
  * Properties: data, words, chain, stats. Methods: play(i), undo(), rewind(k),
@@ -76,6 +81,11 @@ const HALO = 0.3,
 const ASIDE_MIN = 200,
   ASIDE_GAP = 18;
 const RESIZE_HOLD = 60;
+// How many moves the column lists. Every move set the 37 categories can offer
+// fits inside it — the largest measured is animal's 187 — so the cap only ever
+// truncates the list before the first move, which is the whole category rather
+// than a set of replies to anything.
+const MOVES_CAP = 300;
 
 // The wedge letter that sits outside the labels. Every other distance the disc
 // needs is solved in word-layout.js, where it can be checked without a canvas.
@@ -154,6 +164,32 @@ TPL.innerHTML = `
   .hits li.no .n{color:var(--_muted)}
   /* A word already used reads on the list as it does on the disc. */
   .hits li.used .n{color:var(--_warn)}
+  /* Every word that could be played next, in the column the search box
+     otherwise leaves empty. Landscape only: the stacked layout has no column,
+     and there the suggestions are a dropdown over the disc.
+
+     It earns its room where the disc cannot label itself. Uncapped, the 7
+     largest categories drop their labels, so this is the only place the moves
+     can be read rather than hunted for among the dots — and it is also where
+     it overflows, since animal's median word offers 60 replies and its worst
+     187 against the 15 to 31 rows a column holds one-up. Two up and ordered
+     commonest first, so what overflows is the tail nobody reaches for. */
+  .moves{display:none}
+  :host([fit]) .frame.wide .moves{display:flex;flex-direction:column;
+    flex:1 1 auto;min-height:0;margin-top:9px}
+  :host([fit]) .frame.wide .moves[hidden]{display:none}
+  .moves .why{font-family:var(--_mono);font-size:10.5px;color:var(--_muted);
+    flex:none;padding-bottom:5px}
+  .moves .why b{color:var(--_accent);font-weight:600}
+  .moves .list{margin:0;padding:0;list-style:none;flex:1 1 auto;min-height:0;
+    overflow-y:auto;scrollbar-width:thin;
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    column-gap:8px;align-content:start}
+  .moves li{font-size:12.5px;padding:2px 5px;border-radius:2px;cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .moves li:hover{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
+  .moves .rest{grid-column:1/-1;font-family:var(--_mono);font-size:10.5px;
+    color:var(--_muted);padding:4px 5px 0}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   /* The arrow is the resting state and #onMove lifts it to a pointer over
@@ -207,6 +243,7 @@ TPL.innerHTML = `
            spellcheck="false" aria-controls="hits" aria-expanded="false"
            aria-autocomplete="list" placeholder="Waiting for words…" disabled>
     <ul class="hits" id="hits" role="listbox" hidden></ul>
+    <div class="moves"><div class="why"></div><ul class="list"></ul></div>
   </div>
   <div class="stage">
     <canvas class="base" aria-hidden="true"></canvas>
@@ -229,6 +266,9 @@ class WordDisc extends HTMLElement {
   #frame;
   #q;
   #hits;
+  #movesEl;
+  #whyEl;
+  #listEl;
   #ro;
   #mq;
 
@@ -296,6 +336,9 @@ class WordDisc extends HTMLElement {
     this.#frame = this.#sr.querySelector(".frame");
     this.#q = this.#sr.querySelector(".q");
     this.#hits = this.#sr.querySelector(".hits");
+    this.#movesEl = this.#sr.querySelector(".moves");
+    this.#whyEl = this.#movesEl.querySelector(".why");
+    this.#listEl = this.#movesEl.querySelector(".list");
   }
 
   connectedCallback() {
@@ -317,6 +360,19 @@ class WordDisc extends HTMLElement {
     this.#hits.addEventListener("click", e => {
       const li = e.target.closest("li");
       if (li) this.#go(this.#sug[+li.dataset.k].i);
+    });
+    // The list does exactly what the disc does: hovering an entry is hovering
+    // its dot, and clicking one is clicking it. Delegated, since the list is
+    // rebuilt on every move.
+    this.#listEl.addEventListener("pointermove", e => {
+      const li = e.target.closest("li[data-i]");
+      const i = li ? +li.dataset.i : -1;
+      if (i !== this.#hover) this.#preview(i);
+    });
+    this.#listEl.addEventListener("pointerleave", () => this.#preview(-1));
+    this.#listEl.addEventListener("click", e => {
+      const li = e.target.closest("li[data-i]");
+      if (li) this.play(+li.dataset.i);
     });
     this.#ro = new ResizeObserver(() => this.#fit());
     this.#ro.observe(this.#sr.querySelector(".stage"));
@@ -429,6 +485,7 @@ class WordDisc extends HTMLElement {
     this.#turn = turns(this.#L);
 
     this.#crumbs();
+    this.#showMoves();
     if (this.#pw) {
       this.#measure();
       this.#geometry();
@@ -442,6 +499,9 @@ class WordDisc extends HTMLElement {
     const want = this.hasAttribute("fit") && f.width - f.height >= ASIDE_MIN + ASIDE_GAP;
     if (want === this.#frame.classList.contains("wide")) return false;
     this.#frame.classList.toggle("wide", want);
+    // Built on the way in and dropped on the way out, since it exists only
+    // here and #showMoves is what decides that.
+    if (this.#ready) this.#showMoves();
     return true;
   }
 
@@ -966,6 +1026,7 @@ class WordDisc extends HTMLElement {
       }),
     );
     this.#hits.hidden = this.#sug.length === 0;
+    this.#movesEl.hidden = this.#sug.length > 0;
     this.#q.setAttribute("aria-expanded", String(this.#sug.length > 0));
   }
 
@@ -989,6 +1050,7 @@ class WordDisc extends HTMLElement {
     this.#pick = -1;
     this.#hits.replaceChildren();
     this.#hits.hidden = true;
+    this.#movesEl.hidden = false;
     this.#q.setAttribute("aria-expanded", "false");
     this.#q.removeAttribute("aria-activedescendant");
   };
@@ -1032,6 +1094,7 @@ class WordDisc extends HTMLElement {
     this.#draw();
     this.#crumbs();
     this.#overlay();
+    this.#showMoves();
     this.#showCursor();
     this.#emit("word-chain", {
       chain: this.chain,
@@ -1089,6 +1152,53 @@ class WordDisc extends HTMLElement {
           `${String.fromCharCode(65 + this.#chain.letter)}</span>`,
       );
     this.#glossEl.innerHTML = parts.join(" · ");
+  }
+
+  /* Every word that could be played next, listed in the column beside the
+     disc. `byHead` holds a wedge commonest first, so the list is already in
+     the order the disc drew it and the tail is what scrolls out of sight.
+
+     Before the first move every word is a move, so the list is the category:
+     that is the one case the cap truncates, and the only one, since no wedge
+     any category has reaches it. Rendered as nodes rather than as markup
+     because a word is a word and building the list out of a string would
+     invite the one bug that has no visible symptom.
+
+     Only the landscape layout has room for it, so nothing is built otherwise
+     — on a phone this would be several hundred elements behind display:none. */
+  #showMoves() {
+    if (!this.#ready) return;
+    if (!this.#frame.classList.contains("wide")) {
+      if (this.#listEl.childElementCount) this.#listEl.replaceChildren();
+      return;
+    }
+    const letter = this.#chain.letter;
+    const all = [];
+    if (letter < 0) for (let i = 0; i < this.#words.length; i++) all.push(i);
+    else for (const j of this.#L.byHead[letter]) if (this.#chain.legal(j)) all.push(j);
+
+    const lead = document.createElement("span");
+    const key = document.createElement("b");
+    if (letter < 0) lead.textContent = `${all.length} words · any one opens`;
+    else {
+      key.textContent = String.fromCharCode(65 + letter);
+      lead.textContent = all.length ? "must start with " : "nothing left starting with ";
+    }
+    this.#whyEl.replaceChildren(lead, key);
+
+    const rows = all.slice(0, MOVES_CAP).map(i => {
+      const li = document.createElement("li");
+      li.dataset.i = i;
+      li.textContent = this.#words[i];
+      return li;
+    });
+    if (all.length > rows.length) {
+      const rest = document.createElement("li");
+      rest.className = "rest";
+      rest.textContent = `and ${all.length - rows.length} more`;
+      rows.push(rest);
+    }
+    this.#listEl.replaceChildren(...rows);
   }
 
   /* The chain, each step a button that winds play back to just after it, and
