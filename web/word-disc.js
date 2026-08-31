@@ -55,7 +55,8 @@
  *          --disc-warn --disc-sat --disc-val --disc-font --disc-mono
  */
 import { hsv, TAU } from "./disc-colour.js";
-import { fit } from "./disc-label.js";
+import { href, label as catLabel } from "./disc-index.js";
+import { band, baseline, fit, halo, HALO, HALO_MIN, HUB_DROP } from "./disc-label.js";
 import { ratio } from "./disc-ratio.js";
 import { Search } from "./disc-search.js";
 import { Chain } from "./word-chain.js";
@@ -91,41 +92,16 @@ const HINT_PX = 11,
 // anything degrades rather than clips.
 const HUB_SIZES = [16, 14, 12, 10, 8],
   HUB_WEIGHT = 700;
-// The halo under the hub's text, as a fraction of the type size and never
-// thinner than this. It is what replaces the panel: 100 to 280 of a category's
-// chords pass inside the hub's radius — element is the worst — so the name has
-// to clear its own ground, but only its own. A disc large enough to hold it
-// took the middle of the figure out with it.
+// The halo, the reference band and the baseline arithmetic are disc-label.js's
+// now, since all three discs name something in the middle and both of those
+// have gone wrong here before — a halo that read as a shadow lying off to one
+// side of the word, and a name that moved as the pointer crossed the disc. A
+// second copy could drift back to either, so there is one.
 //
-// It is laid as copies of the same fillText the ink uses, ringed around the
-// letters, rather than as a strokeText under them. A stroke is centred on the
-// glyph outline, which says the halo is centred in the geometry and not in
-// what is drawn: a stroke is taken off the outline where a fill is a
-// rasterised glyph, and the two are positioned by different code, so the halo
-// could and did read as a shadow lying off to one side of the word. Copies
-// cannot. Every one is the same call at a known offset, so whatever the fill
-// does with the letters it does with their ground.
-//
-// HALO is how far that ground reaches past a letter, so it is half of the
-// stroke width it replaces and draws the same picture. At 0.3 of the type the
-// stroke had merged the letters into one slab and read as a shape behind the
-// word rather than as ground around it; 0.08 is 1.3 px at the top of the
-// ladder, against chords half a pixel wide. The floor takes over below 12.5
-// px, which is the two degraded rungs alone. HALO_STEPS is how many directions
-// the ring holds: eight leaves a scallop 0.076 of the reach deep, a tenth of a
-// pixel at the largest reach the ladder asks for.
-const HALO = 0.08,
-  HALO_MIN = 1,
-  HALO_STEPS = 8;
-// What the hub's baseline is measured against: a capital and an ascender,
-// which between them reach the top of anything a name can hold. Measured off
-// this rather than off the name itself, so every word in a face sits on the
-// same baseline. HUB_RISE and HUB_DROP are the proportions of a Latin line,
-// used only where a context reports no ink metrics and to leave the hint its
-// room under a name that may or may not have a descender in it.
-const HUB_REF = "Hd",
-  HUB_RISE = 0.72,
-  HUB_DROP = 0.2;
+// What the halo is for here: 100 to 280 of a category's chords pass inside the
+// hub's radius — element is the worst at 279 of 658 — so the name has to clear
+// its own ground, and only its own. A panel wide enough to hold it took the
+// middle of the figure with it, which is the part worth seeing.
 // The search column beside the disc, and the gutter to it. Same thresholds as
 // <hypernym-disc>, so the two elements break to landscape together.
 const ASIDE_MIN = 200,
@@ -579,7 +555,16 @@ class WordDisc extends HTMLElement {
       if (el.scrollTop + el.clientHeight > el.scrollHeight - MOVES_NEAR) this.#page();
     });
     this.#ro = new ResizeObserver(() => this.#fit());
+    /* The stage, whose box is what the canvases are sized from, and the frame,
+       whose shape is what decides the layout — because the two do not move
+       together. Stacked, the stage is a square of whatever height the flex
+       column leaves it, so its height comes off the frame's height and a frame
+       dragged wider leaves its box exactly where it was. Observing the stage
+       alone, the element drops to the stacked layout when the page narrows and
+       then never hears another thing: no callback is raised however wide the
+       page is dragged afterwards, and it stays stacked for good. */
     this.#ro.observe(this.#sr.querySelector(".stage"));
+    this.#ro.observe(this.#frame);
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#onScheme);
     this.#onRatio();
@@ -648,17 +633,6 @@ class WordDisc extends HTMLElement {
     }
   }
 
-  /* Where a category's words are, given its name. tools/export_words.py writes
-     the 37 files and their index flat and side by side, and web-dist stages
-     them that way, so the path to one is the index's own with the last segment
-     swapped. No base URL to resolve against, nothing for a host to name twice,
-     and the one thing it cannot survive is a query string on the index, which
-     a directory of exported files does not have. */
-  #href(name) {
-    const src = this.#indexSrc ?? "";
-    return `${src.slice(0, src.lastIndexOf("/") + 1)}words-${name}.json`;
-  }
-
   /* The picker, which exists only where the host names an index. It is fetched
      rather than derived because the element is handed one word file and the
      names of the other 36 are nowhere in it, and the index is 37 rows against
@@ -688,7 +662,7 @@ class WordDisc extends HTMLElement {
         // The count, which is what tells drug's 750 words from colour's 97
         // before the choice is made — and so whether the disc that comes back
         // is labelled or names its words in the hub instead.
-        o.textContent = row.words ? `${row.name} (${row.words})` : row.name;
+        o.textContent = catLabel(row);
         return o;
       }),
     );
@@ -700,7 +674,7 @@ class WordDisc extends HTMLElement {
        and found nothing by the time this resolves, so there is nothing to
        race: a `src` written down by hand is loading or loaded. */
     if (!this.#ready && !this.getAttribute("src")) {
-      this.setAttribute("src", this.#href(rows[0].name));
+      this.setAttribute("src", href(this.#indexSrc, rows[0].name));
     }
   }
 
@@ -713,7 +687,7 @@ class WordDisc extends HTMLElement {
   }
 
   #onCat = () => {
-    this.setAttribute("src", this.#href(this.#catEl.value));
+    this.setAttribute("src", href(this.#indexSrc, this.#catEl.value));
   };
 
   set data(d) {
@@ -1276,24 +1250,16 @@ class WordDisc extends HTMLElement {
     this.#hub(g);
   }
 
-  /* How far the face puts ink above the baseline, measured once per font off
-     HUB_REF rather than off the name being drawn. A capital and an ascender,
-     because between them they reach the top of anything a name can hold, and
-     no descender, because what sits below the baseline hangs below the centre
-     rather than moving it. A context reporting no ink metrics falls back to
-     the proportions of a Latin line, which is wrong by a pixel at worst. */
+  /* disc-label.js's reference band, held per font. The measure is the
+     module's and the cache is the element's, since g.font is the one thing
+     that can change the answer and a pointer crossing the disc asks for the
+     same few faces over and over. */
   #band(g) {
     const held = this.#bands.get(g.font);
     if (held !== undefined) return held;
-    const up = g.measureText(HUB_REF).actualBoundingBoxAscent;
-    const band = Number.isFinite(up) && up > 0 ? up : this.#fitPx(g) * HUB_RISE;
-    this.#bands.set(g.font, band);
-    return band;
-  }
-
-  // The size out of a font string, for the fallback above alone.
-  #fitPx(g) {
-    return parseFloat(/([\d.]+)px/.exec(g.font)?.[1]) || HUB_SIZES.at(-1);
+    const got = band(g);
+    this.#bands.set(g.font, got);
+    return got;
   }
 
   #fitted(g, text, r) {
@@ -1342,21 +1308,13 @@ class WordDisc extends HTMLElement {
     // most words, so the type sits a pixel or two low.
     g.textBaseline = "alphabetic";
 
-    /* The band the name is centred on. Measured off the face rather than off
-       the word, which is the whole point: the ink of "iris" stops at the dot
-       and the ink of "guppy" runs below the baseline, so centring each word's
-       own ink moved the name up and down as the pointer crossed the disc. The
-       band is the same for every word in a face, so the baseline is too, and
-       a descender now hangs below the centre the way it does in any line of
-       type instead of dragging the line up to meet it. */
-    const band = this.#band(g);
-    const tall = band + (lines.length - 1) * lh;
-    // The baseline of the first line, so the block is centred on the hub and
-    // the hint below it takes its room off the top.
-    const first = this.#cy - tall / 2 - (way ? HINT_H / 2 : 0) + band;
-    // Every line's ground first and the ink after, so a line's halo cannot
-    // land on the letters of the line above it.
-    this.#halo(g, lines, first, lh, Math.max(HALO_MIN, px * HALO));
+    /* The band the name is centred on and the baseline that falls out of it,
+       both disc-label.js's. Measured off the face rather than off the word,
+       which is the whole point: the ink of "iris" stops at the dot and the ink
+       of "guppy" runs below the baseline, so centring each word's own ink
+       moved the name up and down as the pointer crossed the disc. */
+    const first = baseline(this.#cy, this.#band(g), lines.length, lh, way ? HINT_H / 2 : 0);
+    this.#ground(g, lines, first, lh, Math.max(HALO_MIN, px * HALO));
     g.fillStyle = ink;
     for (const [k, line] of lines.entries()) g.fillText(line, this.#cx, first + k * lh);
 
@@ -1366,26 +1324,14 @@ class WordDisc extends HTMLElement {
     // distance under every name and not lower under the ones ending in y.
     const y = first + (lines.length - 1) * lh + px * HUB_DROP + HINT_PX;
     g.font = `${HUB_WEIGHT} ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
-    this.#halo(g, ["↑ back"], y, 0, Math.max(HALO_MIN, HINT_PX * HALO));
+    this.#ground(g, ["↑ back"], y, 0, Math.max(HALO_MIN, HINT_PX * HALO));
     g.fillStyle = this.#tok("--_accent", "#59b491");
     g.fillText("↑ back", this.#cx, y);
   }
 
-  /* The ground the hub's text carries with it, laid as `HALO_STEPS` copies of
-     the same call that draws the ink, ringed at `r` around each baseline. The
-     union reaches r past every letter, which is what a stroke of width 2r used
-     to do, and it cannot be anywhere else, since the offsets sum to nothing
-     and every copy is the fill the letters themselves are drawn with. */
-  #halo(g, lines, first, lh, r) {
-    g.fillStyle = this.#tok("--_ground", "#0c1112");
-    for (let s = 0; s < HALO_STEPS; s++) {
-      const a = (s / HALO_STEPS) * TAU,
-        dx = Math.cos(a) * r,
-        dy = Math.sin(a) * r;
-      for (const [k, line] of lines.entries()) {
-        g.fillText(line, this.#cx + dx, first + k * lh + dy);
-      }
-    }
+  /* disc-label.js's halo, against this element's own ground token. */
+  #ground(g, lines, first, lh, r) {
+    halo(g, lines, this.#cx, first, lh, r, this.#tok("--_ground", "#0c1112"));
   }
 
   /* What the pointer is on, or what the search left the highlight on. */

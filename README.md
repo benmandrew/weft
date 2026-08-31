@@ -29,7 +29,7 @@ The three selection commands share the filters that decide which words a categor
 
 `make -j` renders every category, one file each, so editing a module redraws all 37 and an untouched tree redraws none. `make clean` removes the output directory, `OUT=` moves it, and `CONFIG=` names a config file.
 
-`make web-dist` gathers everything a page needs to run either element into one flat directory, `out/web-dist` unless `DIST=` names another: the browser modules, the exported WordNet tree, one file per category, and `embed.html`, a page holding one section per disc that asks for its data beside itself, so the directory can be copied whole and served from anywhere. Each section carries its own script, its own settings and its own height, and nothing on the page places one disc relative to the other, so a section can be lifted out and dropped wherever a host page wants it without bringing the other along. It is a page to serve as it stands and the markup to read when writing your own. The modules are found by glob rather than listed by name, so a site that embeds a disc copies the directory instead of keeping its own list of filenames in step with this one; the two harness pages stay behind, as the local pages a host replaces with its own markup.
+`make web-dist` gathers everything a page needs to run any of the three elements into one flat directory, `out/web-dist` unless `DIST=` names another: the browser modules, the exported WordNet tree, one file per category, and `embed.html`, a page holding one section per disc that asks for its data beside itself, so the directory can be copied whole and served from anywhere. Each section carries its own script, its own settings and its own height, and nothing on the page places one disc relative to another, so a section can be lifted out and dropped wherever a host page wants it without bringing the others along. It is a page to serve as it stands and the markup to read when writing your own. The modules are found by glob rather than listed by name, so a site that embeds a disc copies the directory instead of keeping its own list of filenames in step with this one; the three harness pages stay behind, as the local pages a host replaces with its own markup.
 
 ## Outputs
 
@@ -51,7 +51,17 @@ Every chord the printed figure draws sits under the playable disc at any word co
 
 Where the window is wide enough for a column beside the disc, every word that could be played next is listed there in alphabetical order, reading left to right and then down, and clicking one plays it. The list is most useful on the large categories, which are drawn without labels, where it is the only place the moves can be read rather than picked out among the dots; the search suggestions take the same column while you are typing.
 
-`make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves the harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet, `/words.html` the word chain, and `/embed.html` a section apiece for the two of them, animal with every word drawn.
+`make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves the harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet, `/words.html` the word chain, `/letters.html` the letter graph under it, and `/embed.html` a section apiece for the three of them, animal with every word drawn.
+
+## The letter graph itself
+
+Every word is an edge between two letters, so under animal's 1,582 words sits a graph of 26 nodes and 344 letter pairs. `<letter-disc>` draws that one: the letters around a ring, an arc for every pair some word bridges, and each arc as wide as the logarithm of the words on it, so the 103 pairs animal spans with a single word are still visible beside the pair it spans with 32.
+
+Each letter's place on the ring is split in two, the half words leave from and the half they arrive at, so an arc runs from the bright side of one letter to the dim side of another and reads as directed without an arrowhead. A letter's share of the ring is its share of the traffic, so an arc's width means the same number of words wherever on the figure it is read, and the split point says whether a letter is somewhere play sets out from or somewhere it arrives.
+
+Pointing at an arc lights it and dims everything else, and pointing at a letter lights every arc touching it. The line under the disc names the words on the arc rather than counting them — an arc of 32 words is a list of up to 14 of them — which is where this disc and the playable one meet. Clicking a letter drills into it, and the column beside the disc then lists that letter's arcs, the ones leaving before the ones arriving; clicking the middle goes back to every arc the category has, heaviest first. The search box takes a word and lights the arc it sits on, since the word itself is not drawn here and its letter pair is.
+
+It reads the same category file `<word-disc>` reads, so a page carrying both fetches one file for the pair, and naming an index of the categories gives it the same picker. `/letters.html` under `make serve` is where to try it.
 
 ## Configuration
 

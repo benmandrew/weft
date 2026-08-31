@@ -14,6 +14,7 @@
  * picture on the seven largest categories.
  */
 
+import { bow } from "./disc-colour.js";
 import { MAX_AREA } from "./disc-ratio.js";
 
 // Where the ring sits in the square, short of the half so a stroke at the rim
@@ -60,21 +61,14 @@ export function release(pic) {
   else if (typeof pic.width === "number") pic.width = pic.height = 0;
 }
 
-/* A cubic bowed towards the centre, which is what makes a chord read as the
-   pair of letters it joins rather than as a line across the disc. Four control
-   points and no sampling, the same curve `_curve` writes into the SVG. The
+/* A chord as its own subpath: the `moveTo` and then disc-colour.js's `bow`,
+   which is the cubic all three discs draw and lives there because
+   <letter-disc> walks a closed boundary and cannot afford the `moveTo`. The
    element draws its fan and its chain through here too, so the resting picture
    and the live one cannot be drawn to different shapes. */
 export function curve(g, cx, cy, x0, y0, x1, y1, pull) {
   g.moveTo(x0, y0);
-  g.bezierCurveTo(
-    cx + (x0 - cx) * pull,
-    cy + (y0 - cy) * pull,
-    cx + (x1 - cx) * pull,
-    cy + (y1 - cy) * pull,
-    x1,
-    y1,
-  );
+  bow(g, cx, cy, x0, y0, x1, y1, pull);
 }
 
 /* Chords past which the stroke is thinned, and how sharply.

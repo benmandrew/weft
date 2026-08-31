@@ -29,7 +29,16 @@ const check = (ok, said) => {
    counted. Nothing is rasterised and nothing is compared to a picture: what is
    asserted below is that the code runs and puts the right number of things in
    the right places. */
-const drew = { fillText: 0, strokeText: 0, stroke: 0, arc: 0, curve: 0, image: 0 };
+const drew = {
+  fillText: 0,
+  strokeText: 0,
+  stroke: 0,
+  fill: 0,
+  fillRect: 0,
+  arc: 0,
+  curve: 0,
+  image: 0,
+};
 const PX = 0.6; // stub glyph width, as a fraction of the font size
 
 class El {
@@ -92,11 +101,17 @@ class El {
   get innerHTML() {
     return this._html;
   }
+  /* Text as a browser reports it: setting it replaces the children, and
+     reading it walks them. Both discs build a row out of spans and strings —
+     a pair, an arrow and a count — so a getter answering only its own string
+     would report every one of those rows as empty. */
   set textContent(v) {
-    this._html = v;
+    this.children = [];
+    this._html = String(v);
   }
   get textContent() {
-    return this._html;
+    if (!this.children.length) return this._html;
+    return this.children.map(k => (k instanceof El ? k.textContent : String(k))).join("");
   }
   setAttribute(n, v) {
     this._attr.set(n, String(v));
@@ -146,7 +161,16 @@ class Canvas extends El {
     // Its own tally as well as the shared one, so a claim about what a single
     // canvas was asked to draw can be made — the two discs share `drew`, and
     // the base's 110 dots would drown out the overlay's nothing.
-    this.drew = { fillText: 0, strokeText: 0, stroke: 0, arc: 0, curve: 0, image: 0 };
+    this.drew = {
+      fillText: 0,
+      strokeText: 0,
+      stroke: 0,
+      fill: 0,
+      fillRect: 0,
+      arc: 0,
+      curve: 0,
+      image: 0,
+    };
     // Where the text went, so a claim can be made about the halo sitting on
     // the letter it belongs to rather than beside it.
     this.text = { fill: [], stroke: [] };
@@ -157,8 +181,10 @@ class Canvas extends El {
     this.images = [];
     this.sources = [];
     // The colour each stroke went down in, in the order they were drawn, which
-    // is the only way to make a claim about z-order without rasterising.
+    // is the only way to make a claim about z-order without rasterising, and
+    // the same for fills, which is how <letter-disc> draws its arcs.
     this.inks = [];
+    this.fills = [];
     const both = what => {
       drew[what]++;
       this.drew[what]++;
@@ -175,6 +201,10 @@ class Canvas extends El {
       lineJoin: "",
       setTransform() {},
       clearRect() {},
+      // <letter-disc>'s scrim, which is how it dims the picture around what the
+      // pointer is on: one fill over the frame rather than a second pass over
+      // 344 arcs, and it takes the ring bands and the letters down with it.
+      fillRect: () => both("fillRect"),
       save() {},
       restore() {},
       translate() {},
@@ -183,7 +213,17 @@ class Canvas extends El {
       closePath() {},
       moveTo() {},
       lineTo() {},
-      fill() {},
+      fill: () => {
+        both("fill");
+        this.fills.push(this._g.fillStyle);
+      },
+      /* Answered false throughout, so what is driven below is the ring band
+         and the letters outside it. <letter-disc> asks the path itself for a
+         point inside the ring, since a ribbon there is a curved shape no
+         arithmetic short of the path describes, and nothing here rasterises
+         one. What that costs is exactly the interior hit; the ends are what
+         the assertions reach, and they are where an arc is identifiable. */
+      isPointInPath: () => false,
       bezierCurveTo: () => both("curve"),
       stroke: () => {
         both("stroke");
@@ -245,7 +285,12 @@ const fragment = () => {
   // for their own by class.
   const kids = new El("div", "kids");
   kids.append(new El("div", "why"), new El("ul", "list"));
-  find.append(new El("input", "q"), new El("ul", "hits"), moves, kids);
+  // <letter-disc>'s list of the arcs in the picture. Same two parts again,
+  // its own element, since one fragment serves all three templates and each
+  // disc reaches for its own by class.
+  const arcs = new El("div", "arcs");
+  arcs.append(new El("div", "why"), new El("ul", "list"));
+  find.append(new El("input", "q"), new El("ul", "hits"), moves, kids, arcs);
   const stage = new El("div", "stage");
   stage.append(new Canvas(), new Canvas());
   stage.children[0].className = "base";
@@ -293,15 +338,41 @@ globalThis.customElements = {
     REGISTRY.set(name, cls);
   },
 };
-// The callbacks are kept, so a test can resize the element the way a browser
-// does rather than reaching for a private method.
+/* The callbacks are kept, so a test can resize an element the way a browser
+   does rather than reaching for a private method — and what each one observes
+   is kept with them, because a browser only calls back when one of the boxes
+   it was actually given has moved.
+
+   That distinction is the whole point of modelling it. An element can measure
+   one box and observe another, and then a change to the box it measures raises
+   no callback at all and the element never learns of it. Firing every callback
+   on every resize hides exactly that, and hid it here. */
 const OBSERVERS = [];
 globalThis.ResizeObserver = class {
   constructor(fn) {
-    OBSERVERS.push(fn);
+    this._o = { fn, seen: new Map() };
+    OBSERVERS.push(this._o);
   }
-  observe() {}
-  disconnect() {}
+  observe(el) {
+    if (el) this._o.seen.set(el, null);
+  }
+  disconnect() {
+    const i = OBSERVERS.indexOf(this._o);
+    if (i >= 0) OBSERVERS.splice(i, 1);
+  }
+};
+/* One turn of the layout: every observer one of whose boxes has moved since it
+   last ran, and no others. */
+const resize = () => {
+  for (const o of [...OBSERVERS]) {
+    let moved = false;
+    for (const [el, was] of o.seen) {
+      const now = el.getBoundingClientRect();
+      if (!was || was.width !== now.width || was.height !== now.height) moved = true;
+      o.seen.set(el, { width: now.width, height: now.height });
+    }
+    if (moved) o.fn();
+  }
 };
 /* And the observer a disc gives its pixels back on, kept the same way, so a
    test can scroll one off the screen as a browser does. `nearScreen(false)`
@@ -349,6 +420,7 @@ const BOX = 720;
 const MODULES = [
   "disc-colour.js",
   "disc-idle.js",
+  "disc-index.js",
   "disc-label.js",
   "disc-lines.js",
   "disc-paint.js",
@@ -356,6 +428,8 @@ const MODULES = [
   "disc-search.js",
   "disc-worker.js",
   "hypernym-disc.js",
+  "letter-disc.js",
+  "letter-graph.js",
   "word-bundle.js",
   "word-bundle-worker.js",
   "word-chain.js",
@@ -1454,7 +1528,7 @@ await new Promise(r => setTimeout(r, 80));
 drew.curve = 0;
 drew.image = 0;
 shadow.querySelector(".stage")._rect = { width: BOX - 4, height: BOX - 4 };
-for (const fn of OBSERVERS) fn();
+resize();
 check(drew.curve === 0, `a resize restroked ${drew.curve} chords`);
 check(drew.image > 0, "the bundle was not blitted after a resize");
 check(disc.stats.bundle, "the bundle went out over a resize");
@@ -1493,12 +1567,16 @@ check(
 );
 check(!disc.stats.bundle, "a disc a screen away kept its bundle");
 /* And does not take them straight back. The resize observer goes on firing at
-   an element nobody can see, and the fit is what sizes the canvases. Past the
+   an element nobody can see, and the fit is what sizes the canvases. The box
+   really moves, since the stub only calls back when one has, and past the
    coalescing window, so a fit that went ahead would size them here and now
    rather than on a timer this check would never see. */
 await new Promise(r => setTimeout(r, 80));
-for (const fn of OBSERVERS) fn();
+const wasStage = shadow.querySelector(".stage")._rect;
+shadow.querySelector(".stage")._rect = { width: BOX - 8, height: BOX - 8 };
+resize();
 check(shadow.querySelector(".base").width === 0, "a resize woke a disc that was a screen away");
+shadow.querySelector(".stage")._rect = wasStage;
 nearScreen(true);
 check(
   shadow.querySelector(".base").width === bigBase && disc.stats.bundle,
@@ -1606,6 +1684,25 @@ picked.setAttribute("src", "/out/words-animal.json");
 await settle();
 check(cat.value === "animal", `a host-set src left the picker reading ${cat.value}`);
 
+/* The stacked layout and back, the round trip all three elements make. The
+   stage is observed because its box sizes the canvases and the frame because
+   its shape decides the layout, and the two do not move together: stacked, the
+   stage is a square of the height the flex column leaves, so a frame dragged
+   wider leaves it exactly where it was and an element watching only the stage
+   is never called back. It drops to the stacked layout when the page narrows
+   and stays there however wide the page is dragged after. Dropping the frame
+   from the observer fails the second half of this and not the first. */
+const wFrame = shadow.querySelector(".frame");
+const wStage = shadow.querySelector(".stage");
+wFrame._rect = { width: BOX, height: BOX };
+wStage._rect = { width: BOX, height: BOX };
+resize();
+check(list.children.length === 0, `${list.children.length} move rows survived stacking`);
+wFrame._rect = { width: BOX + 300, height: BOX };
+resize();
+check(wFrame.classList.contains("wide"), "the word disc stayed stacked when the frame went wide");
+check(list.children.length > 0, "the moves column did not come back when the frame went wide");
+
 /* And <hypernym-disc> itself, built. Every check above it drives the pipeline
    the element calls rather than the element, which leaves its class body — the
    one place a field initialiser naming a constant a refactor moved parses,
@@ -1703,9 +1800,498 @@ check(!ring.hidden, "the ring below did not come back when the search closed");
 
 /* Stacked there is no column, so the rows are dropped rather than left behind
    display:none — 661 of them at WordNet's widest node. */
-nest._shadow.querySelector(".frame")._rect = { width: BOX, height: BOX };
-for (const fn of OBSERVERS) fn();
+const nFrame = nest._shadow.querySelector(".frame");
+const nStage = nest._shadow.querySelector(".stage");
+nFrame._rect = { width: BOX, height: BOX };
+nStage._rect = { width: BOX, height: BOX };
+resize();
 check(kidRows.children.length === 0, `${kidRows.children.length} rows survived stacking`);
+
+/* And back out of it, which is the half a page dragged wider has to do. See
+   the same pair on <letter-disc> below for why the stage's box does not move
+   on the way back and why observing it alone leaves an element stacked for
+   good. All three elements make this round trip and all three had the fault. */
+nFrame._rect = { width: BOX + 300, height: BOX };
+resize();
+check(nFrame.classList.contains("wide"), "the nested disc stayed stacked when the frame went wide");
+check(kidRows.children.length > 0, "the ring below did not come back when the frame went wide");
+
+/* The letter graph, which is graph.py's claim drawn rather than printed: 26
+   nodes, one arc per letter pair some word bridges, and nothing bundled.
+   Measured over the 37 categories animal is the worst at 344 populated pairs,
+   with weights from 1 to 32 and 103 of the 344 at weight 1 — which is why the
+   width is a log and why every arc stays a thing to point at rather than being
+   merged into a neighbour. */
+const {
+  ALPHA,
+  at: slotAt,
+  fade,
+  GAP: LGAP,
+  layout: letterLayout,
+  letterAt,
+  matrix,
+  near,
+  pull: lpull,
+  solve: lsolve,
+  TAPER,
+  weight,
+} = await import(mod("letter-graph.js"));
+
+/* Nine words over six letters, with two loops in them and with the weight
+   order and the alphabetical order deliberately apart: C leaves twice and N
+   arrives three times, so a list or a ring that came back alphabetical would
+   be saying something the picture does not. */
+const LWORDS = ["cat", "cot", "tan", "tin", "toad", "dog", "area", "aorta", "nan"];
+const LM = matrix(LWORDS);
+check(LM.n === 9, `the matrix counted ${LM.n} words, not 9`);
+check(LM.pairs === 6, `${LWORDS.length} words made ${LM.pairs} arcs, not 6`);
+check(LM.loops === 2, `${LM.loops} arcs came back to their own letter, not 2`);
+check(LM.starts[2] === 2 && LM.ends[19] === 2, "C does not leave twice or T does not arrive twice");
+/* A word outside a to z is no edge of this graph, since the ring is 26
+   letters. Nothing the exporter writes reaches this; a host building its own
+   list does. */
+check(matrix(["cat", "", "3d", "x-ray"]).n === 2, "a word outside a to z became an edge");
+
+const LL = letterLayout(LM);
+check(LL.live.length === 6, `${LL.live.length} letters carry traffic, not 6`);
+check(LL.edges.length === 6 && LL.order.length === 6, "the layout lost an arc");
+
+/* The one property proportional node arcs exist to buy, and the reason there
+   is no floor under one: a unit of weight is the same number of degrees
+   everywhere on the ring, so a ribbon is the same width at both of its ends
+   and its width means one thing wherever it is read. Equal arcs would make a
+   quiet letter's ends fat and a busy letter's thin, and every ribbon between
+   the two a trapezoid claiming two different counts — which nothing
+   downstream could tell. Adding a floor back fails this. */
+const perW = [];
+for (const e of LL.edges) {
+  perW.push((e.a0 - e.a1) / e.w, (e.b0 - e.b1) / e.w);
+}
+check(
+  Math.max(...perW) - Math.min(...perW) < 1e-9,
+  `a unit of weight is worth ${Math.min(...perW)} to ${Math.max(...perW)} radians round the ring`,
+);
+/* And the width is the log of the count rather than the count, which is what
+   keeps the 103 arcs of weight 1 visible against a trunk of 32. Linear would
+   put them at a thirtieth. */
+check(
+  Math.abs((LL.edges[0].a0 - LL.edges[0].a1) / weight(LL.edges[0].n) - perW[0]) < 1e-9,
+  "an arc's width is not its log weight",
+);
+check(weight(32) / weight(1) < 6 && 32 / 1 > 6, "log weighting did not compress the range");
+
+/* Every letter's arc is tiled exactly by its own ends, leaving from the first
+   half and arriving in the second, and the ring is tiled by the arcs and the
+   gaps. A slot that overran its arc would draw a ribbon landing on the wrong
+   letter. */
+const TAU_ = Math.PI * 2;
+let turned = LGAP * LL.live.length;
+for (const arc of LL.arcs) {
+  turned += arc.span;
+  let out = 0,
+    into = 0;
+  for (const k of LL.out[arc.letter]) out += LL.edges[k].a0 - LL.edges[k].a1;
+  for (const k of LL.into[arc.letter]) into += LL.edges[k].b0 - LL.edges[k].b1;
+  check(
+    Math.abs(out - (arc.from - arc.split)) < 1e-9,
+    `${String.fromCharCode(65 + arc.letter)}'s leaving ends do not tile its leaving half`,
+  );
+  check(
+    Math.abs(into - (arc.split - arc.to)) < 1e-9,
+    `${String.fromCharCode(65 + arc.letter)}'s arriving ends do not tile its arriving half`,
+  );
+  check(arc.split <= arc.from + 1e-9 && arc.split >= arc.to - 1e-9, "a split fell outside its arc");
+}
+check(Math.abs(turned - TAU_) < 1e-9, `the arcs and the gaps come to ${turned} rather than a turn`);
+
+/* The shapes a real category can put through this, each of which lands the
+   split at an end of its arc or leaves the ring with almost nothing on it. A
+   letter nothing starts with has no leaving half at all and its whole arc is
+   the arriving one; a category of one loop is a single letter joined to
+   itself. What is owed in every case is ends of some width, finite angles, a
+   split inside its own arc, and a hit test that still round-trips. */
+for (const [what, words] of [
+  ["nothing at all", []],
+  ["one word", ["cat"]],
+  ["one loop", ["area"]],
+  ["a letter nothing starts with", ["dog", "dig", "cog"]],
+  ["a letter nothing ends with", ["cat", "cot", "tic"]],
+  ["one letter throughout", ["aa", "aaa"]],
+]) {
+  const E = letterLayout(matrix(words));
+  for (const e of E.edges) {
+    check(e.a0 > e.a1 && e.b0 > e.b1, `${what} gave an arc an end of no width`);
+    check(Number.isFinite(e.a0 + e.a1 + e.b0 + e.b1), `${what} gave an arc a non-finite angle`);
+  }
+  for (const arc of E.arcs) {
+    check(
+      Number.isFinite(arc.span) && arc.split <= arc.from + 1e-9 && arc.split >= arc.to - 1e-9,
+      `${what} put a split outside its own arc`,
+    );
+  }
+  for (let k = 1; k < E.turn.length; k++) {
+    check(E.turn[k] > E.turn[k - 1], `${what} left the ends out of order`);
+  }
+  for (let k = 0; k < E.turn.length; k++) {
+    check(slotAt(E, (E.turn[k] + E.upto[k]) / 2) === k, `${what} lost an end to the hit test`);
+  }
+}
+
+/* The hit test: one binary search over ends laid out clockwise from the top,
+   which is only sound if they never go backwards. */
+let climbs = true;
+for (let k = 1; k < LL.turn.length; k++) if (LL.turn[k] <= LL.turn[k - 1]) climbs = false;
+check(climbs, "the ends are not strictly increasing, so the binary search is unsound");
+check(LL.turn.length === LL.edges.length * 2, `${LL.turn.length} ends for ${LL.edges.length} arcs`);
+for (let k = 0; k < LL.turn.length; k++) {
+  const mid = (LL.turn[k] + LL.upto[k]) / 2;
+  check(slotAt(LL, mid) === k, `the middle of end ${k} hit ${slotAt(LL, mid)}`);
+  // Both edges of a slot, since the search lands below the query and the slot
+  // above it may be the nearer one.
+  check(slotAt(LL, LL.turn[k] + 1e-9) === k, `the leading edge of end ${k} missed`);
+  check(slotAt(LL, LL.upto[k] - 1e-9) === k, `the trailing edge of end ${k} missed`);
+}
+/* The gap between two letters belongs to nobody, and so does the band before
+   the top of the ring. */
+const firstArc = LL.arcs[0];
+// Turns run clockwise from the top, so the gap after an arc is past its far
+// edge rather than short of it.
+const inGap = Math.PI / 2 - firstArc.to + LGAP / 2;
+check(slotAt(LL, inGap) === -1, "the gap between two letters answered with an arc");
+check(letterAt(LL, 1e-9) === firstArc.letter, "the top of the ring is not the first letter");
+check(letterAt(LL, inGap) === -1, "the gap between two letters answered with a letter");
+
+/* The prune in front of the interior hit test, which is what stops a pointer
+   inside the ring asking the path about all 344 arcs. It is a prune rather
+   than an answer, so what it owes is that it never refuses a point that is
+   actually on a ribbon — the claim disc-search.js's character mask is held to,
+   and checked the same way, by walking the thing itself rather than arguing
+   about it.
+
+   The walk is each ribbon's own boundary: its two runs along the ring and the
+   two cubics between them, rebuilt here from letter-graph.js's own control
+   points so the sample is of the shape that is drawn. Widening `near`'s wedge
+   is inert; narrowing it fails. */
+{
+  const R = 320,
+    C = 0;
+  const at = (ang, r = R) => [C + Math.cos(ang) * r, C - Math.sin(ang) * r];
+  const turnOf = ([x, y]) => (((Math.PI / 2 - Math.atan2(-(y - C), x - C)) % TAU_) + TAU_) % TAU_;
+  const cubic = (p0, p1, p) => {
+    const c0 = [C + (p0[0] - C) * p, C + (p0[1] - C) * p];
+    const c1 = [C + (p1[0] - C) * p, C + (p1[1] - C) * p];
+    const out = [];
+    for (let i = 0; i <= 24; i++) {
+      const t = i / 24,
+        u = 1 - t;
+      out.push([
+        u ** 3 * p0[0] + 3 * u * u * t * c0[0] + 3 * u * t * t * c1[0] + t ** 3 * p1[0],
+        u ** 3 * p0[1] + 3 * u * u * t * c0[1] + 3 * u * t * t * c1[1] + t ** 3 * p1[1],
+      ]);
+    }
+    return out;
+  };
+  /* Over the six-letter set above and over one whose arcs straddle the top of
+     the ring. That second one is not decoration: a wedge is found as the
+     complement of the largest gap between an arc's four turns, which is the
+     only way to find it when the arc runs from the first letter to the last
+     and its wedge wraps through turn zero. On a set where nothing wraps, the
+     span from the lowest turn to the highest happens to be the same answer and
+     a broken search for that gap is inert. Two of these eight arcs wrap. */
+  const WRAP = ["af", "ef", "ab", "bc", "cd", "de", "fa", "fb"];
+  const WL = letterLayout(matrix(WRAP));
+  check(
+    WL.edges.filter(e => !e.wide && e.t0 > e.t1).length === 2,
+    "the wrapping set no longer has an arc whose wedge straddles the top",
+  );
+  let walked = 0,
+    pruned = 0;
+  for (const e of [...LL.edges, ...WL.edges]) {
+    const bm = (e.b0 + e.b1) / 2,
+      bh = ((e.b0 - e.b1) / 2) * TAPER;
+    const t0 = bm + bh,
+      t1 = bm - bh;
+    const p = lpull(e.a1 - t0);
+    const on = [];
+    for (let i = 0; i <= 24; i++) {
+      on.push(at(e.a0 + ((e.a1 - e.a0) * i) / 24), at(t0 + ((t1 - t0) * i) / 24));
+    }
+    on.push(...cubic(at(e.a1), at(t0), p), ...cubic(at(t1), at(e.a0), p));
+    for (const pt of on) {
+      walked++;
+      check(near(e, turnOf(pt)), `the prune refused a point on the arc it belongs to`);
+    }
+    if (!e.wide) pruned++;
+  }
+  check(walked > 500, `only ${walked} points of ribbon boundary were walked`);
+  // And it has to prune something, or it is two comparisons buying nothing.
+  check(pruned > 0, "every arc was marked wide, so the prune refuses nothing");
+}
+
+/* The pull runs with the turn an arc covers, which is what makes a loop a loop
+   rather than a spike at the centre. A third of the arcs are short — 31% of
+   animal's 344 cover less than a third of the turn, and 12 of them run a
+   letter back to itself — so a fixed pull, which is what <word-disc> uses
+   where the chords worth seeing are long, would draw all of them pointing
+   inward. */
+check(lpull(0) > lpull(Math.PI / 2), "a loop does not hug the ring more than a quarter turn");
+check(lpull(Math.PI / 2) > lpull(Math.PI), "a quarter turn does not hug more than a half");
+check(
+  lpull(Math.PI) > 0 && lpull(0) < 1,
+  `the pull left the range at ${lpull(0)}, ${lpull(Math.PI)}`,
+);
+check(TAPER > 0 && TAPER < 1, `the taper is ${TAPER}, which is no taper or an inverted one`);
+
+/* The fill thinned by what the ring holds, the shape rather than the numbers:
+   a ribbon is filled, so the alpha accumulates wherever two overlap and the
+   middle is where they all do. animal draws 344 arcs into the ring colour
+   draws 67 into. An alpha below a hundredth is a picture that is drawn and
+   cannot be seen. */
+check(fade(ALPHA, 67) === ALPHA, "a sparse category was thinned");
+check(fade(ALPHA, 120) === ALPHA, "the knee itself was thinned");
+check(fade(ALPHA, 344) < fade(ALPHA, 200), "animal is not thinner than a middling category");
+check(fade(ALPHA, 344) > 0.01, `animal fills at ${fade(ALPHA, 344)}, which cannot be seen`);
+
+/* The sizing. Simpler than <word-disc>'s, since the labels are 26 single
+   letters rather than a category's words, but it owes the same two things:
+   a disc that stays inside its own square and one that comes back positive at
+   any size at all. */
+for (const size of [12, 40, 120, 300, 720, 2000]) {
+  const got = lsolve(size);
+  check(got.r > 0, `a ${size}px frame solved to a radius of ${got.r}`);
+  check(got.hub < got.r, `a ${size}px frame put the hub outside the ring`);
+  check(got.band > 0, `a ${size}px frame gave the ring no band`);
+  check(
+    got.outer <= size / 2 + 1e-9,
+    `a ${size}px frame put the disc ${got.outer - size / 2}px outside its own square`,
+  );
+}
+/* Past the floor the letters go rather than smearing, and the ring takes their
+   room — which is the trade <word-disc> makes at its own label floor, with the
+   hub naming what the pointer is on instead. */
+check(lsolve(70).labelPx === 0, `a 70px frame kept ${lsolve(70).labelPx}px letters`);
+check(lsolve(80).labelPx > 0, "an 80px frame dropped its letters");
+/* Either side of the floor, which is the only place the two can be compared:
+   a frame 10px smaller that drops its letters has the bigger ring of the two,
+   because their room goes to it. */
+check(
+  lsolve(70).r > lsolve(80).r,
+  `dropping the letters left the ring at ${lsolve(70).r} against ${lsolve(80).r} with them`,
+);
+
+/* And <letter-disc> itself, driven. The two blocks above run the geometry the
+   element calls rather than the element, which leaves its class body — the one
+   place a field initialiser naming a constant a refactor moved parses, imports
+   and then throws the first time a page puts the tag on screen. That has
+   happened to <word-disc>, and nothing short of constructing one catches it.
+
+   The points a pointer is moved to are computed from letter-graph.js rather
+   than guessed, which is what makes a hit a statement about the element
+   agreeing with its own layout. */
+const LetterDisc = REGISTRY.get("letter-disc");
+check(LetterDisc !== undefined, "letter-disc never reached the registry");
+
+const ld = new LetterDisc();
+ld.connectedCallback();
+// Landscape and fitted, the only shape with a column beside the disc, so the
+// list below is built rather than skipped.
+ld.setAttribute("fit", "");
+ld._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
+for (const k of Object.keys(drew)) drew[k] = 0;
+ld.data = { category: "test", words: LWORDS };
+
+const lShadow = ld._shadow;
+const lBase = lShadow.querySelector(".base");
+const lOver = lShadow.querySelector(".over");
+const lGloss = lShadow.querySelector(".gloss");
+const lCrumb = lShadow.querySelector(".crumb").querySelector(".head");
+const lTail = lShadow.querySelector(".crumb").querySelector(".tail");
+const arcsEl = lShadow.querySelector(".arcs");
+const arcRows = arcsEl.querySelector(".list");
+const arcWhy = () => [...arcsEl.querySelector(".why").children].map(c => c.textContent).join("");
+const arcList = () =>
+  arcRows.children.map(li => li.children.map(sp => sp.textContent ?? "").join("")).join("|");
+
+check(ld.stats.pairs === 6 && ld.stats.loops === 2, `the element drew ${ld.stats.pairs} arcs`);
+check(
+  ld.stats.words === 9 && ld.stats.letters === 6,
+  `the element counted ${ld.stats.words} words`,
+);
+/* One fill per arc on the base, in the colour of the letter the arc leaves —
+   which is the only way from here to say the arcs were drawn at all, since
+   nothing rasterises. */
+check(lBase.drew.fill === 6, `the base filled ${lBase.drew.fill} shapes for 6 arcs`);
+check(new Set(lBase.fills).size > 1, "every arc was filled in the same colour");
+/* Light before heavy, so the trunks read over the hairlines rather than the
+   back of the alphabet reading over the front. It is the ranking that
+   word-bundle.js has to cut into 64 bands to escape, and the one thing 344
+   unequal arcs do have. Reversing the order fails this. */
+let rising = true;
+for (let k = 1; k < LL.order.length; k++) {
+  if (LL.edges[LL.order[k]].w < LL.edges[LL.order[k - 1]].w) rising = false;
+}
+check(rising, "the arcs are not drawn light before heavy");
+
+/* The column lists every arc at rest, heaviest first, which is what says at
+   once which letter pairs a category is made of. Sorting it alphabetically, or
+   leaving it in the layout's own order, fails this. */
+check(arcWhy() === "6 arcs · heaviest first", `the resting list is headed "${arcWhy()}"`);
+check(
+  arcList() === "A → A2|C → T2|T → N2|D → G1|N → N1|T → D1",
+  `the resting list reads ${arcList()}`,
+);
+/* Held before anything is pointed at, since the claim below is that these very
+   objects are still in the list afterwards. */
+const heldRows = arcRows.children[0];
+
+/* A pointer on the ring, at the middle of a known end. The geometry is the
+   element's own — solve at the stage's square, centred on it — so a hit here
+   says the element and letter-graph.js agree about where an arc lands. */
+const LG = lsolve(BOX);
+const lmid = BOX / 2;
+const ringPt = k => {
+  const a = Math.PI / 2 - (LL.turn[k] + LL.upto[k]) / 2;
+  return { offsetX: lmid + Math.cos(a) * LG.r, offsetY: lmid - Math.sin(a) * LG.r };
+};
+const letterPt = arc => {
+  const at = LG.r + LG.band / 2 + LG.labelPx * 0.5;
+  return { offsetX: lmid + Math.cos(arc.mid) * at, offsetY: lmid - Math.sin(arc.mid) * at };
+};
+const heavy = LL.edges.findIndex(e => e.from === 2 && e.to === 19);
+const heavyEnd = [...LL.slotEdge].indexOf(heavy);
+fire(lOver, "pointermove", ringPt(heavyEnd));
+check(ld.arc?.from === "C" && ld.arc?.to === "T", `the ring end named ${JSON.stringify(ld.arc)}`);
+/* The readout names the words on the arc rather than counting them, which is
+   what ties this disc to <word-disc>: an arc is two words and this is which
+   two. */
+check(
+  lGloss.innerHTML.includes("<b>C → T</b>") && lGloss.innerHTML.includes("cat, cot"),
+  `the arc reads "${lGloss.innerHTML}"`,
+);
+/* The crumb carries what the pointer is on past the category, muted, the way
+   both other discs carry theirs. */
+check(lTail.innerHTML.includes("C → T"), `the crumb tail reads "${lTail.innerHTML}"`);
+
+/* A pointer outside the ring is on a letter, which lights everything touching
+   it in either direction — the letter's whole part in the picture. */
+const tArc = LL.arcs.find(a => a.letter === 19);
+fire(lOver, "pointermove", letterPt(tArc));
+check(ld.arc === null, "the letter band answered with an arc");
+check(
+  lGloss.innerHTML.includes("<b>T</b>") && lGloss.innerHTML.includes("3 words start here"),
+  `the letter reads "${lGloss.innerHTML}"`,
+);
+
+/* Pointing never rebuilds the column, which is what stops a list moving under
+   a pointer on its way to a row. Two hovers have been through since those rows
+   were held — an arc and a letter — and they are still the same objects, which
+   is the only way from here to say nothing was rebuilt rather than rebuilt to
+   the same names. Calling #showList from #preview fails this. */
+check(arcRows.children[0] === heldRows, "a hover rebuilt the column");
+check(arcWhy() === "6 arcs · heaviest first", `a hover moved the list to "${arcWhy()}"`);
+
+/* A click drills, which is the one thing pointing cannot do: the column
+   becomes that letter's arcs, leaving ones first and then arriving. An arc
+   drills to the letter it leaves. */
+fire(lOver, "click", ringPt(heavyEnd));
+check(ld.letter === "C", `clicking the C→T arc drilled to ${ld.letter}`);
+check(arcList() === "C → T2", `C's column reads ${arcList()}`);
+check(arcWhy() === "C1 out, 0 in · ", `C's column is headed "${arcWhy()}"`);
+check(lCrumb.innerHTML.includes(">C<"), `the crumb does not name C: "${lCrumb.innerHTML}"`);
+
+fire(lOver, "click", letterPt(tArc));
+check(ld.letter === "T", `clicking T's band drilled to ${ld.letter}`);
+/* fanKey's order: the destinations in the order the ring visits them, counted
+   backwards from T's own letter, which puts N before D. */
+check(arcList() === "T → N2|T → D1|C → T2", `T's column reads ${arcList()}`);
+/* An arriving arc reads apart from a leaving one, as the ring band has it. */
+check(
+  arcRows.children.map(li => (li.classList.contains("in") ? "in" : "out")).join("|") ===
+    "out|out|in",
+  "the column does not mark an arriving arc",
+);
+
+/* The seam. A pointer between two rows is over the list and over no row, which
+   is what a browser sends, and clearing the highlight there is what makes it
+   blink off and on all the way down a column. A move that lands on no row
+   holds what the last one set; only leaving the list clears it. Restoring the
+   clearing branch fails the second of these. */
+fire(arcRows, "pointermove", { target: arcRows.children[0] });
+check(ld.arc?.to === "N", `hovering a row named ${JSON.stringify(ld.arc)}`);
+check(arcRows.children[0].classList.contains("on"), "a hovered row is not marked");
+fire(arcRows, "pointermove", { target: arcRows });
+check(ld.arc?.to === "N", "a move landing on no row cleared the highlight");
+fire(arcRows, "pointerleave", {});
+check(ld.arc === null, "leaving the list left the highlight behind");
+
+/* The hub, which is disc-label.js's halo and baseline now rather than a second
+   copy of <word-disc>'s. Nothing is stroked, the ground is copies of the ink's
+   own call ringed at one radius about the point the ink goes down at, and the
+   ink goes last. */
+ld.show(-1);
+lOver.drew.strokeText = 0;
+lOver.text = { fill: [], stroke: [] };
+ld.repaint();
+check(lOver.drew.strokeText === 0, `the hub stroked ${lOver.drew.strokeText} times`);
+const lGround = lOver.text.fill.filter(t => t.c === "#0c1112");
+const lInk = lOver.text.fill.filter(t => t.c !== "#0c1112");
+check(lInk.length === 1 && lGround.length === 8, `the hub laid ${lGround.length} copies of ground`);
+check(
+  lGround.every(t => t.t === lInk[0].t),
+  "the ground is not the same text as the ink over it",
+);
+{
+  const rs = lGround.map(t => Math.hypot(t.x - lInk[0].x, t.y - lInk[0].y));
+  check(
+    Math.max(...rs) - Math.min(...rs) < 1e-9 && rs[0] > 0,
+    `the ground is ringed at ${Math.min(...rs)} to ${Math.max(...rs)} about the ink`,
+  );
+}
+check(
+  lOver.text.fill.indexOf(lInk[0]) === lOver.text.fill.length - 1,
+  "the hub drew its ink before its ground",
+);
+
+/* The suggestions and the arc list want the same room, and only one of them is
+   being asked for at a time. A word is not drawn on this disc — its letter
+   pair is — so searching for one reaches the arc it sits on, which is the
+   whole of what this disc can say about a word. */
+const lq = lShadow.querySelector(".q");
+lq.value = "toad";
+fire(lq, "input", {});
+check(arcsEl.hidden, "a query left the arc list drawn under the suggestions");
+check(
+  ld.arc?.from === "T" && ld.arc?.to === "D",
+  `searching toad reached ${JSON.stringify(ld.arc)}`,
+);
+fire(lq, "blur", {});
+check(!arcsEl.hidden, "the arc list did not come back when the search closed");
+
+/* Stacked there is no column, so the rows are dropped rather than left behind
+   display:none — 344 of them for animal. */
+const lFrame = lShadow.querySelector(".frame");
+const lStage = lShadow.querySelector(".stage");
+lFrame._rect = { width: BOX, height: BOX };
+lStage._rect = { width: BOX, height: BOX };
+resize();
+check(arcRows.children.length === 0, `${arcRows.children.length} rows survived stacking`);
+
+/* And back again, which is the half of it that a page being dragged wider has
+   to do and that firing every callback on every resize could never show.
+
+   Stacked, the stage is a square of whatever height the flex column leaves, so
+   it is the frame's height that sets it and a frame growing wider leaves the
+   stage's box exactly where it was. An element observing only its stage
+   therefore gets no callback at all on the way back out: it goes to the
+   stacked layout when the page narrows and stays there however wide the page
+   is dragged afterwards. Observing the frame as well is what catches it. */
+lFrame._rect = { width: BOX + 300, height: BOX };
+resize();
+check(
+  lFrame.classList.contains("wide"),
+  "a frame dragged wide again with its stage unmoved stayed in the stacked layout",
+);
+check(arcRows.children.length > 0, "the column did not come back when the frame went wide again");
 
 /* This disc gives its pixels back the same way, and it is the one whose base
    canvas the painter may own: an element cannot set a dimension on a canvas it
@@ -1713,7 +2299,7 @@ check(kidRows.children.length === 0, `${kidRows.children.length} rows survived s
    again from the next view. Driven here the painter is on this thread, which
    is the path where the element empties the canvas itself. */
 nest._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
-for (const fn of OBSERVERS) fn();
+resize();
 const nestBase = nest._shadow.querySelector(".base").width;
 check(nestBase > 0, "the nested disc had no pixels to give back");
 nearScreen(false);
@@ -1723,12 +2309,15 @@ check(
   "a nested disc a screen away kept its canvases",
 );
 await new Promise(r => setTimeout(r, 80));
-for (const fn of OBSERVERS) fn();
+const wasNestStage = nest._shadow.querySelector(".stage")._rect;
+nest._shadow.querySelector(".stage")._rect = { width: BOX - 8, height: BOX - 8 };
+resize();
 check(
   nest._shadow.querySelector(".base").width === 0 &&
     nest._shadow.querySelector(".over").width === 0,
   "a resize woke a nested disc that was a screen away",
 );
+nest._shadow.querySelector(".stage")._rect = wasNestStage;
 nearScreen(true);
 check(
   nest._shadow.querySelector(".base").width === nestBase,
@@ -1782,7 +2371,7 @@ for (const [, src] of page.matchAll(/(?:src|names-src|glosses-src)="([^"]+)"/g))
    each is there and carries its own script: a section whose module is loaded
    somewhere else on the page cannot be lifted out on its own, and that is the
    one way the two could quietly become a pair again. */
-for (const tag of ["hypernym-disc", "word-disc"]) {
+for (const tag of ["hypernym-disc", "word-disc", "letter-disc"]) {
   check(page.includes(`<${tag}`), `embed.html carries no <${tag}>`);
   check(
     page.includes(`src="${tag}.js"`),
@@ -1797,5 +2386,6 @@ if (problems.length) {
 console.log(
   `web/: ${MODULES.length} modules load, ${N.toLocaleString("en-GB")} nodes` +
     ` merge to ${dense.drawn.toLocaleString("en-GB")} arcs,` +
-    ` ${WORDS.length} words lay out in ${L.live.length} wedges and play`,
+    ` ${WORDS.length} words lay out in ${L.live.length} wedges and play,` +
+    ` ${LWORDS.length} words make ${LL.pairs} letter arcs`,
 );

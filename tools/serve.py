@@ -2,8 +2,8 @@
 
 The point is the edit loop: change `hypernym-disc.js`, save, and the page in
 front of you is already showing the new code with its timings measured again
-from a cold build. `/` is the nested-arc harness and `/words.html` the word
-chain one.
+from a cold build. `/` is the nested-arc harness, `/words.html` the word chain
+one and `/letters.html` the letter graph.
 
 `web/` is served at `/` and `out/` at `/out/`, so a page reaches the exported
 tree at `/out/wordnet-tree.json` and a category at `/out/words-animal.json`
