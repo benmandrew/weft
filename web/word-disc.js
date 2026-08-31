@@ -35,7 +35,14 @@
  * moves can be read rather than found among the dots, which is what the larger
  * categories need now that they are drawn unlabelled.
  *
- * Attributes: src, limit (0, every word the category has; a count caps it),
+ * A host naming an index-src gets a picker above the search box and the
+ * element changes its own category: the word files sit beside the index, so
+ * choosing one swaps `src` and play starts again on the new list. Without the
+ * attribute the element is one category and one file, which is all a page
+ * embedding a single disc needs, and the picker is not built at all.
+ *
+ * Attributes: src, index-src (words-index.json, which turns the picker on),
+ *             limit (0, every word the category has; a count caps it),
  *             readout="off", search="off", fit
  * Properties: data, words, chain, stats. Methods: play(i), undo(), rewind(k),
  *             clear(), repaint().
@@ -188,20 +195,37 @@ TPL.innerHTML = `
   :host([fit]){height:100%}
   :host([fit]) .frame{display:flex;flex-direction:column;height:100%}
   :host([fit]) .stage{flex:1;min-height:0;width:auto;max-width:100%;align-self:center}
+  /* Four rows, the first of them the picker's. There is no row-gap, so with
+     no index named that row measures nothing and every distance below is what
+     it was before the picker existed. */
   :host([fit]) .frame.wide{display:grid;column-gap:18px;
     grid-template-columns:minmax(200px,280px) minmax(0,1fr);
-    grid-template-rows:minmax(0,1fr) auto auto}
-  :host([fit]) .frame.wide .find{grid-area:1/1;margin-bottom:0;
+    grid-template-rows:auto minmax(0,1fr) auto auto}
+  :host([fit]) .frame.wide .pick{grid-area:1/1}
+  :host([fit]) .frame.wide .find{grid-area:2/1;margin-bottom:0;
     display:flex;flex-direction:column;min-height:0}
   :host([fit]) .frame.wide .hits{position:static;margin-top:6px;box-shadow:none;
     flex:0 1 auto;min-height:0;max-height:none}
   :host([fit]) .frame.wide .hits li{display:block}
   :host([fit]) .frame.wide .hits .p{display:block;margin-left:0}
-  :host([fit]) .frame.wide .stage{grid-area:1/2/3/3;height:100%;min-height:0;
+  :host([fit]) .frame.wide .stage{grid-area:1/2/4/3;height:100%;min-height:0;
     justify-self:center}
-  :host([fit]) .frame.wide .gloss{grid-area:2/1;height:auto;-webkit-line-clamp:5;
+  :host([fit]) .frame.wide .gloss{grid-area:3/1;height:auto;-webkit-line-clamp:5;
     margin-top:12px}
-  :host([fit]) .frame.wide .crumb{grid-area:3/1/4/-1;margin-top:7px}
+  :host([fit]) .frame.wide .crumb{grid-area:4/1/5/-1;margin-top:7px}
+  /* The category picker, on where the host names an index. It is the search
+     box one scale out — that one reaches a word inside a category and this one
+     reaches the category — so it takes the head of the same column. It is not
+     part of that box, though, and search="off" is about finding a word: a host
+     that turns the search off keeps the picker it asked for. The native
+     appearance stays, since stripping it takes the arrow with it and the arrow
+     is what says the control opens a list. */
+  .pick{margin-bottom:8px}
+  .pick[hidden]{display:none}
+  .pick select{width:100%;font-family:var(--_font);font-size:12.5px;line-height:1.5;
+    color:var(--_ink);background:var(--_panel);border:1px solid var(--_edge);
+    border-radius:2px;padding:5px 9px}
+  .pick select:focus-visible{outline:2px solid var(--_accent);outline-offset:-1px}
   .find{position:relative;margin-bottom:8px}
   :host([search="off"]) .find{display:none}
   .find input{width:100%;font-family:var(--_font);font-size:12.5px;line-height:1.5;
@@ -328,6 +352,7 @@ TPL.innerHTML = `
     text-decoration:underline;text-underline-offset:2px}
 </style>
 <div class="frame">
+  <div class="pick" hidden><select class="cat" aria-label="category"></select></div>
   <div class="find">
     <input class="q" type="search" role="combobox" autocomplete="off"
            spellcheck="false" aria-controls="hits" aria-expanded="false"
@@ -344,7 +369,7 @@ TPL.innerHTML = `
 </div>`;
 
 class WordDisc extends HTMLElement {
-  static observedAttributes = ["src", "limit"];
+  static observedAttributes = ["src", "index-src", "limit"];
 
   #sr;
   #base;
@@ -359,6 +384,9 @@ class WordDisc extends HTMLElement {
   #movesEl;
   #whyEl;
   #listEl;
+  // The picker and its select, built only where the host names an index.
+  #pickEl;
+  #catEl;
   // Every move, sorted, and how many of them are in the DOM. The rest follow
   // as the column is scrolled.
   #moves = [];
@@ -386,6 +414,7 @@ class WordDisc extends HTMLElement {
   #failed = false;
   #ready = false;
   #loadedSrc = null;
+  #indexSrc = null;
 
   /* The bundle, drawn once per word set and blitted per frame. It is held in
      its own square rather than the frame's, so a resize scales the blit and
@@ -459,6 +488,8 @@ class WordDisc extends HTMLElement {
     this.#movesEl = this.#sr.querySelector(".moves");
     this.#whyEl = this.#movesEl.querySelector(".why");
     this.#listEl = this.#movesEl.querySelector(".list");
+    this.#pickEl = this.#sr.querySelector(".pick");
+    this.#catEl = this.#sr.querySelector(".cat");
   }
 
   connectedCallback() {
@@ -469,6 +500,7 @@ class WordDisc extends HTMLElement {
       const b = e.target.closest("button");
       if (b) this.rewind(+b.dataset.k + 1);
     });
+    this.#catEl.addEventListener("change", this.#onCat);
     this.#q.addEventListener("input", this.#onQuery);
     this.#q.addEventListener("keydown", this.#onFindKey);
     this.#q.addEventListener("blur", this.#closeFind);
@@ -516,6 +548,7 @@ class WordDisc extends HTMLElement {
       if (this.#box) this.#resize();
     });
     if (!this.#ready) this.#load();
+    this.#loadIndex();
   }
   disconnectedCallback() {
     this.#ro?.disconnect();
@@ -537,6 +570,7 @@ class WordDisc extends HTMLElement {
   attributeChangedCallback(n, was, now) {
     if (was === now) return;
     if (n === "src") this.#load();
+    if (n === "index-src") this.#loadIndex();
     // A different limit is a different word list, so the layout, the chain and
     // the bundle all go: a chain over words that are no longer drawn has
     // nothing on the disc to stand on.
@@ -563,9 +597,78 @@ class WordDisc extends HTMLElement {
     }
   }
 
+  /* Where a category's words are, given its name. tools/export_words.py writes
+     the 37 files and their index flat and side by side, and web-dist stages
+     them that way, so the path to one is the index's own with the last segment
+     swapped. No base URL to resolve against, nothing for a host to name twice,
+     and the one thing it cannot survive is a query string on the index, which
+     a directory of exported files does not have. */
+  #href(name) {
+    const src = this.#indexSrc ?? "";
+    return `${src.slice(0, src.lastIndexOf("/") + 1)}words-${name}.json`;
+  }
+
+  /* The picker, which exists only where the host names an index. It is fetched
+     rather than derived because the element is handed one word file and the
+     names of the other 36 are nowhere in it, and the index is 37 rows against
+     the 197 KB the files come to, which is the reason it is written. */
+  async #loadIndex() {
+    const src = this.getAttribute("index-src");
+    if (!src || src === this.#indexSrc) return;
+    this.#indexSrc = src;
+    let rows;
+    try {
+      rows = await (await fetch(src)).json();
+    } catch (err) {
+      /* The words may well have arrived from `src`, and then the disc is
+         playable and only the picker is missing, which is not worth taking
+         the readout for. It is worth it where the index was the way in. */
+      if (!this.#ready) {
+        this.#say(`<b>Could not load the categories.</b> ${err.message}`);
+        this.#failed = true;
+      }
+      return;
+    }
+    if (!Array.isArray(rows) || !rows.length) return;
+    this.#catEl.replaceChildren(
+      ...rows.map(row => {
+        const o = document.createElement("option");
+        o.value = row.name;
+        // The count, which is what tells drug's 750 words from colour's 97
+        // before the choice is made — and so whether the disc that comes back
+        // is labelled or names its words in the hub instead.
+        o.textContent = row.words ? `${row.name} (${row.words})` : row.name;
+        return o;
+      }),
+    );
+    // One category is not a choice.
+    this.#pickEl.hidden = rows.length < 2;
+    this.#mark();
+    /* An index is enough to open on. A host that names one and no `src` means
+       the first category rather than a blank disc, and #load has already run
+       and found nothing by the time this resolves, so there is nothing to
+       race: a `src` written down by hand is loading or loaded. */
+    if (!this.#ready && !this.getAttribute("src")) {
+      this.setAttribute("src", this.#href(rows[0].name));
+    }
+  }
+
+  /* The picker follows the words rather than leading them, so it moves with a
+     `src` a host set by hand as well as with its own change event. A category
+     the index does not hold leaves the select showing nothing, which is what
+     pointing the two attributes at different directories has asked for. */
+  #mark() {
+    if (this.#catEl.value !== this.#category) this.#catEl.value = this.#category;
+  }
+
+  #onCat = () => {
+    this.setAttribute("src", this.#href(this.#catEl.value));
+  };
+
   set data(d) {
     if (!d?.words) return;
     this.#category = d.category ?? "";
+    this.#mark();
     this.#all = Array.from(d.words);
     // Without frequencies the file's own order stands, which is what a host
     // building a list by hand would mean by it.
@@ -640,6 +743,11 @@ class WordDisc extends HTMLElement {
     this.#cacheKey = "";
     this.#asked = "";
     this.#gen++;
+    // A different word set makes whatever is in the box a query about words
+    // that are no longer drawn, so it goes with the suggestions rather than
+    // sitting there describing nothing. It shows now that the picker can
+    // change the category under a query typed for the last one.
+    this.#q.value = "";
     this.#closeFind();
     this.#q.disabled = this.#words.length === 0;
     if (!this.#q.disabled) this.#q.placeholder = "Search words…";

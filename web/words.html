@@ -30,8 +30,6 @@ body{overflow:hidden}
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;
        border-bottom:1px solid var(--rule);padding-bottom:8px;margin-bottom:12px}
 h1{font-family:var(--display);font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
-header select{font-family:var(--body);font-size:12.5px;color:var(--ink);
-  background:var(--panel);border:1px solid var(--rule);border-radius:2px;padding:3px 6px}
 header .live{margin-left:auto;font-family:var(--data);font-size:11px;color:var(--muted);
   display:inline-flex;align-items:center;gap:6px}
 header .live::before{content:"";width:7px;height:7px;border-radius:50%;
@@ -52,34 +50,23 @@ word-disc{
 <div class="wrap">
   <header>
     <h1>word chain</h1>
-    <select id="pick" aria-label="category"><option value="animal">animal</option></select>
     <span class="live" id="live">waiting for the watcher</span>
   </header>
 
   <main>
-    <word-disc id="disc" fit src="/out/words-animal.json"></word-disc>
+    <word-disc id="disc" fit
+               src="/out/words-animal.json"
+               index-src="/out/words-index.json"></word-disc>
   </main>
 </div>
 
 <script type="module">
+// The picker is the element's, which is what index-src turns on: it reads the
+// 37 categories out of the index and finds each one's words beside it. A page
+// embedding a single category names src alone and gets no picker, which is
+// what embed.html does, and a page that would rather own the control can still
+// leave index-src off and write src itself.
 import "/word-disc.js";
-
-// The picker is the harness's own, not the element's: a host page decides
-// which category it embeds, and the element takes one file.
-const pick = document.getElementById("pick");
-const disc = document.getElementById("disc");
-const res = await fetch("/out/words-index.json");
-const index = await res.json();
-pick.replaceChildren(
-  ...index.map(row => {
-    const o = document.createElement("option");
-    o.value = row.name;
-    o.textContent = `${row.name} (${row.words})`;
-    return o;
-  }),
-);
-pick.value = "animal";
-pick.addEventListener("change", () => disc.setAttribute("src", `/out/words-${pick.value}.json`));
 </script>
 </body>
 </html>
