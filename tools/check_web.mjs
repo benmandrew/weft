@@ -576,31 +576,52 @@ check(c.end === -1 && c.letter === -1, "an empty chain has an end or a letter");
 check(c.play(at("cat")) !== null && c.letter === 19, "cat did not hand over on T");
 check(!c.legal(at("rat")), "rat followed cat");
 check(c.legal(at("tiger")) && c.legal(at("toad")), "the T wedge is not the move set");
-check(c.replies(L.byHead) === 4, `cat left ${c.replies(L.byHead)} replies, not 4`);
+check(c.replies(c.end, L.byHead) === 4, `cat left ${c.replies(c.end, L.byHead)} replies, not 4`);
 
+/* A word already played is not a move, and neither is the word play is
+   standing on — that one falls out of the same test rather than needing its
+   own, since it is used by definition. */
 check(!c.legal(at("cat")), "cat is a move from cat");
-c.play(at("trout"));
-check(!c.legal(at("trout")), "a word ending on its own letter followed itself");
+check(c.play(at("cat")) === null, "playing cat twice was allowed");
+check(c.length === 1, `a refused move still lengthened the chain to ${c.length}`);
 
-/* A repeat is played and marked, not refused: a widget that silently drops a
-   click teaches nothing about the rule it is dropping it for. */
 c.play(at("tiger"));
 c.play(at("rat"));
-const step = c.play(at("tiger"));
-check(step?.repeat === true, "a second tiger was not marked a repeat");
-check(c.again(c.length - 1) && !c.again(2), "the repeat is marked at the wrong step");
-check(c.played(at("tiger")) && !c.played(at("dog")), "played() does not follow the chain");
+check(!c.legal(at("tiger")), "tiger followed rat after being played");
+check(c.play(at("tiger")) === null, "a repeat was played");
+check(c.steps.map(i => WORDS[i]).join("|") === "cat|tiger|rat", `the chain is ${c.steps}`);
+/* The T wedge minus tiger, which is used, and minus rat, which is where play
+   is standing. */
+check(
+  c.replies(c.end, L.byHead) === 3,
+  `rat left ${c.replies(c.end, L.byHead)} replies, not toad, tuna and trout`,
+);
 
-/* Rewinding puts the counts back, so a word played twice and wound back once
-   is still played. */
-check(c.length === 5, `the chain is ${c.length} long, not 5`);
-c.rewind(3);
-check(c.length === 3 && c.played(at("tiger")), "rewinding forgot a word still in the chain");
+/* Winding back puts a word's own move back with it, which is what the crumb
+   path's root does when it winds all the way to nothing. */
 c.rewind(1);
-check(!c.played(at("tiger")), "rewinding past a word left it played");
-check(c.undo() === -1 && c.length === 0, "undoing the first step left a chain");
+check(c.length === 1 && c.legal(at("tiger")), "winding back left tiger used");
+check(c.clear() === -1 && c.length === 0, "clearing left a chain");
+check(
+  WORDS.every((_, i) => c.legal(i)),
+  "clearing left a word unplayable",
+);
+
+/* The end of the round, which now has two shapes: a letter the category never
+   had a word for, and one whose words are all spent. */
 check(c.play(at("emu")) !== null && c.stuck(L.byHead), "emu is not a dead end");
 check(c.clear() === -1 && !c.stuck(L.byHead), "clearing left the chain stuck");
+
+/* Walking the T wedge dry: cat leaves four, and taking all of them by way of
+   words that come back to T ends the round on a letter the category does have
+   words for. */
+const dry = new Chain(L.head, L.tail);
+for (const w of ["cat", "trout", "toad", "dog"]) dry.play(at(w));
+check(dry.steps.map(i => WORDS[i]).join("|") === "cat|trout|toad|dog", `walked ${dry.steps}`);
+check(dry.stuck(L.byHead), "dog is not a dead end, since nothing starts with G");
+dry.rewind(2);
+check(!dry.stuck(L.byHead), "winding back off a dead end left the chain stuck");
+check(dry.legal(at("toad")) && !dry.legal(at("trout")), "the wound-back move set is wrong");
 
 /* The sizing, which is one equation with the label size on both sides: a
    label's length is set by its type and the room it has along the ring is set
@@ -731,6 +752,17 @@ fire(over, "pointermove", spot("cat"));
 check(disc.stats.chain === 0, "a pointer move played a word");
 point("cat");
 check(disc.chain.join("|") === "cat", `clicking cat gave ${disc.chain}`);
+/* The pointer is still on the word the click just played, and that word is now
+   used — but it is where play is standing, not a move going begging, so the
+   readout has to leave it alone and count what can follow it. */
+check(
+  !gloss.innerHTML.includes("already played") && !gloss.innerHTML.includes("not a move"),
+  `the word just played read as ${gloss.innerHTML}`,
+);
+check(
+  gloss.innerHTML.includes("4 words can follow it"),
+  `cat did not count its four replies: ${gloss.innerHTML}`,
+);
 
 /* An illegal word is inert: rat does not follow cat, and clicking it neither
    plays nor clears what is there. */
@@ -743,20 +775,71 @@ check(disc.chain.join("|") === "cat|toad", `toad did not follow cat: ${disc.chai
 fire(over, "click", { offsetX: BOX / 2, offsetY: BOX / 2 });
 check(disc.chain.join("|") === "cat", `the hub did not undo: ${disc.chain}`);
 
-/* A repeat reaches the line under the disc in the warning colour rather than
-   being refused at the click. */
+/* A repeat is refused at the click, and refused without disturbing what is
+   there: the fourth click below lands on a word already in the chain. */
 disc.clear();
 for (const w of ["cat", "tiger", "rat", "tiger"]) point(w);
-check(disc.chain.join("|") === "cat|tiger|rat|tiger", `the cycle gave ${disc.chain}`);
-check(line.innerHTML.includes("warn"), "the repeated step is not marked in the chain line");
-check((line.innerHTML.match(/warn/g) ?? []).length === 1, "more than the repeated step was marked");
+check(disc.chain.join("|") === "cat|tiger|rat", `the cycle gave ${disc.chain}`);
+check(
+  gloss.innerHTML.includes("already played"),
+  `the pointer on a used word read as ${gloss.innerHTML}`,
+);
+check(!line.innerHTML.includes("warn"), "a step in the chain line was marked a repeat");
+
+/* The crumb path's root, which is the only way back to a different first word:
+   a one-step chain renders its one step as the name you are at rather than as
+   a button, so without a root there is nothing before it to click. The markup
+   is asserted rather than the click, since the line is written as a string and
+   the stub has no parser to make an element of it. */
+disc.clear();
+const chevrons = () => (line.innerHTML.match(/<i>/g) ?? []).length;
+check(
+  line.innerHTML.includes('class="root"') && !line.innerHTML.includes("<button"),
+  `an empty chain offered a way back: ${line.innerHTML}`,
+);
+point("cat");
+check(
+  line.innerHTML.includes('class="root" data-k="-1"') && line.innerHTML.includes("test"),
+  `a one-step chain has no root to wind back to: ${line.innerHTML}`,
+);
+/* The label is not a step, and the chevrons are what say so: they separate one
+   word from the next and never the label from the first word, which the rule
+   beside it separates instead. One word takes none, two take one. */
+check(chevrons() === 0, `the label was separated like a step: ${line.innerHTML}`);
+point("toad");
+check(disc.chain.join("|") === "cat|toad", `expected cat|toad, got ${disc.chain}`);
+check(chevrons() === 1, `two words took ${chevrons()} chevrons, not one`);
+check(
+  line.innerHTML.indexOf('class="root"') < line.innerHTML.indexOf("<i>"),
+  "the label is not before the path",
+);
+// The handler winds back to one past the step it names, so the root is -1.
+disc.rewind(-1 + 1);
+check(disc.chain.length === 0, "winding back to the root left a chain");
 
 /* The end of the round is said rather than left to be inferred from an empty
-   fan: emu hands over on U and nothing in the list starts with one. */
+   fan, and it now has two shapes that the readout has to tell apart: a letter
+   the category never had a word for, and one whose words the chain has used
+   up. Only the first is a fact about the category. */
 disc.clear();
 point("emu");
-check(gloss.innerHTML.includes("the round ends here"), `emu read as ${gloss.innerHTML}`);
+check(
+  gloss.innerHTML.includes("nothing starts with U"),
+  `emu, whose letter nothing starts with, read as ${gloss.innerHTML}`,
+);
 check(disc.stats.chain === 1, "the dead end was not played");
+
+// Each of these is the other's only reply, so the second move spends the wedge
+// rather than finding it empty.
+disc.data = { category: "pair", words: ["ab", "ba"], zipf: [2, 1] };
+disc.play(0);
+check(gloss.innerHTML.includes("1 word can follow it"), `ab read as ${gloss.innerHTML}`);
+disc.play(1);
+check(
+  gloss.innerHTML.includes("every word starting with A is used"),
+  `a spent wedge read as ${gloss.innerHTML}`,
+);
+check(!disc.play(0), "a word already used was played once its wedge ran dry");
 
 /* limit 0 is every word rather than none, and past the bundle's ceiling the
    fan is what is left to read. The browser calls this on its own; here it is

@@ -8,12 +8,16 @@
  *   document.querySelector("word-disc").data = {category, words, zipf};
  *
  * Pick a word and the disc lights every word that can follow it — which is one
- * whole wedge, because the successors of a word are exactly the words starting
- * with the letter it ends on. Pick one of those and the chain carries on, and
- * the line under the disc is the chain so far. A word already played keeps its
- * warning colour wherever it appears, and playing it again marks that step:
- * the rule against repeats is the one a player breaks by accident, so it is
- * shown rather than enforced.
+ * whole wedge less what is used, because the successors of a word are exactly
+ * the words starting with the letter it ends on. Pick one of those and the
+ * chain carries on, and the line under the disc is the chain so far: its steps
+ * wind play back to themselves and its root, the category, clears it, which is
+ * the way to open on a different word.
+ *
+ * A word already played is not a move. It keeps a warning colour wherever it
+ * appears, the readout names it as used, and the cursor drops back to an arrow
+ * over it, so the refusal is legible three ways before the click rather than
+ * being a click that does nothing.
  *
  * The static figure is still underneath. Every chord the SVG draws is cached
  * to an offscreen canvas once per size, so a click blits the bundle and draws
@@ -27,7 +31,7 @@
  *             search="off", fit
  * Properties: data, words, chain, stats. Methods: play(i), undo(), rewind(k),
  *             clear(), repaint().
- * Events: word-hover {index,word,replies}, word-play {index,word,repeat,chain},
+ * Events: word-hover {index,word,replies}, word-play {index,word,chain},
  *         word-chain {chain,words,stuck}, word-render {words,chords,drawMs}
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
  *          --disc-warn --disc-sat --disc-val --disc-font --disc-mono
@@ -132,9 +136,14 @@ TPL.innerHTML = `
   /* A word the chain cannot reach is dimmed on the disc, and saying so here
      as well stops a suggestion reading as a move that is available. */
   .hits li.no .n{color:var(--_muted)}
+  /* A word already used reads on the list as it does on the disc. */
+  .hits li.used .n{color:var(--_warn)}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-  canvas.over{cursor:pointer;touch-action:none}
+  /* The arrow is the resting state and #onMove lifts it to a pointer over
+     what a click would actually take: a legal word, or the hub with a chain
+     to wind back. A word already used looks like any other to the cursor. */
+  canvas.over{cursor:default;touch-action:none}
   :host([readout="off"]) .gloss,:host([readout="off"]) .crumb{display:none}
   /* Both are held to a height whatever they hold, which is the whole of what
      stops the disc moving under the pointer: with the fit attribute set the
@@ -158,14 +167,23 @@ TPL.innerHTML = `
   .crumb::-webkit-scrollbar{display:none}
   .crumb button{font:inherit;color:var(--_accent);background:none;border:0;padding:0;
     cursor:pointer;text-decoration:underline;text-underline-offset:2px}
-  .crumb button.warn{color:var(--_warn)}
   .crumb .now{color:var(--_ink)}
-  .crumb .now.warn{color:var(--_warn)}
   .crumb em{font-style:normal}
-  .crumb em.warn{color:var(--_warn)}
   .crumb i{font-style:normal;color:var(--_muted);opacity:.5;padding:0 4px}
-  .crumb .head i:first-child{padding-left:0}
   .crumb b{color:var(--_ink);font-weight:600}
+  /* The category the words came from, which is not one of them. It sits
+     outside the chevrons and takes the body face against their monospace,
+     italic and muted, with a rule rather than a separator between it and the
+     first word — reading as a step in the chain is the one thing it must not
+     do. Kept at the line's own size so its line box cannot be the taller one
+     and give the crumb a height that depends on what is in it. */
+  .crumb .root{font-family:var(--_font);font-style:italic;color:var(--_muted);
+    border-right:1px solid var(--_edge);padding-right:9px;margin-right:9px}
+  /* Muted until pointed at, so it offers itself as a way back without
+     competing with the steps, which are the path. */
+  .crumb button.root{text-decoration:none}
+  .crumb button.root:hover,.crumb button.root:focus-visible{color:var(--_accent);
+    text-decoration:underline;text-underline-offset:2px}
 </style>
 <div class="frame">
   <div class="find">
@@ -240,6 +258,11 @@ class WordDisc extends HTMLElement {
   #widest = 0;
   #toks = new Map();
   #fits = new Map();
+  // Whether the cursor is currently a pointer and whether the pointer is over
+  // the hub, both held so the cursor can be recomputed after a move as well as
+  // after a pointer event.
+  #points = false;
+  #inHub = false;
   #box = null;
   #resized = -Infinity;
   #fitTimer = 0;
@@ -585,12 +608,12 @@ class WordDisc extends HTMLElement {
       g.globalAlpha = 1;
     }
 
-    // The chain itself, over the top of everything, and a step that repeats an
-    // earlier word drawn in the warning colour rather than the ink.
+    // The chain itself, over the top of everything. One colour, since a step
+    // repeating an earlier word is not a step that can be played.
     const steps = this.#chain.steps;
+    g.strokeStyle = ink;
     g.lineWidth = 2;
     for (let k = 1; k < steps.length; k++) {
-      g.strokeStyle = this.#chain.again(k) ? warn : ink;
       g.beginPath();
       this.#chord(g, steps[k - 1], steps[k], pull);
       g.stroke();
@@ -785,11 +808,36 @@ class WordDisc extends HTMLElement {
     return [ev.offsetX, ev.offsetY];
   }
   #onMove = ev => {
-    const h = this.#hit(...this.#at(ev));
+    const [px, py] = this.#at(ev);
+    this.#inHub = Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub;
+    const h = this.#inHub ? -1 : this.#hit(px, py);
+    this.#showCursor();
     if (h === this.#hover) return;
     this.#preview(h);
   };
-  #onLeave = () => this.#preview(-1);
+  #onLeave = () => {
+    this.#inHub = false;
+    this.#preview(-1);
+    this.#showCursor();
+  };
+
+  /* The cursor says what a click would do, which a word already used needs
+     said: it sits on the ring looking like any other, so without this the
+     arrow is the only thing that never reports the refusal.
+
+     It answers off where the pointer last was rather than off the event, so a
+     move recomputes it too — clicking a word makes that word used, and the
+     pointer is still on it. Written only when it turns over, since a pointer
+     move fires several times a wedge and an inline style set per event is a
+     style invalidation per event. */
+  #showCursor() {
+    const on = this.#inHub
+      ? this.#chain.length > 0
+      : this.#hover >= 0 && this.#chain.legal(this.#hover);
+    if (on === this.#points) return;
+    this.#points = on;
+    this.#over.style.cursor = on ? "pointer" : "default";
+  }
   /* Everything a pointer over word i does and nothing else, so a suggestion
      picked in the search box looks exactly like a hover. */
   #preview(i) {
@@ -863,7 +911,8 @@ class WordDisc extends HTMLElement {
         li.dataset.k = k;
         li.setAttribute("role", "option");
         li.setAttribute("aria-selected", "false");
-        if (!this.#chain.legal(hit.i)) li.classList.add("no");
+        if (this.#chain.played(hit.i)) li.classList.add("used");
+        else if (!this.#chain.legal(hit.i)) li.classList.add("no");
         const name = document.createElement("span");
         name.className = "n";
         const at = hit.name.toLowerCase().indexOf(q);
@@ -915,12 +964,7 @@ class WordDisc extends HTMLElement {
     if (!step) return false;
     this.#cursor = -1;
     this.#after();
-    this.#emit("word-play", {
-      index: i,
-      word: this.#words[i],
-      repeat: step.repeat,
-      chain: this.chain,
-    });
+    this.#emit("word-play", { index: i, word: this.#words[i], chain: this.chain });
     return true;
   }
   undo() {
@@ -954,6 +998,7 @@ class WordDisc extends HTMLElement {
     this.#draw();
     this.#crumbs();
     this.#overlay();
+    this.#showCursor();
     this.#emit("word-chain", {
       chain: this.chain,
       words: this.#words.length,
@@ -983,43 +1028,63 @@ class WordDisc extends HTMLElement {
     }
     const to = this.#L.tail[i];
     const letter = String.fromCharCode(65 + to);
-    const replies = this.#L.byHead[to].length - (this.#L.head[i] === to ? 1 : 0);
+    // What is left, and what there ever was. The two come apart now that a
+    // word is spent once played: a letter can run out because the category
+    // holds nothing starting with it, or because the chain has been through
+    // all of them, and only the first is a fact about the category.
+    const left = this.#chain.replies(i, this.#L.byHead);
+    const ever = this.#L.byHead[to].length - (this.#L.head[i] === to ? 1 : 0);
     const parts = [`<b>${this.#words[i]}</b> hands over on <span class="key">${letter}</span>`];
-    parts.push(
-      replies
-        ? `${replies} word${replies === 1 ? "" : "s"} can follow it`
-        : `<span class="warn">nothing starts with ${letter}: the round ends here</span>`,
-    );
-    if (sel >= 0 && this.#chain.played(sel)) parts.push('<span class="warn">already played</span>');
-    else if (sel >= 0 && !this.#chain.legal(sel))
+    if (left) parts.push(`${left} word${left === 1 ? "" : "s"} can follow it`);
+    else if (!ever)
+      parts.push(`<span class="warn">nothing starts with ${letter}: the round ends here</span>`);
+    else
       parts.push(
-        `<span class="warn">not a move: the next word starts with ${String.fromCharCode(65 + this.#chain.letter)}</span>`,
+        `<span class="warn">every word starting with ${letter} is used: ` +
+          "the round ends here</span>",
+      );
+    // Why the pointer's word cannot be played, where it cannot. Never for the
+    // word play is standing on, which is used and unreachable by the same two
+    // tests and is neither a mistake nor a move going begging.
+    const at = sel >= 0 && sel !== this.#chain.end;
+    if (at && this.#chain.played(sel))
+      parts.push('<span class="warn">already played, so not a move</span>');
+    else if (at && !this.#chain.legal(sel))
+      parts.push(
+        `<span class="warn">not a move: the next word starts with ` +
+          `${String.fromCharCode(65 + this.#chain.letter)}</span>`,
       );
     this.#glossEl.innerHTML = parts.join(" · ");
   }
 
-  /* The chain, each step a button that rewinds play to just after it. A step
-     repeating a word already in the chain reads in the warning colour, which
-     is the rule being broken shown where it was broken. */
+  /* The chain, each step a button that winds play back to just after it, and
+     before them the category, which winds play back to nothing.
+
+     That last one is the only way to open on a different first word: the one
+     step of a one-step chain renders as the name you are at rather than as a
+     button, so without a root there is nothing before it to click. It is drawn
+     as a label rather than as a step because it is not one — the words in the
+     line were played and the category was not, and rendering the two alike had
+     it reading as the first word of the chain. The chevrons therefore separate
+     words from words only, and the rule beside the label does the rest. */
   #crumbs() {
     if (this.#failed) return;
     const steps = this.#chain?.steps ?? [];
-    if (!steps.length) {
-      this.#headEl.replaceChildren();
-      this.#crumbSel = -2;
-      this.#showTail();
-      return;
+    const root = this.#category || "the category";
+    const parts = [
+      steps.length
+        ? `<button type="button" class="root" data-k="-1">${root}</button>`
+        : `<span class="root">${root}</span>`,
+    ];
+    for (const [k, i] of steps.entries()) {
+      const gap = k ? "<i>›</i>" : "";
+      parts.push(
+        k === steps.length - 1
+          ? `${gap}<span class="now">${this.#words[i]}</span>`
+          : `${gap}<button type="button" data-k="${k}">${this.#words[i]}</button>`,
+      );
     }
-    this.#headEl.innerHTML = steps
-      .map((i, k) => {
-        const bad = this.#chain.again(k) ? " warn" : "";
-        const body =
-          k === steps.length - 1
-            ? `<span class="now${bad}">${this.#words[i]}</span>`
-            : `<button type="button" class="${bad.trim()}" data-k="${k}">${this.#words[i]}</button>`;
-        return `<i>›</i>${body}`;
-      })
-      .join("");
+    this.#headEl.innerHTML = parts.join("");
     this.#crumbSel = -2;
     this.#showTail();
   }
@@ -1033,10 +1098,11 @@ class WordDisc extends HTMLElement {
     const show = sel >= 0 && this.#chain.legal(sel) ? sel : -1;
     if (show === this.#crumbSel) return;
     this.#crumbSel = show;
+    // Only ever a legal word, so never one already used. It takes a chevron
+    // only where a word comes before it: against the label alone the rule is
+    // already the separator.
     this.#tailEl.innerHTML =
-      show < 0
-        ? ""
-        : `<i>›</i><em${this.#chain.played(show) ? ' class="warn"' : ""}>${this.#words[show]}</em>`;
+      show < 0 ? "" : `${this.#chain.length ? "<i>›</i>" : ""}<em>${this.#words[show]}</em>`;
   }
 }
 customElements.define("word-disc", WordDisc);

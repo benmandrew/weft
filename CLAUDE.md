@@ -456,11 +456,41 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   with a negative radius is exactly what nothing downstream tests for and `make
   check` can; the hub is held to 0.55 of the ring so a frame too small for the
   label floor cannot leave it swallowing the dots.
-- A repeat is played and marked, not refused. The game says otherwise, but a
-  widget that silently drops a click teaches nothing about the rule it is
-  dropping it for, so the step goes into the chain and reads in the warning
-  colour on the disc and in the line under it. `--disc-warn` is the custom
-  property, standing at the theme's `dead`.
+- A word already played is not a move. Refusing it rather than recording it puts
+  the whole of the rule in `Chain.legal`, which is what the disc paints, what the
+  readout explains and what the cursor follows, so a word that cannot be played
+  cannot look, read or click as though it can. The refusal is legible three ways
+  before the click: the word keeps the warning colour wherever it appears, the
+  readout under the pointer says it is already played, and the cursor drops back
+  to an arrow over it. That last one is why `canvas.over` is `cursor:default`
+  and `#onMove` lifts it to a pointer over a legal word or over the hub with a
+  chain to wind back; the inline style is written only when it turns over, since
+  a pointer move fires several times per wedge. `--disc-warn` is still the
+  custom property, standing at the theme's `dead`. "A word cannot follow itself"
+  now falls out of the same test rather than being written down, since the word
+  play is standing on is used.
+- The end of the round has two shapes the readout tells apart: a letter the
+  category never had a word starting with, and one whose words the chain has
+  spent. Only the first is a fact about the category. `Chain.replies(i, byHead)`
+  is asked of the word the pointer is on and of the word play is standing on,
+  and because the latter is itself used, the same method answers "what could
+  follow this" and "what can be played now".
+- The crumb line's root is the category, and winding back to it clears the
+  chain, which is the only way to open on a different first word. Without it
+  the first word was a dead end, since the one step of a one-step chain renders
+  as the name you are at rather than as a button and there was nothing before it
+  to click. It does `<hypernym-disc>`'s job and deliberately not its shape:
+  there the root is a node on the path and looks like the rest of it, where here
+  the category is where the words came from rather than one of them, and drawing
+  the two alike had it reading as the first word played. So it is a label rather
+  than a step — the body face against the steps' monospace, italic and muted,
+  with a rule beside it rather than a chevron. The chevrons then separate one
+  word from the next and never the label from the first word, which is why
+  `#showTail` adds one only where a word precedes its preview. It is muted until
+  pointed at, taking the accent and an underline on hover, so it offers a way
+  back without competing with the steps, which are the path. It is held at the
+  crumb line's own font size, so its line box cannot be the taller one and give
+  the line a height that depends on what it holds.
 - `disc-colour.js` holds `TAU` and `hsv`, moved out of `disc-paint.js`: both
   discs read the same letter wheel and `<word-disc>` needs none of the rest of
   that 405-line Painter. `disc-paint.js` re-exports `TAU`, so its import sites

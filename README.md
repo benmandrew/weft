@@ -39,9 +39,9 @@ Scalable Vector Graphics (SVG) is the default because the disc zooms, so a label
 
 ## Playing it in the browser
 
-The rendered disc shows every legal move at once, and `<word-disc>`, a *custom element*, makes those moves playable. Picking a word lights up every word that can follow it, which is one whole wedge of the disc, because the words that can follow *cat* are exactly the words starting with T. Picking one of those carries the chain on, and the line under the disc is the chain so far, each step clickable to wind play back to it.
+The rendered disc shows every legal move at once, and `<word-disc>`, a *custom element*, makes those moves playable. Picking a word lights up every word that can follow it, which is one whole wedge of the disc, because the words that can follow *cat* are exactly the words starting with T. Picking one of those carries the chain on, and the line under the disc is the chain so far, each step clickable to wind play back to it, with the category printed beside it as a label rather than as a step, since it is the set the words came from rather than one of them. Clicking that label winds play all the way back, which is how you open on a different first word.
 
-A word already played keeps a warning colour wherever it appears on the disc, and playing it a second time marks that step rather than refusing the click. The rule against repeats is the one a player breaks by accident, so the element shows it being broken instead of silently dropping the move.
+A word already played is not a move, and the element says so three ways before the click rather than taking one and marking it. The word keeps its warning colour wherever it appears on the disc, the line above the chain says it is already played while the pointer is on it, and the cursor goes back to an arrow over it.
 
 The centre of the disc names whatever the pointer is on, and otherwise the word play is standing on; clicking it takes one step back. A search box reaches a word by name. The line above the chain says what the current word hands over on and how many words can follow it, or that nothing can, which is the end of the round.
 
