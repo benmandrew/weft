@@ -102,15 +102,30 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   draws from it, and a table only `build` honoured would put the three out of
   step. The file is read once in `main()` rather than per command, because
   `categories` loads all 37 word lists and would otherwise parse the file 37
-  times. Precedence is the flag, then the file, then the built-in default, so
-  every selection flag defaults to None rather than to its value: a `--target
-  60` typed out and no `--target` at all have to reach a file that sets it
-  differently as different things. `--multiword` is
-  `argparse.BooleanOptionalAction` for the same reason, so `--no-multiword`
-  exists and turns off a file that switched it on. `limit` sits here rather
+  times. The flags are not written out one argparse block each:
+  `cli._selection_args` builds one flag per `Selection` field, taking the
+  flag's name off the field name and its type off `config._SELECTION_BOUNDS`,
+  and reading its metavar and help out of `cli._SELECTION_HELP`. `cli._DRAWN`
+  names the one setting only `build` offers. Precedence is the flag, then the
+  file, then the built-in default, so every selection flag defaults to None
+  rather than to its value: a `--target 60` typed out and no `--target` at all
+  have to reach a file that sets it differently as different things.
+  `--multiword` is `argparse.BooleanOptionalAction` for the same reason, so
+  `--no-multiword` exists and turns off a file that switched it on. That rule
+  lives in `cli._selection` alone, where it used to be eight `_chosen` calls,
+  one per setting, each restating the same sentence. `limit` sits here rather
   than in `[geometry]` because it counts words rather than measuring a
   distance; `geometry.disc_limit` is the axis limit in data units and is
   unrelated.
+- `config.as_members` turns a `Selection` into the keyword arguments
+  `lexicon.members` takes, and every caller goes through it — `cli._load`, which
+  all four commands share, and `tools/export_words.py`. Spelling the eight out
+  at a call site is what had put four copies of them in the tree, one of which
+  had already drifted. `members` keeps its explicit signature, since that is
+  its API, and a caller wanting different settings builds a different
+  `Selection`. Every command prints the same text after the change and every
+  SVG matches byte for byte once matplotlib's per-run generated element ids are
+  normalised, which two runs of unchanged code differ by too.
 - Unknown keys and values that are not positive numbers are refused, never
   ignored, since an ignored key redraws the same figure; `hue_start` and
   `equalise` are the two settings that mean something at zero. `[selection]`
@@ -140,12 +155,16 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `taplo.toml`. The schema owns the per-key descriptions and `wordchain.toml`
   carries none, so a new setting is documented there and nowhere else. The
   check has a second job, holding `lexicon.members`'s keyword defaults to
-  `Selection`'s, since those are two copies of the same numbers; `multiword`
-  answers to `allow_multiword` there, and `limit` has no counterpart because
-  only `build` draws. It caught a real drift on its first run: `members` still
-  had `min_zipf=2.0` after the command line's default moved to 0.0.
-  `render.words_disc` takes `limit: int = DEFAULT_SELECTION.limit` and so
-  copies nothing.
+  `Selection`'s, since those are two copies of the same numbers. That
+  `multiword` answers to `allow_multiword` there, and that `limit` has no
+  counterpart because only `build` draws, are facts `config._MEMBERS_RENAME`
+  and `config._MEMBERS_SKIP` own, and the check reads the two rather than
+  keeping a second copy of them. It caught a real drift on its first run:
+  `members` still had `min_zipf=2.0` after the command line's default moved to
+  0.0. The third job is holding `cli._SELECTION_HELP` to `Selection`'s fields,
+  since a setting with no line there gets no flag at all and nothing else would
+  say so. `render.words_disc` takes `limit: int = DEFAULT_SELECTION.limit` and
+  so copies nothing.
 - `<hypernym-disc>` reads a tree as `par`, an array where every parent's index
   is below all of its children's. That ordering is the whole contract: it lets
   the element find depths, leaf counts and angles in flat loops instead of a

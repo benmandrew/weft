@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Any
 
 from .palette import PRESETS, THEMES, Arc, Wheel
 
@@ -160,6 +161,29 @@ _SELECTION_BOUNDS: dict[str, tuple[str, float, float | None]] = {
 
 # The one setting in the table that is a state rather than a quantity.
 _FLAG = "multiword"
+
+# `Selection` names these settings as the file spells them and `lexicon.members`
+# names them as its own API, where `multiword` answers to `allow_multiword` and
+# `limit` has no counterpart at all, since only `build` draws. The map sits here
+# rather than at either call site, so the commands and the word exporter that
+# all feed `members` a `Selection` cannot disagree about it, and
+# `tools/check_schema.py` reads it to hold that signature to these defaults.
+_MEMBERS_RENAME = {"multiword": "allow_multiword"}
+_MEMBERS_SKIP = frozenset({"limit"})
+
+
+def as_members(selection: Selection) -> dict[str, Any]:
+    """`selection` as the keyword arguments `lexicon.members` takes.
+
+    Spelling the eight out at a call site is what put four copies of them in the
+    tree, one of which had already drifted; a caller that wants a different
+    setting builds a different `Selection`.
+    """
+    return {
+        _MEMBERS_RENAME.get(field.name, field.name): getattr(selection, field.name)
+        for field in fields(selection)
+        if field.name not in _MEMBERS_SKIP
+    }
 
 
 def _names(kind: type) -> list[str]:

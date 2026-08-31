@@ -4,78 +4,124 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import fields, replace
 from pathlib import Path
-from typing import TypeVar
+from typing import Any
 
-from .config import FILENAME, ConfigError, resolve
+from .config import (
+    _FLAG,
+    _SELECTION_BOUNDS,
+    FILENAME,
+    Config,
+    ConfigError,
+    Selection,
+    as_members,
+    resolve,
+)
 from .graph import LETTERS, letter_stats, summary
 from .lexicon import CATEGORIES, UnknownCategory, Word, catalogue, members
 from .palette import DARK, THEMES, with_wheel
 
-T = TypeVar("T")
-
-
-def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> None:
-    if category:
-        parser.add_argument("category", help="category name; see the `categories` command")
-    parser.add_argument(
-        "--min-zipf",
-        type=float,
-        metavar="Z",
-        help="drop words rarer than this on wordfreq's Zipf scale; overrides "
+# What each `[selection]` setting is called on the command line, as the word its
+# help stands in for and the help itself. The flag's own name and its type come
+# off `Selection` and `config._SELECTION_BOUNDS`, so a setting added there
+# reaches the command line by being given a line here rather than an argparse
+# block of its own, and `tools/check_schema.py` refuses a setting with no line.
+#
+# Every one of them says what the file's value is as well as what the flag does,
+# because the flag beats the file for one run and a reader has to be told which
+# number they are moving.
+_SELECTION_HELP: dict[str, tuple[str | None, str]] = {
+    "min_zipf": (
+        "Z",
+        "drop words rarer than this on wordfreq's Zipf scale; overrides "
         "[selection] min_zipf, which is 0.0 unless a file says otherwise, and "
         "keeps every word wordfreq knows at all (2.0 is about one occurrence "
         "per ten million words); words wordfreq scores at zero are dropped "
         "whatever this is set to",
-    )
-    parser.add_argument(
-        "--min-dominance",
-        type=float,
-        metavar="D",
-        help="for words WordNet has sense-tagged counts for, the share of uses "
+    ),
+    "min_dominance": (
+        "D",
+        "for words WordNet has sense-tagged counts for, the share of uses "
         "that must fall inside the category; overrides [selection] "
         "min_dominance, which is 0.2 unless a file says otherwise",
-    )
-    parser.add_argument(
-        "--max-rank",
-        type=int,
-        metavar="N",
-        help="for words with no counts, how far down the sense list the category "
+    ),
+    "max_rank": (
+        "N",
+        "for words with no counts, how far down the sense list the category "
         "may sit; overrides [selection] max_rank, which is 2 unless a file "
         "says otherwise",
-    )
-    parser.add_argument(
-        "--min-depth",
-        type=int,
-        metavar="N",
-        help="hops below the category root a word must sit, where 1 drops the "
+    ),
+    "min_depth": (
+        "N",
+        "hops below the category root a word must sit, where 1 drops the "
         "category's own name; overrides [selection] min_depth, which is 1 "
         "unless a file says otherwise",
-    )
-    parser.add_argument(
-        "--target",
-        type=int,
-        metavar="N",
-        help="relax --min-zipf until the category yields this many words; "
+    ),
+    "target": (
+        "N",
+        "relax --min-zipf until the category yields this many words; "
         "overrides [selection] target, which is 60 unless a file says "
         "otherwise, and is inert at the default --min-zipf, since there is "
         "nothing below zero to relax to",
-    )
-    parser.add_argument(
-        "--zipf-floor",
-        type=float,
-        metavar="Z",
-        help="never relax past this, however few words a category has; "
+    ),
+    "zipf_floor": (
+        "Z",
+        "never relax past this, however few words a category has; "
         "overrides [selection] zipf_floor, which is 0.0 unless a file says "
         "otherwise, meaning any word wordfreq knows at all",
-    )
-    parser.add_argument(
-        "--multiword",
-        action=argparse.BooleanOptionalAction,
-        help="keep entries like 'polar bear', chained on their outer letters; "
+    ),
+    "multiword": (
+        None,
+        "keep entries like 'polar bear', chained on their outer letters; "
         "overrides [selection] multiword, which is off unless a file says "
         "otherwise, and --no-multiword turns a file's own back off",
-    )
+    ),
+    "limit": (
+        "N",
+        "words in the disc, or 0 for every word the category has; "
+        "overrides [selection] limit, which is 110 unless a file says otherwise",
+    ),
+}
+
+# The one setting only `build` offers, since it is the only command that draws.
+_DRAWN = frozenset({"limit"})
+
+
+def _selection_args(
+    parser: argparse.ArgumentParser, category: bool = True, draws: bool = False
+) -> None:
+    """The category, every `[selection]` flag the command offers, and the two
+    switches every command takes.
+
+    Driven off `Selection` rather than written out, so the flags cannot be a
+    setting short of the table a file can move. `build` is the only command that
+    draws, so it is the only one that takes `--limit`.
+    """
+    if category:
+        parser.add_argument("category", help="category name; see the `categories` command")
+
+    for field in fields(Selection):
+        if field.name in _DRAWN and not draws:
+            continue
+        metavar, help_text = _SELECTION_HELP[field.name]
+        flag = "--" + field.name.replace("_", "-")
+        # Every one defaults to None rather than to its value, since a `--target
+        # 60` typed out and no `--target` at all have to reach a file that sets
+        # it differently as different things. That is why `--multiword` is a
+        # BooleanOptionalAction: without `--no-multiword` a file that switched it
+        # on could not be switched back off for one run.
+        if field.name == _FLAG:
+            parser.add_argument(flag, action=argparse.BooleanOptionalAction, help=help_text)
+            continue
+        kind, _, _ = _SELECTION_BOUNDS[field.name]
+        parser.add_argument(
+            flag,
+            type=float if kind == "number" else int,
+            metavar=metavar,
+            help=help_text,
+        )
+
     parser.add_argument(
         "--config",
         metavar="FILE",
@@ -89,37 +135,31 @@ def _selection_args(parser: argparse.ArgumentParser, category: bool = True) -> N
     )
 
 
-def _chosen(flag: T | None, fallback: T) -> T:
-    """The flag if it was given, the file's setting otherwise.
+def _selection(args: argparse.Namespace) -> Selection:
+    """What a command should select with: the flag, then the file, then the
+    built-in default.
 
-    Every selection flag defaults to None rather than to its value, since a
-    `--target 60` typed out and no `--target` at all have to reach a file that
-    sets it differently as different things.
+    Absent flags are None, so a flag given is the only thing that displaces the
+    file, and `--limit` is missing entirely from the three commands that do not
+    draw.
     """
-    return fallback if flag is None else flag
+    config: Config = args.settings
+    given: dict[str, Any] = {}
+    for field in fields(Selection):
+        value = getattr(args, field.name, None)
+        if value is not None:
+            given[field.name] = value
+    return replace(config.selection, **given)
 
 
-def _load_named(args: argparse.Namespace, category: str) -> list[Word]:
-    args.category = category
-    return _load(args)
-
-
-def _load(args: argparse.Namespace) -> list[Word]:
-    chosen = args.settings.selection
+def _load(args: argparse.Namespace, category: str | None = None) -> list[Word]:
+    """One category's words. `categories` names its own; the rest take the
+    positional argument."""
+    name = args.category if category is None else category
     try:
-        return members(
-            args.category,
-            min_zipf=_chosen(args.min_zipf, chosen.min_zipf),
-            min_dominance=_chosen(args.min_dominance, chosen.min_dominance),
-            max_rank=_chosen(args.max_rank, chosen.max_rank),
-            min_depth=_chosen(args.min_depth, chosen.min_depth),
-            allow_multiword=_chosen(args.multiword, chosen.multiword),
-            target=_chosen(args.target, chosen.target),
-            zipf_floor=_chosen(args.zipf_floor, chosen.zipf_floor),
-            cache=not args.no_cache,
-        )
+        return members(name, **as_members(_selection(args)), cache=not args.no_cache)
     except UnknownCategory:
-        sys.exit(f"no such category: {args.category}\ntry one of: {', '.join(catalogue())}")
+        sys.exit(f"no such category: {name}\ntry one of: {', '.join(catalogue())}")
 
 
 def _report(category: str, words: list[Word]) -> str:
@@ -167,9 +207,7 @@ def _cmd_categories(args: argparse.Namespace) -> None:
     # Counting means resolving every category, so this pays the WordNet load
     # once and 57 ms per category after it. The filter arguments are the same
     # ones the other commands take, so the counts match what they would build.
-    rows = [
-        (name, len(_load_named(args, name)), ", ".join(CATEGORIES[name])) for name in catalogue()
-    ]
+    rows = [(name, len(_load(args, name)), ", ".join(CATEGORIES[name])) for name in catalogue()]
     name_width = max(len(row[0]) for row in rows)
     count_width = max(len("words"), max(len(str(row[1])) for row in rows))
 
@@ -194,7 +232,7 @@ def _cmd_build(args: argparse.Namespace) -> None:
     # so `stats`, `words` and `categories` should never pay for it.
     from . import render
 
-    config = args.settings
+    config: Config = args.settings
 
     # A [palette] table replaces the wheel the theme brought; without one the
     # theme's own stands, so a file that only sets geometry changes no colour.
@@ -216,7 +254,7 @@ def _cmd_build(args: argparse.Namespace) -> None:
         words,
         target,
         f"{name} — the word graph",
-        limit=_chosen(args.limit, config.selection.limit),
+        limit=_selection(args).limit,
         theme=theme,
         chrome=args.chrome,
         geometry=config.geometry,
@@ -247,7 +285,7 @@ def main(argv: list[str] | None = None) -> None:
     listing.set_defaults(func=_cmd_words)
 
     build = sub.add_parser("build", help="render the word graph")
-    _selection_args(build)
+    _selection_args(build, draws=True)
     build.add_argument("--out", default="out", metavar="DIR", help="output directory (default out)")
     build.add_argument(
         "--format",
@@ -266,13 +304,6 @@ def main(argv: list[str] | None = None) -> None:
         choices=sorted(THEMES),
         help="ground for the figure; overrides the config file's theme, which "
         "is dark unless a file says otherwise",
-    )
-    build.add_argument(
-        "--limit",
-        type=int,
-        metavar="N",
-        help="words in the disc, or 0 for every word the category has; "
-        "overrides [selection] limit, which is 110 unless a file says otherwise",
     )
     build.set_defaults(func=_cmd_build)
 

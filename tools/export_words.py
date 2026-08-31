@@ -31,7 +31,7 @@ import json
 import sys
 from pathlib import Path
 
-from wordchain.config import ConfigError, resolve
+from wordchain.config import ConfigError, as_members, resolve
 from wordchain.lexicon import CATEGORIES, Word, catalogue, members
 
 
@@ -72,24 +72,12 @@ def main() -> int:
         print(f"try one of: {', '.join(catalogue())}", file=sys.stderr)
         return 1
 
-    chosen = settings.selection
+    chosen = as_members(settings.selection)
     args.out.mkdir(parents=True, exist_ok=True)
     index: list[dict[str, object]] = []
     total = counted = 0
     for name in wanted:
-        words = _ranked(
-            members(
-                name,
-                min_zipf=chosen.min_zipf,
-                min_dominance=chosen.min_dominance,
-                max_rank=chosen.max_rank,
-                min_depth=chosen.min_depth,
-                allow_multiword=chosen.multiword,
-                target=chosen.target,
-                zipf_floor=chosen.zipf_floor,
-                cache=not args.no_cache,
-            )
-        )
+        words = _ranked(members(name, **chosen, cache=not args.no_cache))
         total += _write(
             args.out / f"words-{name}.json",
             {

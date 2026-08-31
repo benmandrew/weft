@@ -20,7 +20,16 @@ from pathlib import Path
 from typing import Any
 
 # The private names are the point: the schema repeats what they hold.
-from wordchain.config import _FLAG, _SELECTION_BOUNDS, _TOP, _ZERO_OK, Geometry, Selection
+from wordchain.cli import _DRAWN, _SELECTION_HELP
+from wordchain.config import (
+    _FLAG,
+    _MEMBERS_RENAME,
+    _SELECTION_BOUNDS,
+    _TOP,
+    _ZERO_OK,
+    Geometry,
+    Selection,
+)
 from wordchain.lexicon import members
 from wordchain.palette import DARK, PRESETS, THEMES, Arc
 
@@ -154,29 +163,43 @@ def _theme(report: Report, prop: Table) -> None:
     report.same("theme default", prop.get("default"), DARK.name)
 
 
-# `Selection` and `lexicon.members` state the same defaults, one for the file
-# and one as the library's own signature. `render.words_disc` takes its limit
-# from `Selection` and so copies nothing; `members` cannot, since its arguments
-# are its API. `allow_multiword` is the one that answers to a different name.
-_MEMBERS_NAMES = {"multiword": "allow_multiword"}
-
-
 def _library(report: Report) -> None:
     """Hold `lexicon.members`'s defaults to the ones the file can move.
 
-    A `Selection` that has drifted from the signature it feeds is the same
-    failure the schema check exists for: two copies of a number, one of them
-    stale, and a config file that quietly changes what no flag admits to.
+    `Selection` and `members` state the same numbers, one for the file and one
+    as the library's own signature. `render.words_disc` takes its limit from
+    `Selection` and so copies nothing, and `config.as_members` is what every
+    caller now goes through; `members` itself cannot, since its arguments are
+    its API. A `Selection` that has drifted from the signature it feeds is the
+    same failure the schema check exists for: two copies of a number, one of
+    them stale, and a config file that quietly changes what no flag admits to.
     """
     signature = inspect.signature(members)
     for name, default in _defaults(Selection).items():
         if name == "limit":
             continue  # only `build` draws, so `members` never sees it
-        argument = signature.parameters.get(_MEMBERS_NAMES.get(name, name))
+        argument = signature.parameters.get(_MEMBERS_RENAME.get(name, name))
         if argument is None:
             report.fail(f"lexicon.members has no argument for [selection] {name}")
             continue
         report.same(f"lexicon.members {argument.name}", argument.default, default)
+
+
+def _command_line(report: Report) -> None:
+    """Hold the flags to the table a file can move.
+
+    `cli._selection_args` builds one flag per `Selection` field and reads its
+    help out of `_SELECTION_HELP`, so a setting with no line there reaches no
+    command line at all — silently, since a missing flag is a KeyError only for
+    the settings that do have one. This is what makes it a failed check instead.
+    """
+    wanted = set(_defaults(Selection))
+    for name in sorted(wanted - set(_SELECTION_HELP)):
+        report.fail(f"cli._SELECTION_HELP: [selection] {name} has no flag and no help")
+    for name in sorted(set(_SELECTION_HELP) - wanted):
+        report.fail(f"cli._SELECTION_HELP: {name} is a flag [selection] does not have")
+    for name in sorted(_DRAWN - wanted):
+        report.fail(f"cli._DRAWN: {name} is build-only and [selection] does not have it")
 
 
 def main() -> int:
@@ -193,6 +216,7 @@ def main() -> int:
     if "theme" in props:
         _theme(report, props["theme"])
     _library(report)
+    _command_line(report)
 
     if report.problems:
         print(f"{SCHEMA.name} has drifted from config.py:", file=sys.stderr)
