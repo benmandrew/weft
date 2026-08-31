@@ -47,6 +47,7 @@
  */
 import { hsv, TAU } from "./disc-colour.js";
 import { fit } from "./disc-label.js";
+import { ratio } from "./disc-ratio.js";
 import { Search } from "./disc-search.js";
 import { Chain } from "./word-chain.js";
 import { bundle as strokeBundle, curve, RING, square, thin } from "./word-bundle.js";
@@ -429,6 +430,8 @@ class WordDisc extends HTMLElement {
   #box = null;
   #resized = -Infinity;
   #fitTimer = 0;
+  // The resolution query, re-armed on every change; see #onRatio.
+  #dq = null;
 
   constructor() {
     super();
@@ -489,6 +492,7 @@ class WordDisc extends HTMLElement {
     this.#ro.observe(this.#sr.querySelector(".stage"));
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#onScheme);
+    this.#onRatio();
     // The same font swap hypernym-disc guards against, and #resize rather than
     // repaint() because this element also solves its label size from #widest, a
     // measureText over every word in the category, which repaint() leaves alone
@@ -506,6 +510,8 @@ class WordDisc extends HTMLElement {
   disconnectedCallback() {
     this.#ro?.disconnect();
     this.#mq?.removeEventListener("change", this.#onScheme);
+    this.#dq?.removeEventListener("change", this.#onRatio);
+    this.#dq = null;
     // Terminated, where the nested disc's is not: this one holds no canvas of
     // the element's, so there is nothing that could only be handed over once
     // and nothing to lose by opening another if the element is put back.
@@ -651,12 +657,26 @@ class WordDisc extends HTMLElement {
     return true;
   }
 
+  /* Browser zoom multiplies devicePixelRatio and leaves the CSS box alone, so
+     an element a host sized in pixels sees no observation and goes on painting
+     at the resolution before the zoom, which is a disc that blurs on cmd+ and
+     never recovers. A media query naming the current ratio fires when it
+     moves, and has to be re-armed each time, since a query can only report
+     leaving the one value it names. Arming it is a fit as well: the first call
+     runs before anything is drawn and #fit answers for that. */
+  #onRatio = () => {
+    this.#dq?.removeEventListener("change", this.#onRatio);
+    this.#dq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    this.#dq.addEventListener("change", this.#onRatio);
+    this.#fit();
+  };
+
   #fit() {
     if (!this.#ready) return;
     if (this.#shape() && this.#pw) return;
     const box = this.#sr.querySelector(".stage").getBoundingClientRect();
     if (!box.width || !box.height) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = ratio(window.devicePixelRatio, box.width, box.height);
     const pw = Math.round(box.width * dpr),
       ph = Math.round(box.height * dpr);
     if (pw === this.#pw && ph === this.#ph && dpr === this.#dpr) {

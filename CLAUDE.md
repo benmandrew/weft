@@ -323,6 +323,33 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   host gives the element no height of its own; with it the host has to, so it
   is opt-in rather than the default. The harness sets it and never names a
   pixel count, since a page that guesses at its own chrome guesses wrong.
+- Both elements size their canvases through `disc-ratio.js`'s `ratio`, which
+  bounds the area rather than the ratio. They used to take
+  `Math.min(devicePixelRatio, 2)`, and browser zoom multiplies
+  devicePixelRatio, so cmd+ on a Retina screen asked for 2.2, 3 or 4 and the
+  cap drew the disc at up to half the resolution the screen was showing it at:
+  sharp at 100%, blurred at 200%, on both discs. What the cap was guarding is
+  the backing store, and a backing store is an area, so `MAX_AREA` is 2^23
+  device pixels a canvas — 33.6 MB at four bytes each, half the 16,777,216
+  Safari has held a canvas to, so an element's base and its overlay together
+  sit inside what one canvas is allowed, and above anything the old cap could
+  reach. Zoom costs the budget almost nothing, since a page laid out in CSS
+  pixels gets proportionally fewer of them as the ratio rises and the two
+  changes nearly cancel; it binds on a genuinely large element on a 3x screen,
+  which is where a canvas is actually expensive. The ratio is passed in rather
+  than read, so `check_web.mjs` holds it to the rule rather than to whatever
+  screen it runs on, the split `solve` and `square` already make.
+- A zoom is watched for as well as budgeted, because it moves devicePixelRatio
+  and leaves the CSS box alone: an element a host sized in pixels — which is
+  what `fit` asks a host to do — sees no observation and would go on painting
+  at the resolution before the zoom, blurring on cmd+ and never recovering.
+  `#onRatio` holds a `(resolution: Xdppx)` query naming the current ratio and
+  re-arms it on every change, since a query can only report leaving the one
+  value it names. `device-pixel-content-box` on the resize observer would say
+  the same thing in one place, and is not portable. `check_web.mjs`'s
+  `matchMedia` stub keeps its listeners for this, the way the `ResizeObserver`
+  one does, so a zoom is driven as a browser drives it; dropping the refit from
+  `#onRatio` fails it.
 - Only `rings` depths below the root are drawn, 14 by default. WordNet is 20
   deep and its outer rings are nearly empty — depth 13 spans 4.5% of the turn,
   depth 19 is one node — so dividing the radius by every depth put the visible
@@ -425,12 +452,12 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - `make web-dist` stages everything a page needs to run `<hypernym-disc>` flat
   in one directory, `out/web-dist` unless `DIST=` names another, which `make
   clean` removes with the rest of `out/`. Its contents are every `web/*.js`
-  module, eleven today, `web/embed.html`, the three exported data files and the
-  38 word files, 53 in all. The
+  module, twelve today, `web/embed.html`, the three exported data files and the
+  38 word files, 54 in all. The
   module list is a glob rather than names written out, which is the whole point
   of the target: a consuming site copies the directory instead of keeping its
-  own list of filenames in step with this one, where a twelfth module added here
-  leaves that site running eleven of twelve and nothing says so. `index.html`
+  own list of filenames in step with this one, where a thirteenth module added here
+  leaves that site running twelve of thirteen and nothing says so. `index.html`
   and `words.html` are left out, since they are the local harnesses and a host
   page carries its own markup, and `embed.html` is the exception because it is
   written for this directory: it asks for `wordnet-tree.json` and
@@ -632,8 +659,15 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   sizing. The ring sits at `RING` of that square, 0.496, and the element inverts
   that to blit — `side = r / RING`, centred on the disc — so a resize is a
   scaled `drawImage` rather than a rebuild. The square is `(r * dpr) / RING`
-  rounded up to `STEP`, 256 device pixels, and capped at `MAX_PX`, 2,048, which
-  is 16.8 MB of bitmap; a disc larger than that is blitted up. The step is what
+  rounded up to `STEP`, 256 device pixels, and capped at `MAX_PX`, which is
+  derived from `disc-ratio.js`'s `MAX_AREA` rather than written down: the ring
+  fills the frame, so a square stage of side s at ratio d wants about s × d,
+  and the budget holds s × d to the root of `MAX_AREA`. That is 3,072 today, a
+  37.7 MB bitmap at the one disc size that reaches it, and a disc larger than
+  that is blitted up. Derived because a cap short of the budget blurs the
+  bundle alone while the dots and the labels drawn over it stay sharp, which is
+  the fault a number written down here would come back as the next time the
+  budget moved. The step is what
   makes a drag cross a size boundary a few times rather than rebuild on every
   frame. `curve` is shared: the element draws its fan and its chain through the
   same function the bundle strokes with, so the resting picture and the live one
@@ -878,6 +912,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/word-bundle.js             the resting bundle and its square, no DOM
     web/word-bundle-worker.js      builds it off the main thread
     web/disc-colour.js             TAU and hsv, read by both discs
+    web/disc-ratio.js              the backing-store ratio and its budget, no DOM
     web/words.html                 the word disc's harness, with a picker
     web/embed.html                 a section per disc, the one page web-dist ships
     tools/export_tree.py           writes the tree, its names and its glosses
@@ -938,7 +973,7 @@ the JavaScript checks need no `node_modules` and no lockfile. It covers
 `web/**/*.js` and `tools/**/*.mjs`, which is everything: `web/index.html`
 carries no inline script. The recipe names `web/ tools/` on the command line
 rather than `.`, which it used to, though `files.includes` narrows either
-invocation to the same 12 files, because config discovery runs before that
+invocation to the same 13 files, because config discovery runs before that
 filtering: from the
 repository root Biome walks into any git worktree under `.claude/worktrees/`,
 finds the copy of `biome.jsonc` living there, and refuses to run at all with

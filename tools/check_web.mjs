@@ -256,7 +256,25 @@ globalThis.ResizeObserver = class {
   observe() {}
   disconnect() {}
 };
-globalThis.matchMedia = () => ({ addEventListener() {}, removeEventListener() {} });
+/* The listeners are kept, the way the resize observer's are, so a test can
+   drive a change of resolution as a browser drives one. Removal goes by
+   function rather than by query, since re-arming takes the listener off the
+   old query object and puts it on a new one. */
+const MEDIA = [];
+globalThis.matchMedia = q => ({
+  addEventListener(_, fn) {
+    MEDIA.push({ q, fn });
+  },
+  removeEventListener(_, fn) {
+    const i = MEDIA.findIndex(m => m.fn === fn);
+    if (i >= 0) MEDIA.splice(i, 1);
+  },
+});
+// A browser zoom: devicePixelRatio moves and the CSS box stays where it was.
+const zoom = to => {
+  window.devicePixelRatio = to;
+  for (const m of [...MEDIA]) if (m.q.includes("dppx")) m.fn();
+};
 globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
 globalThis.window = { devicePixelRatio: 2 };
 globalThis.self = globalThis;
@@ -270,6 +288,7 @@ const MODULES = [
   "disc-colour.js",
   "disc-label.js",
   "disc-paint.js",
+  "disc-ratio.js",
   "disc-search.js",
   "disc-worker.js",
   "hypernym-disc.js",
@@ -801,6 +820,37 @@ check(
 check(square(4000, 2) === MAX_PX, `a huge disc asked for ${square(4000, 2)} rather than the cap`);
 check(square(10, 1) > 0, `a tiny disc sized its bundle at ${square(10, 1)}`);
 
+/* The backing-store ratio, and the bundle's cap held to it.
+   A ratio is never above the screen's own, and the pixels it asks for are
+   never above the budget, whatever box it is handed. */
+const { ratio, MAX_AREA } = await import(mod("disc-ratio.js"));
+for (const [d, w, h] of [
+  [4, 716, 716],
+  [3, 1900, 1000],
+  [2, 3000, 2000],
+  [4, 100, 100],
+  [1, 400, 300],
+]) {
+  const k = ratio(d, w, h);
+  check(
+    k > 0 && k <= d && w * k * (h * k) <= MAX_AREA + 1,
+    `ratio ${k} on ${w} by ${h} at dpr ${d} asks for ${Math.round(w * k * h * k)} pixels`,
+  );
+}
+/* The case the cap of 2 used to blur: a disc zoomed to 200% on a Retina
+   screen, which halves the CSS box and doubles the ratio, so the pixels are
+   the same and there is nothing to save by refusing them. */
+check(ratio(4, 716, 716) === 4, `a zoomed disc was held to ${ratio(4, 716, 716)}`);
+check(ratio(0, 700, 400) === 1, `a screen reporting no ratio came back at ${ratio(0, 700, 400)}`);
+/* And the bundle's cap must not bind before that budget does, or the picture
+   blurs under dots and labels that stayed sharp. The largest ring a budgeted
+   square frame can hold is half its side. */
+const budgeted = Math.sqrt(MAX_AREA) / 2;
+check(
+  square(budgeted, 1) <= MAX_PX,
+  `a frame at the budget wants ${square(budgeted, 1)} against a cap of ${MAX_PX}`,
+);
+
 /* The stroke thinned by what the disc holds. An alpha of zero draws nothing
    and one above the tuned value draws more ink than the value it was tuned at,
    and the element could notice neither, which is why the rule is here. Written
@@ -1306,6 +1356,21 @@ for (const fn of OBSERVERS) fn();
 check(drew.curve === 0, `a resize restroked ${drew.curve} chords`);
 check(drew.image > 0, "the bundle was not blitted after a resize");
 check(disc.stats.bundle, "the bundle went out over a resize");
+
+/* A browser zoom raises devicePixelRatio and leaves the CSS box alone, so the
+   resize observer never fires and an element sized in pixels by its host would
+   go on painting at the resolution before the zoom — a disc that blurs on cmd+
+   and never recovers. The resolution query is what catches it, and the canvas
+   has to come back larger for the box it already had. */
+await new Promise(r => setTimeout(r, 80));
+const wasWide = shadow.querySelector(".base").width;
+zoom(4);
+const nowWide = shadow.querySelector(".base").width;
+check(
+  nowWide === Math.round((BOX - 4) * ratio(4, BOX - 4, BOX - 4)),
+  `a zoom to dpr 4 took the canvas from ${wasWide} to ${nowWide}`,
+);
+zoom(2);
 
 disc.setAttribute("limit", "40");
 disc.attributeChangedCallback("limit", "0", "40");

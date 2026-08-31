@@ -14,17 +14,23 @@
  * picture on the seven largest categories.
  */
 
+import { MAX_AREA } from "./disc-ratio.js";
+
 // Where the ring sits in the square, short of the half so a stroke at the rim
 // has its own width inside the picture rather than clipped by the edge. The
 // element inverts this to size the blit, so the two cannot disagree.
 export const RING = 0.496;
 
 /* The square is rounded up to a step, so a drag crosses a size boundary a few
-   times rather than rebuilding on every frame, and capped where a bitmap stops
-   being worth its memory — 2,048 square is 16.8 MB, and a disc larger than
-   that is blitted up rather than drawn again. */
+   times rather than rebuilding on every frame, and capped at the largest one a
+   frame inside disc-ratio.js's budget can ask for. Derived rather than written
+   down, since a cap short of that blurs the bundle alone while the dots and
+   the labels over it stay sharp, and nothing downstream can tell: the ring
+   fills the frame, so a square stage of side s at ratio d wants about s * d,
+   and the budget holds s * d to the root of MAX_AREA. That is 3,072 today, a
+   37.7 MB bitmap at the one disc size that reaches it. */
 export const STEP = 256,
-  MAX_PX = 2048;
+  MAX_PX = Math.ceil(Math.sqrt(MAX_AREA) / STEP) * STEP;
 
 /* The square a ring of this radius wants, in device pixels. Here rather than
    in the element because a sizing that comes back at half the resolution it

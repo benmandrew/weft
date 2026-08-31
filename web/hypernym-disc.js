@@ -47,6 +47,7 @@
 import { Painter, TAU } from "./disc-paint.js";
 import { Search } from "./disc-search.js";
 import { fit } from "./disc-label.js";
+import { ratio } from "./disc-ratio.js";
 
 // The "up" hint under the hub's name: its size, and the room it takes from the
 // name above it.
@@ -276,6 +277,8 @@ class HypernymDisc extends HTMLElement {
   #box = null;
   #resized = -Infinity;
   #fitTimer = 0;
+  // The resolution query, re-armed on every change; see #onRatio.
+  #dq = null;
 
   constructor() {
     super();
@@ -318,6 +321,7 @@ class HypernymDisc extends HTMLElement {
     this.#ro.observe(this.#sr.querySelector(".stage"));
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#repaint);
+    this.#onRatio();
     // Canvas text is measured rather than laid out, so a face landing after the
     // first frame repaints nothing on its own: the DOM reflows on a font swap
     // and a drawn pixel cannot. The fit is cached on radius and text, carrying
@@ -338,6 +342,8 @@ class HypernymDisc extends HTMLElement {
   disconnectedCallback() {
     this.#ro?.disconnect();
     this.#mq?.removeEventListener("change", this.#repaint);
+    this.#dq?.removeEventListener("change", this.#onRatio);
+    this.#dq = null;
     // The worker is left running on purpose. It holds the only handle to the
     // base canvas, which cannot be handed over twice, so terminating it here
     // would leave a reattached element with nothing to paint on.
@@ -580,6 +586,20 @@ class HypernymDisc extends HTMLElement {
     return true;
   }
 
+  /* Browser zoom multiplies devicePixelRatio and leaves the CSS box alone, so
+     an element a host sized in pixels sees no observation and goes on painting
+     at the resolution before the zoom, which is a disc that blurs on cmd+ and
+     never recovers. A media query naming the current ratio fires when it
+     moves, and has to be re-armed each time, since a query can only report
+     leaving the one value it names. Arming it is a fit as well: the first call
+     runs before anything is drawn and #fit answers for that. */
+  #onRatio = () => {
+    this.#dq?.removeEventListener("change", this.#onRatio);
+    this.#dq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    this.#dq.addEventListener("change", this.#onRatio);
+    this.#fit();
+  };
+
   #fit() {
     if (!this.#ready) return;
     // Only once something is drawn: the first fit goes ahead on the box it
@@ -588,7 +608,7 @@ class HypernymDisc extends HTMLElement {
     if (this.#shape() && this.#pw) return;
     const box = this.#sr.querySelector(".stage").getBoundingClientRect();
     if (!box.width || !box.height) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = ratio(window.devicePixelRatio, box.width, box.height);
     const pw = Math.round(box.width * dpr),
       ph = Math.round(box.height * dpr);
     // Back to the size already drawn, so a box held from part way through the
