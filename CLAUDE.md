@@ -936,7 +936,15 @@ opaque WordNet type rather than leaving a bare `Any` at each call site.
 Biome is one Rust binary with its rules built in, like `ruff` and `taplo`, so
 the JavaScript checks need no `node_modules` and no lockfile. It covers
 `web/**/*.js` and `tools/**/*.mjs`, which is everything: `web/index.html`
-carries no inline script. `biome format` reports without writing and exits
+carries no inline script. The recipe names `web/ tools/` on the command line
+rather than `.`, which it used to, though `files.includes` narrows either
+invocation to the same 12 files, because config discovery runs before that
+filtering: from the
+repository root Biome walks into any git worktree under `.claude/worktrees/`,
+finds the copy of `biome.jsonc` living there, and refuses to run at all with
+"found a nested root configuration". Naming the two directories is what makes
+`make check` pass whether or not a worktree is open, which is the point of
+working in one. `biome format` reports without writing and exits
 non-zero on a diff, so there is no `--check` flag to pass and `--write` is what
 writes. `lineWidth` is 100 to match ruff's `line-length`, and the style settings
 name what the code already did. Two things are off, with their reasons in

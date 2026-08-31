@@ -56,19 +56,28 @@ all: $(SVGS)
 $(OUT)/%.svg: $(SOURCES)
 	$(BUILD) $* --out $(OUT)
 
-# Everything that has to pass before a commit. The last two are about the
-# config file: taplo validates wordchain.toml against wordchain.schema.json,
-# which is the check an editor runs, and check_schema.py reads that schema back
-# against config.py, since the schema repeats every field name, default and
-# bound the code already owns.
+# Everything that has to pass before a commit. taplo and check_schema.py are
+# about the config file: taplo validates wordchain.toml against
+# wordchain.schema.json, which is the check an editor runs, and check_schema.py
+# reads that schema back against config.py, since the schema repeats every field
+# name, default and bound the code already owns.
+#
+# Biome is given the two directories rather than `.`, which it used to be. Its
+# `files.includes` already narrows the run to those, so the same 12 files are
+# checked either way, but config discovery happens before that filtering: from
+# the root it walks into any git worktree under .claude/worktrees/, finds the
+# biome.jsonc in the copy of this tree living there, and refuses to run at all
+# with "found a nested root configuration". Naming the directories means `make
+# check` passes whether or not a worktree is open, which is the whole point of
+# working in one.
 check: web
 	@ruff check src/ tools/
 	@ruff format --check src/ tools/
 	@mypy
 	@RUST_LOG=warn taplo check
 	@python tools/check_schema.py
-	@biome lint .
-	@biome format .
+	@biome lint web/ tools/
+	@biome format web/ tools/
 
 # A prerequisite of check rather than a line in it, since it is the one part
 # that needs node. It loads every module in web/ the way a browser does, which
