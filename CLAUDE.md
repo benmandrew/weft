@@ -406,12 +406,13 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - `make web-dist` stages everything a page needs to run `<hypernym-disc>` flat
   in one directory, `out/web-dist` unless `DIST=` names another, which `make
   clean` removes with the rest of `out/`. Its contents are every `web/*.js`
-  module, five today, and the three exported data files. The module list is a
-  glob rather than names written out, which is the whole point of the target:
-  a consuming site copies the directory instead of keeping its own list of
-  filenames in step with this one, where a sixth module added here leaves that
-  site running five of six and nothing says so. `index.html` is left out,
-  since it is the local harness and a host page carries its own markup. The
+  module, nine today, the three exported data files and the 38 word files. The
+  module list is a glob rather than names written out, which is the whole point
+  of the target: a consuming site copies the directory instead of keeping its
+  own list of filenames in step with this one, where a tenth module added here
+  leaves that site running nine of ten and nothing says so. The two `.html`
+  files are left out, since they are the local harnesses and a host page
+  carries its own markup. The
   directory is emptied and refilled rather than copied into, and `web/.` is a
   prerequisite alongside the modules, because a directory's timestamp moves
   when a file enters or leaves it and that is the only thing that catches a
@@ -420,6 +421,70 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   directory runs wherever it is served from. The three data files are one
   grouped target (`&:`) rather than three rules, so the exporter walks the
   corpus once rather than three times.
+- `<word-disc>` is `render.words_disc` made interactive: pick a word, every word
+  that can follow it lights up, pick again, and the chain reads out under the
+  disc. The successors of a word are a whole wedge — every word starting with
+  the letter it ends on — and never a list stored per word, which is `graph.py`'s
+  claim that the game lives on 26 nodes and the word graph is the line graph of
+  that one. Materialising the edges is 96,470 of them for animal at `limit 0`,
+  against 26 arrays. A word cannot follow itself, the same exclusion `render.py`
+  makes when it builds the bundle.
+- `word-layout.js` is that figure's layout written a second time, so the browser
+  and the SVG put the same word at the same angle: the same 3.5 degree gap, the
+  same wedge order, the same `_fan_key`. `check_web.mjs` holds it to the Python's
+  ordering, and a change on either side has to be made on both. `solve`, `turns`
+  and `at` sit there rather than in the element, because a sizing that comes back
+  with a negative radius is exactly what nothing downstream tests for and `make
+  check` can; the hub is held to 0.55 of the ring so a frame too small for the
+  label floor cannot leave it swallowing the dots.
+- A repeat is played and marked, not refused. The game says otherwise, but a
+  widget that silently drops a click teaches nothing about the rule it is
+  dropping it for, so the step goes into the chain and reads in the warning
+  colour on the disc and in the line under it. `--disc-warn` is the custom
+  property, standing at the theme's `dead`.
+- `disc-colour.js` holds `TAU` and `hsv`, moved out of `disc-paint.js`: both
+  discs read the same letter wheel and `<word-disc>` needs none of the rest of
+  that 405-line Painter. `disc-paint.js` re-exports `TAU`, so its import sites
+  and `hypernym-disc.js`'s are unchanged.
+- The resting bundle is every chord the SVG draws, cached to an offscreen canvas
+  once per size and blitted per frame, dimmed to 0.22 once a chain is being
+  built. It is a stroke per chord rather than one path per letter, because the
+  alpha has to accumulate where curves overlap the way it does in the figure;
+  batched into one path a bundle composites once and reads flat. Past 24,000
+  chords it is skipped — animal at `limit 0` holds 96,470, which is fog rather
+  than a picture and would cost a stroke each on every frame of a resize.
+- The label size is solved rather than set, the same equation as `_wanted_inches`
+  and `_disc_limit` turned round: there the canvas grows until adjacent labels
+  clear each other, here the canvas is whatever the host gave, so the type takes
+  the shortfall from the start. Below 5.5 px the labels are dropped rather than
+  smeared and the hub names what the pointer is on instead, which is the whole of
+  what a label was for. In a 720 px square: 110 words solve to 12.3 px, 200 words
+  to 7.4, and at 400 the labels go and the ring takes their room, 260 px to 325.
+- Hit testing is one binary search over the placement order: turns clockwise from
+  the top are strictly increasing by construction, so there is no spatial index,
+  the same argument the nested disc makes. Both neighbours are tested, since the
+  search lands below the query and the slice above it may be the nearer one, and
+  the gaps between wedges belong to nobody.
+- Two canvases and no worker. The base moves on a move — bundle, fan, chain,
+  dots, labels, wedge letters — and the overlay on a pointer: the hub, a ring on
+  whatever it is over, and a preview of the fan that word would open. The bundle
+  being cached is what makes a click a blit and a fan. The hub is an opaque panel
+  disc, which the SVG has no need of, because a name has to read over the bundle
+  behind it; clicking it is the way back, one step, which is the one thing
+  clicking a word cannot do.
+- `tools/export_words.py` writes `words-<category>.json`, one per category, plus
+  `words-index.json`: 37 categories, 13,212 words, 197 KB. Flat names rather than
+  a directory, since `web-dist` stages everything side by side and the modules
+  find each other by relative path there. Each file holds the whole category in
+  `render.py`'s own order and the element cuts it at its own `limit`, so a host
+  changing that attribute refetches nothing. It reads `[selection]` the way every
+  command does, so what the element draws is what `build` would draw. The
+  Makefile's `WORDS` is one grouped target (`&:`) for the same reason the tree
+  is: one run resolves every category, where 38 ordinary rules would load WordNet
+  38 times. `serve` and `web-dist` both depend on it. `web/index.html` stays the
+  nested-arc harness and `web/words.html` is the word chain one, whose category
+  picker is the harness's own rather than the element's: a host page embeds one
+  category and the element takes one file.
 
 ## Shape
 
@@ -444,9 +509,15 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/disc-label.js              the hub's text fitting, no DOM
     web/disc-worker.js             hosts it on its own thread
     web/index.html                 its harness, the disc and nothing else
+    web/word-disc.js               the word chain element
+    web/word-layout.js             its wedge placement and sizing, no DOM
+    web/word-chain.js              the chain and the repeat rule, no DOM
+    web/disc-colour.js             TAU and hsv, read by both discs
+    web/words.html                 the word disc's harness, with a picker
     tools/export_tree.py           writes the tree, its names and its glosses
+    tools/export_words.py          writes a file per category and the index
     tools/serve.py                 serves web/ and reloads it on save
-    tools/check_web.mjs            loads web/ the way a browser does
+    tools/check_web.mjs            loads and drives web/ as a browser does
 
 `graph.py` holds the structural claim the whole project rests on: a word is an
 edge from its first letter to its last, so the game lives on 26 nodes and the
@@ -528,6 +599,17 @@ retuned, that a multiword subsequence query still reaches a multiword name
 through the character-mask prune, that holding every character of a query is
 not the same as holding them in order, and that `fit` returns the face it set.
 It needs no data files, so it does not depend on the exported tree.
+
+It also drives `<word-disc>` rather than only importing it. A field initialiser
+naming a constant a refactor had moved parses, imports, and throws only when a
+page first constructs the element; that happened, to this element, and nothing
+short of building one caught it. The stub records what the canvas was asked to
+draw and measures text off the font size it was set, both templates clone the
+same markup so one fragment serves either element, and the points a click is
+fired at are computed from `word-layout.js`, which makes a hit a statement about
+the element agreeing with the layout. The assertions were mutation-tested:
+reversing the fan sort, dropping the hit test's upper neighbour, and removing the
+label floor each fail it.
 
 Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
 `src/` on the path, and the tree is clean under it; the pyright CLI is not in

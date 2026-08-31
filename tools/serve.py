@@ -2,11 +2,13 @@
 
 The point is the edit loop: change `hypernym-disc.js`, save, and the page in
 front of you is already showing the new code with its timings measured again
-from a cold build.
+from a cold build. `/` is the nested-arc harness and `/words.html` the word
+chain one.
 
-`web/` is served at `/` and `out/` at `/out/`, so the page reaches the exported
-tree at `/out/wordnet-tree.json` without either directory having to know where
-the other sits. A background thread compares file modification times every
+`web/` is served at `/` and `out/` at `/out/`, so a page reaches the exported
+tree at `/out/wordnet-tree.json` and a category at `/out/words-animal.json`
+without either directory having to know where the other sits. A background
+thread compares file modification times every
 `--interval` seconds and bumps a counter when any of them move; every open
 `/__reload` stream notices the new number and tells its page to reload. Server
 sent events rather than a websocket, because the whole protocol is one line of
@@ -171,11 +173,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         print(f"  {line}", flush=True)
 
 
+# What a harness needs to draw anything, and so what the watcher follows and
+# the run refuses to start without. The glosses are left out of both: the disc
+# is unaffected by their absence, and a page says so itself.
+NEEDED = ("wordnet-tree.json", "wordnet-names.txt", "words-index.json")
+
+
 def _watch_roots(extra: list[Path]) -> Iterator[Path]:
     yield WEB
-    for name in ("wordnet-tree.json", "wordnet-names.txt"):
-        if (OUT / name).exists():
-            yield OUT / name
+    for path in [*(OUT / name for name in NEEDED), *sorted(OUT.glob("words-*.json"))]:
+        if path.exists():
+            yield path
     yield from extra
 
 
@@ -193,11 +201,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    missing = [
-        name for name in ("wordnet-tree.json", "wordnet-names.txt") if not (OUT / name).exists()
-    ]
+    missing = [name for name in NEEDED if not (OUT / name).exists()]
     if missing:
-        print(f"out/{', out/'.join(missing)} missing. Run: make tree")
+        print(f"out/{', out/'.join(missing)} missing. Run: make tree words")
         return 1
 
     watcher = Watcher(list(_watch_roots(args.watch)), args.interval)

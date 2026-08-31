@@ -19,7 +19,11 @@
  * one node — and dividing the radius by every depth spends a quarter of it on
  * a fringe too sparse to see. What is cut off is one zoom away.
  */
-export const TAU = Math.PI * 2;
+// TAU and hsv are shared with <word-disc>, which reads the same letter wheel
+// and none of the rest of this. Re-exported so the import sites here and in
+// hypernym-disc.js stay as they were.
+import { hsv, TAU } from "./disc-colour.js";
+export { TAU };
 // Below one pixel at its outer edge a wedge cannot be told from its neighbour.
 export const MERGE_PX = 1;
 // Value steps the density ramp is quantised to, and how far it dips at its
@@ -27,23 +31,6 @@ export const MERGE_PX = 1;
 // the interned palette a lookup rather than a string build per piece.
 const RAMP_STEPS = 24;
 const RAMP_FLOOR = 0.62;
-
-const hsv = (h, s, v) => {
-  const i = Math.floor(h * 6) % 6,
-    f = h * 6 - Math.floor(h * 6),
-    p = v * (1 - s),
-    q = v * (1 - f * s),
-    t = v * (1 - (1 - f) * s);
-  const c = [
-    [v, t, p],
-    [q, v, p],
-    [p, v, t],
-    [p, q, v],
-    [t, p, v],
-    [v, p, q],
-  ][i];
-  return `rgb(${(c[0] * 255) | 0},${(c[1] * 255) | 0},${(c[2] * 255) | 0})`;
-};
 
 export class Painter {
   #par;

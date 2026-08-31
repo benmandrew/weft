@@ -29,13 +29,25 @@ The three selection commands share the filters that decide which words a categor
 
 `make -j` renders every category, one file each, so editing a module redraws all 37 and an untouched tree redraws none. `make clean` removes the output directory, `OUT=` moves it, and `CONFIG=` names a config file.
 
-`make web-dist` gathers everything a page needs to run the disc element into one flat directory, `out/web-dist` unless `DIST=` names another: the five browser modules and the three data files they fetch. The modules are found by glob rather than listed by name, so a site that embeds the disc copies the directory instead of keeping its own list of filenames in step with this one; `index.html` stays behind, as the local harness a host page replaces with its own markup.
+`make web-dist` gathers everything a page needs to run either element into one flat directory, `out/web-dist` unless `DIST=` names another: the browser modules, the exported WordNet tree, and one file per category. The modules are found by glob rather than listed by name, so a site that embeds a disc copies the directory instead of keeping its own list of filenames in step with this one; the two harness pages stay behind, as the local pages a host replaces with its own markup.
 
 ## Outputs
 
 `build` writes one file, `out/<category>.svg`: the word graph in wedges by first letter, the 110 commonest words by default. The analysis is a command away, with `stats` printing it and `words` printing the list.
 
 Scalable Vector Graphics (SVG) is the default because the disc zooms, so a label too small to read on screen is one gesture away, and `--format png` renders a raster instead. Glyphs are embedded as outlines rather than named, so the figure renders identically on a machine with none of Iowan Old Style, Avenir or Menlo installed.
+
+## Playing it in the browser
+
+The rendered disc shows every legal move at once, and `<word-disc>`, a *custom element*, makes those moves playable. Picking a word lights up every word that can follow it, which is one whole wedge of the disc, because the words that can follow *cat* are exactly the words starting with T. Picking one of those carries the chain on, and the line under the disc is the chain so far, each step clickable to wind play back to it.
+
+A word already played keeps a warning colour wherever it appears on the disc, and playing it a second time marks that step rather than refusing the click. The rule against repeats is the one a player breaks by accident, so the element shows it being broken instead of silently dropping the move.
+
+The centre of the disc names whatever the pointer is on, and otherwise the word play is standing on; clicking it takes one step back. A search box reaches a word by name. The line above the chain says what the current word hands over on and how many words can follow it, or that nothing can, which is the end of the round.
+
+The element takes one category file and a `limit` attribute, 110 words by default as in `build`, or 0 for every word the category has. Past a few hundred words the labels stop fitting and are dropped, and the centre names what the pointer is on instead.
+
+`make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves both harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet and `/words.html` the word chain.
 
 ## Configuration
 

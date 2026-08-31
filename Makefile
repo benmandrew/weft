@@ -28,6 +28,12 @@ SOURCES := $(wildcard src/wordchain/*.py) $(CONFIG)
 # All of it sits outside the SVG pipeline: nothing in `all` depends on any of it.
 DATA := $(addprefix $(OUT)/,wordnet-tree.json wordnet-names.txt wordnet-glosses.txt)
 
+# One file per category for <word-disc>, plus the index a page picks from. Flat
+# names rather than a directory, since web-dist stages everything side by side.
+# Each holds the whole category and the element cuts it at its own limit, so a
+# page changing that attribute refetches nothing.
+WORDS := $(patsubst %,$(OUT)/words-%.json,$(CATEGORIES)) $(OUT)/words-index.json
+
 # Every module in web/, found by glob rather than named one by one, so a sixth
 # module reaches a consuming site by existing. index.html is the local harness
 # and stays out of the glob: a host page carries its own markup.
@@ -36,7 +42,7 @@ MODULES := $(wildcard web/*.js)
 # The directory web-dist stages the modules and the data into. DIST= moves it.
 DIST ?= $(OUT)/web-dist
 
-.PHONY: all check clean list tree serve web web-dist
+.PHONY: all check clean list tree words serve web web-dist
 
 all: $(SVGS)
 
@@ -76,9 +82,18 @@ $(DATA) &: tools/export_tree.py src/wordchain/lexicon.py
 
 tree: $(DATA)
 
+# One grouped target for the same reason as the tree: a single run resolves
+# every category, where 38 ordinary rules would load WordNet 38 times. The
+# selection settings decide the lists, so the config file is a prerequisite
+# through SOURCES.
+$(WORDS) &: tools/export_words.py $(SOURCES)
+	@python tools/export_words.py --out $(OUT) $(if $(CONFIG),--config $(CONFIG))
+
+words: $(WORDS)
+
 # Serves web/ with a watcher that reloads the browser on save. ARGS= passes
 # flags through, as in `make serve ARGS='--port 9000 --open'`.
-serve: $(DATA)
+serve: $(DATA) $(WORDS)
 	@python tools/serve.py $(ARGS)
 
 # Everything a page needs to run the element, flat in one directory: the
@@ -93,10 +108,10 @@ web-dist: $(DIST)
 # themselves because a directory's timestamp moves when a file enters or leaves
 # it, which is the only thing that catches a deletion. It is spelt with the dot
 # so make reads it as that directory rather than as the phony web above.
-$(DIST): $(MODULES) $(DATA) web/.
+$(DIST): $(MODULES) $(DATA) $(WORDS) web/.
 	@rm -rf $@
 	@mkdir -p $@
-	@cp $(MODULES) $(DATA) $@
+	@cp $(MODULES) $(DATA) $(WORDS) $@
 
 list:
 	@printf '%s\n' $(CATEGORIES)
