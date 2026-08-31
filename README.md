@@ -43,7 +43,7 @@ The rendered disc shows every legal move at once, and `<word-disc>`, a *custom e
 
 A word already played is not a move, and the element says so three ways before the click rather than taking one and marking it. The word keeps its warning colour wherever it appears on the disc, the line above the chain says it is already played while the pointer is on it, and the cursor goes back to an arrow over it.
 
-The centre of the disc names whatever the pointer is on, and otherwise the word play is standing on; clicking it takes one step back. A search box reaches a word by name. The line above the chain says what the current word hands over on and how many words can follow it, or that nothing can, which is the end of the round.
+The centre of the disc names whatever the pointer is on, and otherwise the word play is standing on; clicking it takes one step back. That name is set large and bold over the curves rather than on a panel, since the middle of the disc is where the long chords cross and covering it would hide the part of the figure worth seeing. A search box reaches a word by name. The line above the chain says what the current word hands over on and how many words can follow it, or that nothing can, which is the end of the round.
 
 The element takes one category file and a `limit` attribute, 110 words by default as in `build`, or 0 for every word the category has. Past a few hundred words the labels stop fitting and are dropped, and the centre names what the pointer is on instead.
 

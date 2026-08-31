@@ -517,10 +517,31 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - Two canvases and no worker. The base moves on a move — bundle, fan, chain,
   dots, labels, wedge letters — and the overlay on a pointer: the hub, a ring on
   whatever it is over, and a preview of the fan that word would open. The bundle
-  being cached is what makes a click a blit and a fan. The hub is an opaque panel
-  disc, which the SVG has no need of, because a name has to read over the bundle
-  behind it; clicking it is the way back, one step, which is the one thing
-  clicking a word cannot do.
+  being cached is what makes a click a blit and a fan. Clicking the hub is the
+  way back, one step, which is the one thing clicking a word cannot do. Nothing
+  is drawn behind it now: a panel disc wide enough to hold the name covered the
+  middle of the figure, and the middle is where the long chords cross, so it is
+  the part worth seeing rather than the part to cover. The name cannot simply sit
+  on the bundle unaided, and that was measured rather than assumed: 100 to 280 of
+  a category's drawn chords pass inside the hub's radius, 279 of 658 in element
+  at the worst and 183 of 449 in animal, and 100 to 156 of them come within 0.15
+  of the ring's radius of dead centre. So the text carries its own ground
+  instead. It is stroked under the fill in `--disc-ground`, at a line width of
+  the type size times 0.3 and never under 3.5 px, with a round join so the halo
+  follows the letterforms rather than throwing spikes off their corners. The only
+  thing it hides is the shape of its own letters. With no outline drawn, the
+  "↑ back" hint and the pointer cursor are what mark the hub as clickable; its
+  radius is unchanged.
+- `disc-label.js`'s `fit` takes an optional size ladder and weight and defaults
+  to what it had, so `<hypernym-disc>` is untouched at 12 down to 8 px and weight
+  500, and `<word-disc>` asks for 22 down to 12 at 700. Its hub is the larger of
+  the two and the name is the only thing in it, where the nested disc's hub
+  shares the middle with a ring of its own children. Every one of animal's 110
+  words takes the full 22 px, and three fall to 19 when the back hint takes room
+  from them; the old ladder gave "chameleon" 12 px. The extremes still degrade
+  the way they did — the 29-character `methylenedioxymethamphetamine` steps to
+  12 px over three hyphenated lines. `fit` returns the size it settled on as well
+  as the leading and the face, since the halo is scaled to the type.
 - The gloss and the crumb below the disc are held to a height whatever they
   hold, and that is what stops the disc moving under the pointer. Under `fit`
   the frame is a flex column and the stage takes what those two leave, so a

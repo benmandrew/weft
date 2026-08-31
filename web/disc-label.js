@@ -5,7 +5,7 @@
  * measures a monospace face. The same split as disc-paint.js and
  * disc-search.js: the part with edge cases is the part that can be checked.
  *
- *   const {lines, lh, font} = fit(ctx, "domestic cat", 49, "Menlo, monospace");
+ *   const {lines, lh, px, font} = fit(ctx, "domestic cat", 49, "Menlo, monospace");
  *
  * `font` is the face the fit settled on, which it has already set on the
  * context. It is returned as well so a caller holding the result can set it
@@ -14,28 +14,34 @@
  * the pointer crossing back into a wedge asks for the same name it just left.
  */
 
-// The sizes the label steps down through, and the lines it may wrap to.
+// The sizes the label steps down through by default, its weight, and the lines
+// it may wrap to. <word-disc> hands in a ladder of its own: its hub is the
+// larger of the two and its label is the only thing in the middle of the disc,
+// where the nested disc's shares the space with a ring of its own children.
 const SIZES = [12, 11, 10, 9, 8];
+const WEIGHT = 500;
 const MAX_LINES = 3;
 
 /* A name runs to 71 characters and the hub is about a hundred across, so the
    label steps down the sizes and wraps until it fits, breaking a word only when
    nothing else does. Every line has to clear the chord at the block's edge
    rather than the diameter, which is why the budget narrows as a line is added.
-   Sets the font on `g` as it goes. */
-export function fit(g, text, r, mono) {
-  for (const px of SIZES) {
-    const font = `500 ${px}px ${mono}`;
+   Sets the font on `g` as it goes, and returns the size as well as the face,
+   since a caller drawing a halo under the text scales it to the type. */
+export function fit(g, text, r, mono, { sizes = SIZES, weight = WEIGHT } = {}) {
+  for (const px of sizes) {
+    const font = `${weight} ${px}px ${mono}`;
     g.font = font;
     const lh = px + 2;
     for (let n = 1; n <= MAX_LINES && n * lh < 2 * r; n++) {
       const lines = wrap(g, text, 2 * Math.sqrt(r * r - ((n * lh) / 2) ** 2), n);
-      if (lines) return { lines, lh, font };
+      if (lines) return { lines, lh, px, font };
     }
   }
-  const font = `500 ${SIZES.at(-1)}px ${mono}`;
+  const px = sizes.at(-1);
+  const font = `${weight} ${px}px ${mono}`;
   g.font = font;
-  return { lines: wrap(g, text, 1.4 * r, MAX_LINES, true), lh: SIZES.at(-1) + 2, font };
+  return { lines: wrap(g, text, 1.4 * r, MAX_LINES, true), lh: px + 2, px, font };
 }
 
 /* Greedy by word, null when the text needs more than `n` lines. Under `hard` a

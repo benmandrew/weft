@@ -29,7 +29,7 @@ const check = (ok, said) => {
    counted. Nothing is rasterised and nothing is compared to a picture: what is
    asserted below is that the code runs and puts the right number of things in
    the right places. */
-const drew = { fillText: 0, stroke: 0, arc: 0, curve: 0, image: 0 };
+const drew = { fillText: 0, strokeText: 0, stroke: 0, arc: 0, curve: 0, image: 0 };
 const PX = 0.6; // stub glyph width, as a fraction of the font size
 
 class El {
@@ -112,6 +112,14 @@ class Canvas extends El {
     super("canvas", "");
     this.width = 0;
     this.height = 0;
+    // Its own tally as well as the shared one, so a claim about what a single
+    // canvas was asked to draw can be made — the two discs share `drew`, and
+    // the base's 110 dots would drown out the overlay's nothing.
+    this.drew = { fillText: 0, strokeText: 0, stroke: 0, arc: 0, curve: 0, image: 0 };
+    const both = what => {
+      drew[what]++;
+      this.drew[what]++;
+    };
     this._g = {
       canvas: this,
       font: "10px x",
@@ -121,6 +129,7 @@ class Canvas extends El {
       globalAlpha: 1,
       textAlign: "",
       textBaseline: "",
+      lineJoin: "",
       setTransform() {},
       clearRect() {},
       save() {},
@@ -132,11 +141,12 @@ class Canvas extends El {
       moveTo() {},
       lineTo() {},
       fill() {},
-      bezierCurveTo: () => drew.curve++,
-      stroke: () => drew.stroke++,
-      arc: () => drew.arc++,
-      fillText: () => drew.fillText++,
-      drawImage: () => drew.image++,
+      bezierCurveTo: () => both("curve"),
+      stroke: () => both("stroke"),
+      arc: () => both("arc"),
+      fillText: () => both("fillText"),
+      strokeText: () => both("strokeText"),
+      drawImage: () => both("image"),
       measureText(text) {
         return { width: text.length * PX * (parseFloat(/([\d.]+)px/.exec(this.font)?.[1]) || 10) };
       },
@@ -465,6 +475,14 @@ const small = fit(
   "monospace",
 );
 check(big.lh > small.lh, `a short name took ${big.lh} against a long name's ${small.lh}`);
+/* A caller can hand in a ladder and a weight of its own — <word-disc>'s hub is
+   the larger of the two and sets bolder, heavier type — and the defaults are
+   what everything else still gets. */
+const asked = fit(mono, "cat", 60, "monospace", { sizes: [30, 24], weight: 700 });
+check(asked.px === 30, `a ladder of its own was ignored: ${asked.px}`);
+check(asked.font.startsWith("700 30px"), `the weight was ignored: ${asked.font}`);
+check(big.font.startsWith("500 "), `the default weight moved: ${big.font}`);
+check(big.px === 12 && big.font.includes("12px"), `the default ladder moved: ${big.font}`);
 /* The face comes back as well as being set, so the element can hold the fit
    and put the font back without measuring the name again. */
 for (const [what, got] of [
@@ -724,10 +742,27 @@ const gloss = shadow.querySelector(".gloss");
 const line = shadow.querySelector(".crumb").querySelector(".head");
 
 check(disc.words.join("|") === WORDS.join("|"), `the element drew ${disc.words}`);
+
 check(disc.stats.bundle, "8 words did not get a resting bundle");
 check(drew.image === 1, `the bundle was blitted ${drew.image} times, not once`);
 check(drew.curve === wordChords(L), `${drew.curve} curves for ${wordChords(L)} chords`);
 check(drew.fillText > WORDS.length, "fewer labels were drawn than there are words");
+/* Nothing is painted behind the hub's name. A panel wide enough to hold it
+   covered the middle of the disc, which is where the long chords cross and so
+   is the part of the figure worth seeing; the name carries its own ground
+   instead, stroked under the fill. With the pointer off the disc and no chain
+   there is no highlighted path either, so the overlay owes an arc to nothing
+   at all — that count is what says the panel has gone. */
+over.drew.arc = 0;
+over.drew.strokeText = 0;
+over.drew.fillText = 0;
+disc.repaint();
+check(over.drew.arc === 0, `the hub drew ${over.drew.arc} arcs behind its name`);
+check(over.drew.strokeText > 0, "the hub's name carries no halo, so the bundle runs through it");
+check(
+  over.drew.strokeText === over.drew.fillText,
+  `${over.drew.strokeText} haloed against ${over.drew.fillText} drawn`,
+);
 
 /* Where the element puts word i, off the sizing it solved for this square.
    Computed rather than written down, so a hit is a statement about the

@@ -53,8 +53,21 @@ import {
 } from "./word-layout.js";
 
 // The hub's "back" hint: its size, and the room it takes from the name above.
-const HINT_PX = 9,
-  HINT_H = 12;
+const HINT_PX = 11,
+  HINT_H = 15;
+// The sizes the hub's name steps down through, and its weight. Larger and
+// heavier than disc-label.js's own ladder because nothing is drawn in the
+// middle of this disc but the name, and it has to carry over the bundle
+// behind it rather than sit on a panel in front of it.
+const HUB_SIZES = [22, 19, 16, 14, 12],
+  HUB_WEIGHT = 700;
+// The halo under the hub's text, as a fraction of the type size and never
+// thinner than this. It is what replaces the panel: 100 to 280 of a category's
+// chords pass inside the hub's radius — element is the worst — so the name has
+// to clear its own ground, but only its own. A disc large enough to hold it
+// took the middle of the figure out with it.
+const HALO = 0.3,
+  HALO_MIN = 3.5;
 // The search column beside the disc, and the gutter to it. Same thresholds as
 // <hypernym-disc>, so the two elements break to landscape together.
 const ASIDE_MIN = 200,
@@ -739,7 +752,10 @@ class WordDisc extends HTMLElement {
       g.font = had.font;
       return had;
     }
-    const got = fit(g, text, r, this.#tok("--_mono", "monospace"));
+    const got = fit(g, text, r, this.#tok("--_mono", "monospace"), {
+      sizes: HUB_SIZES,
+      weight: HUB_WEIGHT,
+    });
     if (this.#fits.size > 2048) this.#fits.clear();
     this.#fits.set(key, got);
     return got;
@@ -749,7 +765,13 @@ class WordDisc extends HTMLElement {
      Before the first move it names the category, muted, since there is nothing
      selected for it to be the name of. Under the name sits the way back, and
      only where there is one: never before the first move, and never with the
-     pointer on a word, where the room is wanted for that word's name. */
+     pointer on a word, where the room is wanted for that word's name.
+
+     Nothing is drawn behind it. A panel disc wide enough to hold the name took
+     the middle of the figure with it, and the middle is where the long chords
+     cross — which is the picture, not something to cover up. So the text
+     carries its own ground instead, stroked under the fill and scaled to the
+     type: the only thing it hides is the shape of its own letters. */
   #hub(g) {
     const sel = this.#focus();
     const end = this.#chain.end;
@@ -757,31 +779,30 @@ class WordDisc extends HTMLElement {
     const way = sel < 0 && end >= 0;
     const text = named >= 0 ? this.#words[named] : this.#category || "pick a word";
 
-    // An opaque ground, so the name reads over the bundle behind it.
-    g.fillStyle = this.#tok("--_panel", "#141b1c");
-    g.beginPath();
-    g.arc(this.#cx, this.#cy, this.#rHub, 0, TAU);
-    g.fill();
-    g.strokeStyle = this.#tok("--_muted", "#90a1a1");
-    g.globalAlpha = 0.25;
-    g.lineWidth = 1;
-    g.stroke();
-    g.globalAlpha = 1;
+    const { lines, lh, px } = this.#fitted(g, text, this.#rHub - 6 - (way ? HINT_H : 0));
+    let ink = this.#tok("--_ink", "#e7eded");
+    if (named < 0) ink = this.#tok("--_muted", "#90a1a1");
+    else if (named !== end && this.#chain.played(named)) ink = this.#tok("--_warn", "#e8705f");
 
-    const { lines, lh } = this.#fitted(g, text, this.#rHub - 6 - (way ? HINT_H : 0));
-    g.fillStyle = named >= 0 ? this.#tok("--_ink", "#e7eded") : this.#tok("--_muted", "#90a1a1");
-    if (named >= 0 && this.#chain.played(named) && named !== end)
-      g.fillStyle = this.#tok("--_warn", "#e8705f");
     g.textAlign = "center";
     g.textBaseline = "middle";
+    g.strokeStyle = this.#tok("--_ground", "#0c1112");
+    // Round, so the halo follows the letterforms rather than throwing spikes
+    // off every corner of them.
+    g.lineJoin = "round";
     const top = this.#cy - ((lines.length - 1) * lh) / 2 - (way ? HINT_H / 2 : 0);
-    lines.forEach((line, k) => {
-      g.fillText(line, this.#cx, top + k * lh);
-    });
+    g.lineWidth = Math.max(HALO_MIN, px * HALO);
+    for (const [k, line] of lines.entries()) g.strokeText(line, this.#cx, top + k * lh);
+    g.fillStyle = ink;
+    for (const [k, line] of lines.entries()) g.fillText(line, this.#cx, top + k * lh);
+
     if (!way) return;
-    g.font = `500 ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
+    const y = top + (lines.length - 1) * lh + HINT_H;
+    g.font = `${HUB_WEIGHT} ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
+    g.lineWidth = Math.max(HALO_MIN, HINT_PX * HALO);
+    g.strokeText("↑ back", this.#cx, y);
     g.fillStyle = this.#tok("--_accent", "#59b491");
-    g.fillText("↑ back", this.#cx, top + (lines.length - 1) * lh + HINT_H);
+    g.fillText("↑ back", this.#cx, y);
   }
 
   /* What the pointer is on, or what the search left the highlight on. */
