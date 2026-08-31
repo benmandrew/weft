@@ -117,7 +117,19 @@ TPL.innerHTML = `
   :host([fit]) .frame.wide{display:grid;column-gap:18px;
     grid-template-columns:minmax(200px,280px) minmax(0,1fr);
     grid-template-rows:minmax(0,1fr) auto auto}
-  :host([fit]) .frame.wide .find{grid-area:1/1;margin-bottom:0;
+  /* One box around the column, so it reads as a thing beside the disc rather
+     than as loose text next to it. It is the frame's own ::before placed as a
+     grid item rather than an element wrapping the column, because the search
+     box and the definition are two separate grid items and the stacked layout
+     puts the definition under the disc rather than in a column, so there is no
+     element that wraps them to put a border on. Generated first and placed
+     explicitly, so it is painted behind what sits in it, and the two carry the
+     padding that keeps their text off it — which is why the definition's top
+     margin goes, the search box's bottom padding being the gap between the two
+     now. */
+  :host([fit]) .frame.wide::before{content:"";grid-area:1/1/3/2;
+    border:1px solid var(--_edge);border-radius:3px;pointer-events:none}
+  :host([fit]) .frame.wide .find{grid-area:1/1;margin-bottom:0;padding:10px;
     display:flex;flex-direction:column;min-height:0}
   :host([fit]) .frame.wide .hits{position:static;margin-top:6px;box-shadow:none;
     flex:0 1 auto;min-height:0;max-height:none}
@@ -132,7 +144,7 @@ TPL.innerHTML = `
      costs the suggestions their room rather than the disc its height, and it
      is free to run past two lines here. */
   :host([fit]) .frame.wide .gloss{grid-area:2/1;height:auto;-webkit-line-clamp:5;
-    margin-top:12px}
+    margin-top:0;padding:0 10px 10px}
   :host([fit]) .frame.wide .crumb{grid-area:3/1/4/-1;margin-top:7px}
   .find{position:relative;margin-bottom:8px}
   :host([search="off"]) .find{display:none}
@@ -171,8 +183,13 @@ TPL.innerHTML = `
   .kids .why{font-family:var(--_mono);font-size:10.5px;color:var(--_muted);
     flex:none;padding-bottom:5px}
   .kids .why b{color:var(--_accent);font-weight:600}
-  .kids .list{margin:0;padding:0;list-style:none;flex:1 1 auto;min-height:0;
-    overflow-y:auto;scrollbar-width:thin}
+  /* The list carries a box of its own, drawn like the suggestions it shares
+     the room with, and it takes whatever height the column has left, so the
+     box runs down to the definition at the foot of the column however few
+     nodes are in the ring. */
+  .kids .list{margin:0;padding:3px;list-style:none;flex:1 1 auto;min-height:0;
+    overflow-y:auto;scrollbar-width:thin;background:var(--_panel);
+    border:1px solid var(--_edge);border-radius:2px}
   /* Colour and leading are set on the row rather than inherited, the rule
      <word-disc>'s list is built to: a list that draws no text should depend on
      as little from outside it as it can.

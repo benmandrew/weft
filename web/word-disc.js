@@ -201,9 +201,24 @@ TPL.innerHTML = `
   :host([fit]) .frame.wide{display:grid;column-gap:18px;
     grid-template-columns:minmax(200px,280px) minmax(0,1fr);
     grid-template-rows:auto minmax(0,1fr) auto auto}
-  :host([fit]) .frame.wide .pick{grid-area:1/1}
-  :host([fit]) .frame.wide .find{grid-area:2/1;margin-bottom:0;
+  /* One box around the column, so it reads as a thing beside the disc rather
+     than as loose text next to it. It is the frame's own ::before placed as a
+     grid item rather than an element wrapping the column, because the picker,
+     the search box and the definition are three separate grid items and the
+     stacked layout puts the definition under the disc rather than in a
+     column, so there is no element that wraps them to put a border on.
+     Generated first and placed explicitly, so it is painted behind what sits
+     in it, and those three carry the padding that keeps their text off it —
+     which is why the definition's top margin goes, the search box's bottom
+     padding being the gap between the two now. */
+  :host([fit]) .frame.wide::before{content:"";grid-area:1/1/4/2;
+    border:1px solid var(--_edge);border-radius:3px;pointer-events:none}
+  :host([fit]) .frame.wide .pick{grid-area:1/1;padding:10px 10px 0}
+  :host([fit]) .frame.wide .find{grid-area:2/1;margin-bottom:0;padding:0 10px 10px;
     display:flex;flex-direction:column;min-height:0}
+  /* With no index named the picker's row measures nothing, so the top of the
+     box is the search box's own top and the inset has to come from there. */
+  :host([fit]) .frame.wide .pick[hidden] + .find{padding-top:10px}
   :host([fit]) .frame.wide .hits{position:static;margin-top:6px;box-shadow:none;
     flex:0 1 auto;min-height:0;max-height:none}
   :host([fit]) .frame.wide .hits li{display:block}
@@ -211,7 +226,7 @@ TPL.innerHTML = `
   :host([fit]) .frame.wide .stage{grid-area:1/2/4/3;height:100%;min-height:0;
     justify-self:center}
   :host([fit]) .frame.wide .gloss{grid-area:3/1;height:auto;-webkit-line-clamp:5;
-    margin-top:12px}
+    margin-top:0;padding:0 10px 10px}
   :host([fit]) .frame.wide .crumb{grid-area:4/1/5/-1;margin-top:7px}
   /* The category picker, on where the host names an index. It is the search
      box one scale out — that one reaches a word inside a category and this one
@@ -286,8 +301,13 @@ TPL.innerHTML = `
      between them, so there is no whitespace to collapse between two inline
      blocks and no font-size:0 on the list to swallow it — which would be a
      careless thing to add to a list that was drawing nothing. */
-  .moves .list{margin:0;padding:0;list-style:none;flex:1 1 auto;min-height:0;
-    overflow-y:auto;scrollbar-width:thin}
+  /* The list carries a box of its own, drawn like the suggestions it shares
+     the room with, and it takes whatever height the column has left, so the
+     box runs down to the definition at the foot of the column however few
+     words are in it. */
+  .moves .list{margin:0;padding:3px;list-style:none;flex:1 1 auto;min-height:0;
+    overflow-y:auto;scrollbar-width:thin;background:var(--_panel);
+    border:1px solid var(--_edge);border-radius:2px}
   /* border-box because the page's own box-sizing rule does not cross into a
      shadow root, and content-box would put two halves and their padding past
      the width and wrap every second word onto a line of its own. The pair
