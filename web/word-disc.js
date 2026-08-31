@@ -57,7 +57,7 @@ import { fit } from "./disc-label.js";
 import { ratio } from "./disc-ratio.js";
 import { Search } from "./disc-search.js";
 import { Chain } from "./word-chain.js";
-import { bundle as strokeBundle, curve, RING, square, thin } from "./word-bundle.js";
+import { bundle as strokeBundle, curve, release, RING, square, thin } from "./word-bundle.js";
 import {
   at,
   chords,
@@ -779,6 +779,7 @@ class WordDisc extends HTMLElement {
     // A different word set, so the held bundle is of words that are no longer
     // on the disc and goes rather than being blitted until its replacement
     // lands. A resize keeps its bundle; this cannot.
+    release(this.#cache);
     this.#cache = null;
     this.#cacheKey = "";
     this.#asked = "";
@@ -991,7 +992,12 @@ class WordDisc extends HTMLElement {
      the worker it is a frame of its own, which is what fades the picture in
      under a disc that is already there. */
   #gotBundle(m) {
-    if (!m.bitmap || m.id !== this.#asked) return;
+    if (!m.bitmap) return;
+    // One that arrived after the disc moved on. It is nobody's picture now, so
+    // it goes the way a replaced one does rather than being left to a
+    // collector that cannot see its pixels.
+    if (m.id !== this.#asked) return release(m.bitmap);
+    release(this.#cache);
     this.#cache = m.bitmap;
     this.#cachePx = m.px;
     this.#cacheKey = m.id;

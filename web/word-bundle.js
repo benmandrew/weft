@@ -41,6 +41,25 @@ export function square(r, dpr) {
   return Math.min((((want / STEP) | 0) + 1) * STEP, MAX_PX);
 }
 
+/* Let a bundle's pixels go. They are the one thing here the collector cannot
+   see: an ImageBitmap's buffer sits outside the JS heap, so a bundle that has
+   been replaced reads as a small object under no pressure and the tab is free
+   to hold its 12.3 MB for as long as it likes. A category pick, a theme change
+   and every crossed size step each drop one, and going through the 37
+   categories was 1.4 GB of pixels nothing was drawing, which is a tab Safari
+   reloads.
+
+   A canvas carries no close and answers to its dimensions instead, which is
+   what the main-thread fallback's bundle is; word-bundle-worker.js empties its
+   own the same way, in place, since it holds a canvas rather than a picture.
+   Here rather than at the call sites because they all drop the same thing and
+   none of them can tell whether it went. */
+export function release(pic) {
+  if (!pic) return;
+  if (pic.close) pic.close();
+  else if (typeof pic.width === "number") pic.width = pic.height = 0;
+}
+
 /* A cubic bowed towards the centre, which is what makes a chord read as the
    pair of letters it joins rather than as a line across the disc. Four control
    points and no sampling, the same curve `_curve` writes into the SVG. The

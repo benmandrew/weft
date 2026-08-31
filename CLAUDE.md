@@ -861,6 +861,33 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `WORKER_FLOOR`, timed from the first bundle actually wanted rather than from
   the worker's construction, are the nested disc's and are kept for the same
   reasons.
+- `word-bundle.js` exports `release(pic)`, which closes an `ImageBitmap` and,
+  where there is none, empties a canvas by setting its dimensions to 0. A
+  bitmap's pixels sit outside the JS heap, so a bundle that has been replaced
+  reads to the collector as a small object under no pressure and the tab holds
+  its 12.3 MB for as long as it likes: at the disc height the embedding article
+  uses, `max(26rem, 100vh - 4rem)` and so about 836 CSS px on a 900 px window,
+  the square rounds to 1,792 device pixels, which is 12.3 MB a bundle. A
+  category pick and a theme change each replace one, being the two things that
+  bump `#gen`, and so does every crossed 256-pixel size step. A pick used to
+  orphan 12.3 MB on the main thread and about 25 MB in the worker, so going
+  through the 37-category picker was roughly 1.4 GB of pixels nothing was
+  drawing. Safari
+  reloaded the page carrying both elements "because it was using significant
+  memory", and this was the cause. It sits in that module rather than in either
+  caller because both drop the same picture and neither can tell whether it
+  went, which is the argument `solve`, `square` and `thin` are already there
+  for. `word-disc.js` calls it at three sites: the bundle being replaced in
+  `#gotBundle`, one that arrives after the disc has moved on and is dropped by
+  key, and the word-set change in `#build`. The worker keeps one
+  `OffscreenCanvas`, sizes it per message and empties it to 0 by 0 as soon as
+  `transferToImageBitmap` has taken its pixels; made afresh per message it cost
+  two buffers a build, the one drawn on and the blank one
+  `transferToImageBitmap` leaves behind, in a thread whose JS heap is a few
+  kilobytes and whose collector therefore has no reason to run. What is
+  deliberately not released is the bundle held over a `disconnectedCallback`,
+  since a reattached element blits it until a replacement lands, and
+  `disc-worker.js`, which is still left running for the reason above.
 - The held bitmap goes on being blitted, stretched to the new radius, until a
   newer one lands, so a rebuild has no blank in it. A word-set change is the
   exception and drops it, since those words are no longer on the disc. A theme
@@ -1203,6 +1230,12 @@ reversing the fan sort, dropping the hit
 test's upper neighbour, and removing the label floor each fail it, and restoring
 the per-word measurement fails the baseline one with iris and test 1.6 px below
 guppy and cow, the reported symptom exactly.
+The stub records the source of each `drawImage` beside the box it went in, which
+is what lets the check assert that a word-set change and a theme change each
+leave the bundle that was being blitted emptied — a claim nothing downstream can
+make, since the disc draws the same either way. Dropping either `release` call
+fails it. The stale arrival is not covered, since the main-thread fallback the
+check drives is synchronous and never produces one.
 
 The hover on the moves column is asserted there as well, which the stub's
 carrying no CSS is no bar to. A seam reaches the element as a `pointermove`

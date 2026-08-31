@@ -151,8 +151,11 @@ class Canvas extends El {
     // the letter it belongs to rather than beside it.
     this.text = { fill: [], stroke: [] };
     // And where the bundle was blitted, since it is held in a square of its
-    // own and put back on the ring by inverting one fraction.
+    // own and put back on the ring by inverting one fraction. The source is
+    // kept beside the box, since a bundle that has been replaced and not let
+    // go of is a claim about the picture that is no longer being drawn.
     this.images = [];
+    this.sources = [];
     // The colour each stroke went down in, in the order they were drawn, which
     // is the only way to make a claim about z-order without rasterising.
     this.inks = [];
@@ -198,9 +201,10 @@ class Canvas extends El {
         both("strokeText");
         this.text.stroke.push({ t, x, y });
       },
-      drawImage: (_img, ...box) => {
+      drawImage: (img, ...box) => {
         both("image");
         this.images.push(box);
+        this.sources.push(img);
       },
       measureText(text) {
         const px = parseFloat(/([\d.]+)px/.exec(this.font)?.[1]) || 10;
@@ -1453,10 +1457,25 @@ check(
 );
 zoom(2);
 
+/* A bundle that has been replaced has to be let go of. Its pixels sit outside
+   the JS heap, so a collector sees a small object under no pressure and the
+   tab holds 12.3 MB a piece for as long as it likes; a category picker is 37
+   of them, which is a reloaded tab. Nothing downstream can tell, since the
+   disc draws the same either way, which is why the claim is made here. The
+   stub's canvas has no close, so it is let go of the way the main-thread
+   fallback's is, by being emptied. */
+const dropped = shadow.querySelector(".base").sources.at(-1);
+check(dropped?.width > 0, "no bundle was blitted, so there is none to let go of");
+
 disc.setAttribute("limit", "40");
 check(disc.stats.words === 40, `limit 40 drew ${disc.stats.words}`);
 check(disc.stats.bundle && disc.stats.labelPx > 0, "40 words lost the bundle or the labels");
+check(dropped.width === 0, "the bundle a word set replaced kept its pixels");
+
+const kept = shadow.querySelector(".base").sources.at(-1);
+check(kept !== dropped && kept.width > 0, "the bundle drawn for the new word set is not held");
 disc.repaint();
+check(kept.width === 0, "the bundle a theme replaced kept its pixels");
 
 /* The category picker, which index-src turns on and nothing else does. Its one
    piece of arithmetic is where a category's words are: export_words.py writes
