@@ -114,9 +114,21 @@ export const WEDGE_BAND = 24,
   PAD = 4;
 /* The hub, as a fraction of the dot ring: never smaller than HUB_MIN, so a
    name always has somewhere to be read, and never past HUB_MAX of the ring, so
-   a frame too small for the floor cannot leave the hub swallowing the dots. */
-export const HUB_SHARE = 0.3,
-  HUB_MIN = 44,
+   a frame too small for the floor cannot leave the hub swallowing the dots.
+
+   It is both what a click in the middle undoes and what the name has to fit
+   inside, and it grew by half when the panel disc behind the name went. That
+   was free: the space is empty now and the name carries its own ground. It is
+   also what makes a larger type ladder read larger rather than step back down
+   it — the ladder alone left the long-word categories smaller than they were,
+   since it ran out of room sooner and stepped further down. Keeping the two
+   jobs on one number is what stops the outer half of a name being somewhere a
+   click does nothing.
+
+   The dots are hit-tested from 0.62 of the ring outwards, so the cap leaves a
+   band between the hub and the innermost word where a click means neither. */
+export const HUB_SHARE = 0.45,
+  HUB_MIN = 66,
   HUB_MAX = 0.55;
 
 /* The dot ring and the label size, solved together, for a square of `size`

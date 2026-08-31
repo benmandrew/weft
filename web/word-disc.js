@@ -58,8 +58,11 @@ const HINT_PX = 11,
 // The sizes the hub's name steps down through, and its weight. Larger and
 // heavier than disc-label.js's own ladder because nothing is drawn in the
 // middle of this disc but the name, and it has to carry over the bundle
-// behind it rather than sit on a panel in front of it.
-const HUB_SIZES = [22, 19, 16, 14, 12],
+// behind it rather than sit on a panel in front of it. It keeps the two low
+// rungs the shorter ladder ended on, which a disc of any usable size never
+// reaches: they are there so a frame too small for the hub to mean anything
+// degrades the way it used to rather than worse.
+const HUB_SIZES = [33, 28, 24, 21, 18, 15, 12],
   HUB_WEIGHT = 700;
 // The halo under the hub's text, as a fraction of the type size and never
 // thinner than this. It is what replaces the panel: 100 to 280 of a category's

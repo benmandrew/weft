@@ -534,14 +534,30 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   radius is unchanged.
 - `disc-label.js`'s `fit` takes an optional size ladder and weight and defaults
   to what it had, so `<hypernym-disc>` is untouched at 12 down to 8 px and weight
-  500, and `<word-disc>` asks for 22 down to 12 at 700. Its hub is the larger of
+  500, and `<word-disc>` asks for 33 down to 12 at 700. Its hub is the larger of
   the two and the name is the only thing in it, where the nested disc's hub
-  shares the middle with a ring of its own children. Every one of animal's 110
-  words takes the full 22 px, and three fall to 19 when the back hint takes room
-  from them; the old ladder gave "chameleon" 12 px. The extremes still degrade
-  the way they did — the 29-character `methylenedioxymethamphetamine` steps to
-  12 px over three hyphenated lines. `fit` returns the size it settled on as well
-  as the leading and the face, since the halo is scaled to the type.
+  shares the middle with a ring of its own children. A larger ladder on its own
+  made the long-word categories *worse*: with the back hint showing, disease
+  dropped 33 of its 110 words to the bottom of the ladder, below the size they
+  already had, since the ladder ran out of room sooner and stepped further down
+  it. So the name got more room as well as more type. The hub is one radius
+  doing both jobs, what a click in the middle undoes and what the name has to
+  fit inside, and keeping them as one number is what stops the outer half of a
+  name sitting somewhere a click does nothing. It grew by half — `HUB_SHARE`
+  from 0.3 to 0.45 and `HUB_MIN` from 44 to 66 — when the panel disc behind the
+  name went, which was free, since the space is empty now and the name carries
+  its own ground. `HUB_MAX` still caps it, and the dots are hit-tested from 0.62
+  of the ring outwards, so there is a band between the hub and the innermost
+  word where a click means neither. Measured over all 37 categories at the
+  default limit in a 720 px frame, with the back hint showing,
+  the mean type in the middle is 1.50 times what it was at worst and 1.64 at
+  best, and animal and element take the full 33 px on every word. The "↑ back"
+  hint stays at 11 px, so the hierarchy under the name is unchanged, and the
+  ladder keeps the two low rungs the shorter one ended on, which no disc of a
+  usable size reaches: they are there so a frame too small for the hub to mean
+  anything degrades as it did rather than worse. `fit`
+  returns the size it settled on as well as the leading and the face, since the
+  halo is scaled to the type.
 - The gloss and the crumb below the disc are held to a height whatever they
   hold, and that is what stops the disc moving under the pointer. Under `fit`
   the frame is a flex column and the stage takes what those two leave, so a

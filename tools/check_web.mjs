@@ -651,6 +651,10 @@ const SQUARE = 720,
 const fits = got => got.outer + 24 / 2 <= SQUARE / 2 + 0.001 && got.r > 0;
 
 const roomy = solve(wordLayout(WORDS).span, WIDE, SQUARE);
+/* The hub is one radius doing both jobs — what a click in the middle undoes
+   and what the name has to fit inside — so no part of a name can be somewhere
+   a click does nothing. It stops short of the dots either way. */
+check(roomy.hub < roomy.r * 0.62, "the hub reaches the band the dots are hit-tested in");
 check(roomy.labelPx === MAX_LABEL_PX, `8 words did not reach the label cap: ${roomy.labelPx}`);
 check(fits(roomy), "the label cap put the disc outside its own square");
 check(
