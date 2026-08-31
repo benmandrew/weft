@@ -373,7 +373,17 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   overlay the disc there as any combobox does. The class is toggled from the
   resize observer rather than a container query, because the test is the
   frame's own shape and a container cannot query itself; measuring the frame
-  rather than the stage is what stops the toggle changing its own answer. The
+  rather than the stage is what stops the toggle changing its own answer. That
+  observer watches both boxes, and all three elements had the same fault when
+  it watched only the stage. The stage's box is what the canvases are sized
+  from and the frame's shape is what decides the layout, and the two do not
+  move together: stacked, the stage is a square of whatever height the flex
+  column leaves it, so its size comes off the frame's height and a frame
+  dragged wider leaves the stage's box exactly where it was. No callback was
+  raised, so an element dropped to the stacked layout when the page narrowed
+  and then stayed there however wide the page was dragged afterwards — the way
+  in worked because grid to flex does move the stage, and only the way out was
+  silent. The
   stage spans both rows of the column, the search box's and the gloss's, so a
   longer definition costs the suggestion list its room rather than the disc its
   height; that is why the gloss runs to five lines there, where two would clip
@@ -882,8 +892,17 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   notice; reversing it fails the check. A four-pixel resize restrokes nothing
   where a two-hundred-pixel one restrokes 31,084, which is what says a resize is
   a blit. The 900-word crowd keeps the bundle it used to lose. The
-  `ResizeObserver` stub keeps its callbacks, so a resize is driven the way a
-  browser drives it rather than through a private method.
+  `ResizeObserver` stub keeps its callbacks and what each one was given to
+  watch, so a resize is driven the way a browser drives it rather than through
+  a private method: `resize()` runs an observer only where one of its own boxes
+  has moved. Modelling the targets is the point rather than the fidelity. An
+  element can measure one box and observe another, and then a change to the box
+  it measures raises no callback and the element never learns of it; firing
+  every callback on every resize hides exactly that, and hid it here until the
+  stub was made to model it. All three elements are put through the round trip
+  for it — stacked and then dragged wide again with the stage left where it
+  was — and dropping the frame from any one of them fails the way back and not
+  the way in.
 - The label size is solved rather than set, the same equation as `_wanted_inches`
   and `_disc_limit` turned round: there the canvas grows until adjacent labels
   clear each other, here the canvas is whatever the host gave, so the type takes

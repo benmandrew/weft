@@ -386,7 +386,16 @@ class LetterDisc extends HTMLElement {
       if (el.scrollTop + el.clientHeight > el.scrollHeight - ARCS_NEAR) this.#page();
     });
     this.#ro = new ResizeObserver(() => this.#fit());
+    /* The stage, whose box is what the canvases are sized from, and the frame,
+       whose shape is what decides the layout — because the two do not move
+       together. Stacked, the stage is a square of whatever height the flex
+       column leaves it, so its height comes off the frame's height and a frame
+       dragged wider leaves its box exactly where it was. Observing the stage
+       alone, the element drops to the stacked layout when the page narrows and
+       then never hears another thing: no callback is raised however wide the
+       page is dragged afterwards, and it stays stacked for good. */
     this.#ro.observe(this.#sr.querySelector(".stage"));
+    this.#ro.observe(this.#frame);
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#onScheme);
     this.#onRatio();

@@ -334,15 +334,41 @@ globalThis.customElements = {
     REGISTRY.set(name, cls);
   },
 };
-// The callbacks are kept, so a test can resize the element the way a browser
-// does rather than reaching for a private method.
+/* The callbacks are kept, so a test can resize an element the way a browser
+   does rather than reaching for a private method — and what each one observes
+   is kept with them, because a browser only calls back when one of the boxes
+   it was actually given has moved.
+
+   That distinction is the whole point of modelling it. An element can measure
+   one box and observe another, and then a change to the box it measures raises
+   no callback at all and the element never learns of it. Firing every callback
+   on every resize hides exactly that, and hid it here. */
 const OBSERVERS = [];
 globalThis.ResizeObserver = class {
   constructor(fn) {
-    OBSERVERS.push(fn);
+    this._o = { fn, seen: new Map() };
+    OBSERVERS.push(this._o);
   }
-  observe() {}
-  disconnect() {}
+  observe(el) {
+    if (el) this._o.seen.set(el, null);
+  }
+  disconnect() {
+    const i = OBSERVERS.indexOf(this._o);
+    if (i >= 0) OBSERVERS.splice(i, 1);
+  }
+};
+/* One turn of the layout: every observer one of whose boxes has moved since it
+   last ran, and no others. */
+const resize = () => {
+  for (const o of [...OBSERVERS]) {
+    let moved = false;
+    for (const [el, was] of o.seen) {
+      const now = el.getBoundingClientRect();
+      if (!was || was.width !== now.width || was.height !== now.height) moved = true;
+      o.seen.set(el, { width: now.width, height: now.height });
+    }
+    if (moved) o.fn();
+  }
 };
 /* The listeners are kept, the way the resize observer's are, so a test can
    drive a change of resolution as a browser drives one. Removal goes by
@@ -1481,7 +1507,7 @@ await new Promise(r => setTimeout(r, 80));
 drew.curve = 0;
 drew.image = 0;
 shadow.querySelector(".stage")._rect = { width: BOX - 4, height: BOX - 4 };
-for (const fn of OBSERVERS) fn();
+resize();
 check(drew.curve === 0, `a resize restroked ${drew.curve} chords`);
 check(drew.image > 0, "the bundle was not blitted after a resize");
 check(disc.stats.bundle, "the bundle went out over a resize");
@@ -1587,6 +1613,25 @@ picked.setAttribute("src", "/out/words-animal.json");
 await settle();
 check(cat.value === "animal", `a host-set src left the picker reading ${cat.value}`);
 
+/* The stacked layout and back, the round trip all three elements make. The
+   stage is observed because its box sizes the canvases and the frame because
+   its shape decides the layout, and the two do not move together: stacked, the
+   stage is a square of the height the flex column leaves, so a frame dragged
+   wider leaves it exactly where it was and an element watching only the stage
+   is never called back. It drops to the stacked layout when the page narrows
+   and stays there however wide the page is dragged after. Dropping the frame
+   from the observer fails the second half of this and not the first. */
+const wFrame = shadow.querySelector(".frame");
+const wStage = shadow.querySelector(".stage");
+wFrame._rect = { width: BOX, height: BOX };
+wStage._rect = { width: BOX, height: BOX };
+resize();
+check(list.children.length === 0, `${list.children.length} move rows survived stacking`);
+wFrame._rect = { width: BOX + 300, height: BOX };
+resize();
+check(wFrame.classList.contains("wide"), "the word disc stayed stacked when the frame went wide");
+check(list.children.length > 0, "the moves column did not come back when the frame went wide");
+
 /* And <hypernym-disc> itself, built. Every check above it drives the pipeline
    the element calls rather than the element, which leaves its class body — the
    one place a field initialiser naming a constant a refactor moved parses,
@@ -1684,9 +1729,21 @@ check(!ring.hidden, "the ring below did not come back when the search closed");
 
 /* Stacked there is no column, so the rows are dropped rather than left behind
    display:none — 661 of them at WordNet's widest node. */
-nest._shadow.querySelector(".frame")._rect = { width: BOX, height: BOX };
-for (const fn of OBSERVERS) fn();
+const nFrame = nest._shadow.querySelector(".frame");
+const nStage = nest._shadow.querySelector(".stage");
+nFrame._rect = { width: BOX, height: BOX };
+nStage._rect = { width: BOX, height: BOX };
+resize();
 check(kidRows.children.length === 0, `${kidRows.children.length} rows survived stacking`);
+
+/* And back out of it, which is the half a page dragged wider has to do. See
+   the same pair on <letter-disc> below for why the stage's box does not move
+   on the way back and why observing it alone leaves an element stacked for
+   good. All three elements make this round trip and all three had the fault. */
+nFrame._rect = { width: BOX + 300, height: BOX };
+resize();
+check(nFrame.classList.contains("wide"), "the nested disc stayed stacked when the frame went wide");
+check(kidRows.children.length > 0, "the ring below did not come back when the frame went wide");
 
 /* The letter graph, which is graph.py's claim drawn rather than printed: 26
    nodes, one arc per letter pair some word bridges, and nothing bundled.
@@ -2141,9 +2198,29 @@ check(!arcsEl.hidden, "the arc list did not come back when the search closed");
 
 /* Stacked there is no column, so the rows are dropped rather than left behind
    display:none — 344 of them for animal. */
-lShadow.querySelector(".frame")._rect = { width: BOX, height: BOX };
-for (const fn of OBSERVERS) fn();
+const lFrame = lShadow.querySelector(".frame");
+const lStage = lShadow.querySelector(".stage");
+lFrame._rect = { width: BOX, height: BOX };
+lStage._rect = { width: BOX, height: BOX };
+resize();
 check(arcRows.children.length === 0, `${arcRows.children.length} rows survived stacking`);
+
+/* And back again, which is the half of it that a page being dragged wider has
+   to do and that firing every callback on every resize could never show.
+
+   Stacked, the stage is a square of whatever height the flex column leaves, so
+   it is the frame's height that sets it and a frame growing wider leaves the
+   stage's box exactly where it was. An element observing only its stage
+   therefore gets no callback at all on the way back out: it goes to the
+   stacked layout when the page narrows and stays there however wide the page
+   is dragged afterwards. Observing the frame as well is what catches it. */
+lFrame._rect = { width: BOX + 300, height: BOX };
+resize();
+check(
+  lFrame.classList.contains("wide"),
+  "a frame dragged wide again with its stage unmoved stayed in the stacked layout",
+);
+check(arcRows.children.length > 0, "the column did not come back when the frame went wide again");
 
 /* embed.html is the one page `make web-dist` stages, and it names its modules,
    its elements and its data files by hand where the target finds the modules by
