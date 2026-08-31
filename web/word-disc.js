@@ -244,7 +244,12 @@ TPL.innerHTML = `
     margin-top:7px;overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   .gloss .warn{color:var(--_warn)}
-  .gloss .key{font-family:var(--_mono);color:var(--_accent)}
+  /* The word's own last letter, which is the whole of what decides what can
+     follow it. Marked where it sits rather than named again after it, and by
+     a rule as well as a colour, since colour alone says nothing to a reader
+     who cannot see it. */
+  .gloss .last{color:var(--_accent);text-decoration:underline;
+    text-underline-offset:3px;text-decoration-thickness:2px}
   .crumb{font-family:var(--_mono);font-size:11px;color:var(--_muted);line-height:1.6;
     min-height:1.6em;margin-top:3px;white-space:nowrap;overflow-x:auto;
     scrollbar-width:none}
@@ -1177,6 +1182,7 @@ class WordDisc extends HTMLElement {
       this.#glossEl.innerHTML = `${n} word${n === 1 ? "" : "s"} in ${this.#category || "the category"}. Pick any one to open the chain.`;
       return;
     }
+    const word = this.#words[i];
     const to = this.#L.tail[i];
     const letter = String.fromCharCode(65 + to);
     // What is left, and what there ever was. The two come apart now that a
@@ -1185,15 +1191,16 @@ class WordDisc extends HTMLElement {
     // all of them, and only the first is a fact about the category.
     const left = this.#chain.replies(i, this.#L.byHead);
     const ever = this.#L.byHead[to].length - (this.#L.head[i] === to ? 1 : 0);
-    const parts = [`<b>${this.#words[i]}</b> hands over on <span class="key">${letter}</span>`];
-    if (left) parts.push(`${left} word${left === 1 ? "" : "s"} can follow it`);
-    else if (!ever)
-      parts.push(`<span class="warn">nothing starts with ${letter}: the round ends here</span>`);
-    else
-      parts.push(
-        `<span class="warn">every word starting with ${letter} is used: ` +
-          "the round ends here</span>",
-      );
+    // The letter the next word has to start with is the last one of this word,
+    // so it is marked in place. Naming it again after the word said the same
+    // thing twice and put the count a clause further away than it needed.
+    const parts = [
+      `<b>${word.slice(0, -1)}<span class="last">${word.slice(-1)}</span></b>`,
+      left
+        ? `${left} possible next word${left === 1 ? "" : "s"}`
+        : `<span class="warn">no possible next words: ` +
+          `${ever ? `every ${letter} word is used` : `nothing starts with ${letter}`}</span>`,
+    ];
     // Why the pointer's word cannot be played, where it cannot. Never for the
     // word play is standing on, which is used and unreachable by the same two
     // tests and is neither a mistake nor a move going begging.

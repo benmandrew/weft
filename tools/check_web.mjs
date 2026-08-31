@@ -866,8 +866,18 @@ check(
   `the word just played read as ${gloss.innerHTML}`,
 );
 check(
-  gloss.innerHTML.includes("4 words can follow it"),
+  gloss.innerHTML.includes("4 possible next words"),
   `cat did not count its four replies: ${gloss.innerHTML}`,
+);
+/* The letter that decides the next move is the word's own last one, so it is
+   marked where it sits rather than named again after the word. */
+check(
+  gloss.innerHTML.includes('<b>ca<span class="last">t</span></b>'),
+  `cat's last letter is not marked in place: ${gloss.innerHTML}`,
+);
+check(
+  !gloss.innerHTML.includes("hands over"),
+  `the readout still names the letter twice: ${gloss.innerHTML}`,
 );
 
 /* An illegal word is inert: rat does not follow cat, and clicking it neither
@@ -979,12 +989,9 @@ check(disc.stats.chain === 1, "the dead end was not played");
 // rather than finding it empty.
 disc.data = { category: "pair", words: ["ab", "ba"], zipf: [2, 1] };
 disc.play(0);
-check(gloss.innerHTML.includes("1 word can follow it"), `ab read as ${gloss.innerHTML}`);
+check(gloss.innerHTML.includes("1 possible next word"), `ab read as ${gloss.innerHTML}`);
 disc.play(1);
-check(
-  gloss.innerHTML.includes("every word starting with A is used"),
-  `a spent wedge read as ${gloss.innerHTML}`,
-);
+check(gloss.innerHTML.includes("every A word is used"), `a spent wedge read as ${gloss.innerHTML}`);
 check(!disc.play(0), "a word already used was played once its wedge ran dry");
 
 /* limit 0 is every word rather than none, and past the bundle's ceiling the

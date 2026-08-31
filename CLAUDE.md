@@ -516,12 +516,22 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   custom property, standing at the theme's `dead`. "A word cannot follow itself"
   now falls out of the same test rather than being written down, since the word
   play is standing on is used.
-- The end of the round has two shapes the readout tells apart: a letter the
-  category never had a word starting with, and one whose words the chain has
-  spent. Only the first is a fact about the category. `Chain.replies(i, byHead)`
-  is asked of the word the pointer is on and of the word play is standing on,
-  and because the latter is itself used, the same method answers "what could
-  follow this" and "what can be played now".
+- The readout names the word and counts what can follow it, `fetus · 171
+  possible next words`, and marks the word's own last letter in place rather
+  than naming it again after the word, where it used to read `fetus hands over
+  on S · 171 words can follow it`. That letter is the whole of what decides the
+  next move, so it belongs where it sits; naming it separately said the same
+  thing twice and put the count a clause further away than it needed to be. The
+  mark is a colour and a rule, the accent and an underline, never the colour
+  alone, since colour by itself says nothing to a reader who cannot see it. The
+  end of the round has two shapes the readout tells apart, one clause each: `no
+  possible next words: nothing starts with U`, a letter the category never had a
+  word starting with, against `no possible next words: every A word is used`,
+  one whose words the chain has spent. Only the first is a fact about the
+  category. `Chain.replies(i, byHead)` is asked of the word the pointer is on
+  and of the word play is standing on, and because the latter is itself used,
+  the same method answers "what could follow this" and "what can be played
+  now".
 - The crumb line's root is the category, and winding back to it clears the
   chain, which is the only way to open on a different first word. Without it
   the first word was a dead end, since the one step of a one-step chain renders
