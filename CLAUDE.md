@@ -530,34 +530,37 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - `make web-dist` stages everything a page needs to run `<hypernym-disc>` flat
   in one directory, `out/web-dist` unless `DIST=` names another, which `make
   clean` removes with the rest of `out/`. Its contents are every `web/*.js`
-  module, twelve today, `web/embed.html`, the three exported data files and the
-  38 word files, 54 in all. The
+  module, fifteen today, `web/embed.html`, the three exported data files and the
+  38 word files, 57 in all. The
   module list is a glob rather than names written out, which is the whole point
   of the target: a consuming site copies the directory instead of keeping its
-  own list of filenames in step with this one, where a thirteenth module added here
-  leaves that site running twelve of thirteen and nothing says so. `index.html`
-  and `words.html` are left out, since they are the local harnesses and a host
+  own list of filenames in step with this one, where a sixteenth module added here
+  leaves that site running fifteen of sixteen and nothing says so. `index.html`,
+  `words.html` and `letters.html` are left out, since they are the local
+  harnesses and a host
   page carries its own markup, and `embed.html` is the exception because it is
   written for this directory: it asks for `wordnet-tree.json` and
   `words-animal.json` beside itself rather than at `/out/…` the way the two
   harnesses do, because the directory is flat and a host copies it whole and
   serves it from wherever it likes. So it is both a page a host can serve as it
   stands and the markup a host reads to write its own. It is not a layout. The
-  two elements sit in ordinary document flow, one `<section>` after the other
+  three elements sit in ordinary document flow, one `<section>` after another
   down a single column, and each section carries its own
   `<script type="module">`, its own data attributes, its own height and its own
-  custom properties, so either can be lifted out and dropped anywhere on a host
-  page without bringing the other and neither element needs the other to exist.
-  Nothing there positions one relative to the other, since a page that did would
+  custom properties, so any one can be lifted out and dropped anywhere on a host
+  page without bringing the others, and no element needs another to exist.
+  Nothing there positions one relative to another, since a page that did would
   be the one thing a host embedding a single disc cannot use. The height is
   given on the element, because `fit` makes an element fill the box it is handed
   and a page that guesses at its own chrome guesses wrong, so that number is the
   host's; the page says in a line that dropping `fit` instead makes the element
   a square of its own width, which is what to do where the height cannot be
   named. Its word disc is animal at no limit, all 1,582 words and 96,470 chords,
-  which is the case the bundle work was for, and a page carrying both elements
-  is where two threads with a worker apiece are exercised — which is also why
-  embedding one does not depend on embedding the other. `tools/serve.py`'s
+  which is the case the bundle work was for, and its letter disc is animal too,
+  off the same file, so the page fetches one word file for the two of them. A
+  page carrying the word disc and the nested one is where two threads with a
+  worker apiece are exercised — which is also why embedding one section does not
+  depend on embedding another. `tools/serve.py`'s
   `translate_path` looks a top-level name that is not in `web/` up in `out/`
   before giving up, which is what lets that one page run unchanged under `make
   serve` as well as out of the dist directory rather than carrying two sets of
@@ -730,9 +733,9 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   back without competing with the steps, which are the path. It is held at the
   crumb line's own font size, so its line box cannot be the taller one and give
   the line a height that depends on what it holds.
-- `disc-colour.js` holds `TAU` and `hsv`, moved out of `disc-paint.js`: both
-  discs read the same letter wheel and `<word-disc>` needs none of the rest of
-  that 405-line Painter. `disc-paint.js` re-exports `TAU`, so its import sites
+- `disc-colour.js` holds `TAU` and `hsv`, moved out of `disc-paint.js`: all
+  three discs read the same letter wheel and `<word-disc>` needs none of the
+  rest of that 405-line Painter. `disc-paint.js` re-exports `TAU`, so its import sites
   and `hypernym-disc.js`'s are unchanged.
 - Both elements redo their text measuring when `document.fonts.ready` settles.
   Canvas text is measured rather than laid out: the DOM reflows when a face
@@ -1037,7 +1040,128 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   nested-arc harness and `web/words.html` is the word chain one, whose category
   picker is the element's now: it names `src` and `index-src` and nothing else,
   its own header `<select>` and the script that filled it from the index having
-  gone. `web/embed.html` is untouched, one category and no picker.
+  gone. `web/embed.html` names one category per section and no picker.
+- `<letter-disc>` draws the graph `<word-disc>` is the line graph of: 26 nodes,
+  one arc per letter pair some word bridges, the arc's width the log of the
+  words on it. It is `graph.py`'s claim drawn rather than printed. animal is the
+  worst case at 344 populated pairs of the 676 possible, from 1,582 words,
+  against food's 321, plant's 297, city's 286, element's 141, colour's 67 and
+  dog's 63. Weights run 1 to 32 on animal and to 45 on food, 103 of animal's 344
+  arcs carry one word, and 12 of them run a letter back to itself, holding 52
+  words between them. It reads the same `words-<category>.json` `<word-disc>`
+  reads and counts the 26x26 matrix out of it in one pass, so there is nothing
+  new to export, no new Makefile target, and a page carrying both discs fetches
+  one file for the pair. `index-src` gives it the same category picker, and
+  `web/letters.html` is its harness, naming `src` and `index-src` and nothing
+  else the way `words.html` does.
+- Nothing on it is bundled. Edge bundling buys clutter reduction and pays
+  traceability for it, and at 344 arcs every arc is an individually meaningful
+  object, clickable and carrying a count, so merging two destroys the thing the
+  widget exists to show. It is the right tool at `<word-disc>`'s 96,470 equal
+  chords, where no individual chord matters and where `PULL` already does the
+  degenerate case of it, and the wrong one here. What declutters at this scale
+  is the log width, the split arcs and the hover.
+- The width is `log1p` of the word count rather than the count. Drawn linearly
+  the 103 weight-1 arcs are a thirtieth of animal's 32-word trunk and disappear;
+  the log takes that ratio to about 5 to 1. `log1p` rather than `log` because
+  `log(1)` is 0 and an arc of no width is an arc that was not drawn.
+- A letter's own arc is the sum of the log weights of every arc touching it, so
+  one unit of weight is the same number of degrees everywhere on the ring, a
+  ribbon comes out the same width at both its ends, and that width means one
+  thing wherever it is read. Equal arcs per letter would make a quiet letter's
+  ends fat and a busy letter's thin, so every ribbon between the two would be a
+  trapezoid claiming two different counts, which nothing downstream could tell.
+  `check_web.mjs` asserts the degrees per unit directly, and adding a floor back
+  under a letter fails it. One was tried and removed for exactly that reason,
+  and it buys little: over the 37 categories the quietest letter is plant's at
+  0.61° of the ring, 3 px at a 300 px radius, and animal's is 1.14°.
+- Each letter's arc is split, the leaving half first as the ring is read
+  clockwise and the arriving half after it, each taking its own share of that
+  letter's weight. So direction is in the geometry rather than in an arrowhead:
+  an arc leaves the bright half of one letter and lands in the dim half of
+  another, the ring band being drawn at the letter's own colour on the leaving
+  half and dimmed on the arriving one. A ribbon's target end is tapered to 45%
+  of its slot as well, which is the second thing saying which way it runs. The
+  split point says at a glance whether a letter is somewhere play sets out from
+  or somewhere it arrives.
+- The pull runs with the turn, 0.82 at no turn at all down to 0.14 at half the
+  circle, where `<word-disc>` uses a fixed one. Fixed is right there, since a
+  chord joins two of 1,582 dots and the ones worth seeing are long. Here 31% of
+  animal's 344 arcs cover less than a third of the turn and 12 run a letter back
+  to itself, and at a long chord's pull every one of those is a spike pointing
+  at the middle. So a long arc dives nearly to the centre and a loop hugs the
+  ring it leaves.
+- A ribbon is filled rather than stroked, so the alpha accumulates wherever two
+  overlap, and the middle, where every long arc is bowed through, is where they
+  all do. animal draws 344 arcs into the ring colour draws 67 into, so
+  `fade(alpha, pairs)` returns the tuned 0.5 at or below a knee of 120 pairs and
+  `alpha * (120 / pairs) ** ALPHA_FALL` above it, `ALPHA_FALL` standing at 0.5:
+  animal comes out at 0.295 and food at 0.306, where colour, element and dog are
+  untouched. It is `word-bundle.js`'s `thin` in the same shape and it lives in
+  `letter-graph.js` for the same reason — an alpha that comes back at zero draws
+  nothing and the element could not tell.
+- No worker and no held bitmap. 344 filled ribbons is a frame's work where
+  `<word-disc>`'s 96,470 strokes is a thread's, so a resize redraws rather than
+  blitting a picture already built.
+- The pointer highlights and a click drills, the split all three discs make.
+  Pointing at an arc or a letter lights it and dims the rest, by one scrim fill
+  over the frame rather than a second pass over 344 arcs, which takes the ring
+  bands and the letters down with it so the highlight reads against the whole
+  figure. A letter lights everything touching it in either direction. The column
+  beside the disc lists whatever letter was last clicked into and never what is
+  hovered, which is what stops a list rebuilding under a pointer on its way to a
+  row. At rest it is every arc the category has, heaviest first; drilled into a
+  letter it is that letter's arcs, the leaving ones and then the arriving ones,
+  the arriving rows dimmed as the ring band has them. Clicking the hub puts it
+  back to every arc.
+- The readout under the disc names the words on the arc the pointer is on rather
+  than counting them: an arc is 32 words and the readout is which 32, up to 14
+  of them, which is what ties this disc to `<word-disc>`. The search box reaches
+  a word and highlights the arc it sits on, since a word is not drawn here and
+  its letter pair is. The labels are 26 single letters outside the ring, dropped
+  where the arc is narrower than the glyph, with the hub naming what the pointer
+  is on instead, which is `<word-disc>`'s answer at its own label floor.
+- Hit testing is three tests over three bands. The ring band answers with an arc
+  by binary search over ends laid out clockwise from the top, the same absence
+  of a spatial index both other discs have, and the ends tile each half of each
+  letter exactly, so there is no dead ground in it. The band outside the ring
+  answers with a letter. Inside the ring the path itself is asked, through
+  `isPointInPath` with the transform dropped and topmost first, since a ribbon
+  there is a curved shape no arithmetic short of the path describes.
+  `letter-graph.js`'s `near` refuses three quarters of them before a path is
+  built at all, for the price of two comparisons: every point of a ribbon lies
+  in the convex hull of its four ring points and their control points, and the
+  control points sit on the rays to the ring points, so the hull is inside the
+  wedge those four turns span — as long as that wedge is under half a turn,
+  past which the hull reaches the centre and the wedge stops saying anything.
+  That wedge is the complement of the largest gap between the four rather than
+  the span from the lowest to the highest, which is what finds it when an arc
+  runs from the first letter to the last and its own wedge wraps through the
+  top of the ring. Over 720 turns of animal's ring 85 of its 344 arcs survive,
+  79 of 321 on food and 15 of 67 on colour, and every arc those three draw is
+  narrow enough to be pruned at all, food's widest excepted. It is a prune
+  rather than an answer, so what it owes is never refusing a point that is on
+  the arc — the claim `disc-search.js`'s character mask is held to, and checked
+  the same way, by walking the thing itself.
+- The chord cubic lives in `disc-colour.js` as `bow`, the bezier alone with no
+  `moveTo`, and all three discs draw it. `<letter-disc>`'s `ribbon` walks a
+  closed boundary, so it cannot afford a `moveTo` at every crossing.
+  `word-bundle.js`'s `curve` is that plus the `moveTo` and is otherwise
+  unchanged, so the worker, the element and the check are untouched.
+- The hub's halo, its reference band and its baseline arithmetic live in
+  `disc-label.js` as `halo`, `band` and `baseline`, with `HALO`, `HALO_MIN`,
+  `HALO_STEPS`, `HUB_REF`, `HUB_RISE` and `HUB_DROP`. All three discs name
+  something in the middle, and both of those have gone wrong in this tree
+  before — a halo that read as a shadow lying off to one side of the word, and a
+  name that moved up and down as the pointer crossed the disc — so a second copy
+  could drift back to either. `<word-disc>` was rewired onto them and its
+  existing hub assertions still pass, which is what says the move preserved its
+  behaviour. Each element keeps its own per-font cache, since `g.font` is the one
+  thing that changes the answer.
+- `disc-index.js` holds `href(indexSrc, name)` and `label(row)`, the picker's
+  path arithmetic, which both elements with a picker derive. Getting it wrong
+  asks for a directory nobody has, which a browser reports as a disc that never
+  changes.
 
 ## Shape
 
@@ -1059,7 +1183,6 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/hypernym-disc.js           the nested-arc element
     web/disc-paint.js              the draw pipeline, no DOM
     web/disc-search.js             ranked name lookup, no DOM
-    web/disc-label.js              the hub's text fitting, no DOM
     web/disc-worker.js             hosts it on its own thread
     web/index.html                 its harness, the disc and nothing else
     web/word-disc.js               the word chain element
@@ -1067,9 +1190,14 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/word-chain.js              the chain and the repeat rule, no DOM
     web/word-bundle.js             the resting bundle and its square, no DOM
     web/word-bundle-worker.js      builds it off the main thread
-    web/disc-colour.js             TAU and hsv, read by both discs
-    web/disc-ratio.js              the backing-store ratio and its budget, no DOM
     web/words.html                 the word disc's harness, with a picker
+    web/letter-disc.js             the letter graph as a chord diagram
+    web/letter-graph.js            its matrix, ring, ribbons and hits, no DOM
+    web/letters.html               its harness, with the same picker
+    web/disc-colour.js             TAU, hsv and the chord cubic, all three discs
+    web/disc-label.js              the hub's text: fit, band, baseline, halo
+    web/disc-index.js              where a category's words sit beside the index
+    web/disc-ratio.js              the backing-store ratio and its budget, no DOM
     web/embed.html                 a section per disc, the one page web-dist ships
     tools/export_tree.py           writes the tree, its names and its glosses
     tools/export_words.py          writes a file per category and the index
@@ -1109,6 +1237,11 @@ The resting bundle's alpha is thinned above 12,000 chords by the count raised to
 0.7, which takes animal from 0.110 to 0.026. Whether that exponent is the right
 one has not been looked at, since there is no browser here to look in; `make
 serve` is where to find out, and `FALL` in `word-bundle.js` is the knob.
+
+`<letter-disc>`'s fill alpha is faded above 120 populated letter pairs by the
+count raised to 0.5, which takes animal from 0.5 to 0.295 and food to 0.306.
+That exponent has not been looked at either, for the same reason; `make serve`
+is where to find out, and `ALPHA_FALL` in `letter-graph.js` is the knob.
 
 ## Checks
 
@@ -1266,18 +1399,69 @@ one data attribute, since both discs delegate their list handlers off
 `e.target.closest("li[data-i]")` and without it a row could be built and counted
 here but never clicked.
 
+`letter-graph.js` and `<letter-disc>` are covered the same way. The canvas stub
+gained a `fill` tally recording each fill's colour, the way it already records
+strokes, a `fillRect`, an `isPointInPath` that answers false throughout — so
+what is driven is the ring band and the letter band, and the interior hit is
+what that costs — and a `textContent` that walks its children the way a
+browser's does, since a list row is built out of spans and strings and a getter
+answering only its own string reported every row as empty.
+
+The element is driven over nine words on six letters, `cat cot tan tin toad dog
+area aorta nan`, chosen so that weight order and alphabetical order differ and
+two of the arcs are loops. The geometry is held to the matrix's counts and to a
+word outside a to z being no edge; to one unit of weight being the same number
+of degrees everywhere, which is the proportional-arc invariant; to the width
+being the log; to every letter's ends tiling its two halves exactly, with the
+arcs and the gaps coming to a turn; to those ends being strictly increasing, so
+the binary search is sound, with every slot answered at both its edges and the
+gaps between letters answering nobody; to the pull running with the turn; to the
+fade's shape; and to the sizing staying inside its own square at every size and
+coming back positive, the disc that drops its letters having the bigger ring
+either side of the label floor. On the element it asserts one fill per arc in
+more than one colour and light before heavy, the resting list heaviest first, a
+pointer on a computed ring point naming the right arc with the readout naming
+its words, a pointer outside the ring naming the letter, a hover leaving the
+very same row objects in place, a click drilling to the letter an arc leaves, an
+arriving row being marked, the seam that `<word-disc>`'s column already asserts,
+where a move landing on no row holds the highlight and only `pointerleave`
+clears it, the hub's halo being copies of the ink ringed at one radius with the
+ink last, the search reaching a word's arc, and stacking dropping the rows. Six shapes a real
+category can put through the geometry are run past it as well — nothing at all,
+one word, one loop, a letter nothing starts with, a letter nothing ends with,
+and one letter throughout — since each lands the split at an end of its arc or
+leaves the ring with almost nothing on it, and what is owed in every case is
+ends of some width, finite angles, a split inside its own arc and a hit test
+that still round-trips.
+The prune in front of the interior hit test is held to being inert rather than
+argued about: each ribbon's own boundary is walked, its two runs along the ring
+and its two cubics rebuilt from `letter-graph.js`'s own control points, and
+`near` has to accept every point of it.
+That walk covers a second word set whose arcs straddle the top of the ring,
+which is not decoration — a wedge found as the span from the lowest turn to the
+highest is the same answer wherever nothing wraps, so a broken search for the
+largest gap is inert on any set that has no such arc, and two of those eight do.
+All eighteen mutations tried were caught: equal node arcs, linear weight, a
+heavy-first draw order, a fixed pull, a split fixed at half rather than by
+weight, a split nudged outside its arc, a narrowed wedge, a weakened prune, an
+unsound prune, the largest gap not actually found, clearing the highlight on a
+seam, rebuilding the column on a hover, the resting list in layout order, a hub
+with no ground, the ring band not answering, the band outside it not answering,
+an arc drilling to its target, and a column listing arriving before leaving.
+
 A last block reads `web/embed.html` and holds it to the directory it ships in,
 since `web-dist` finds its modules by glob where that page names its modules,
-its two elements and its data files by hand, so the glob's guarantee stops at
+its three elements and its data files by hand, so the glob's guarantee stops at
 the directory's edge: a module renamed here would be copied under its new name
 and left unreferenced by the page, with nothing to say so. It asserts that every
 `.js` the page names exists in `web/`, that every data file it asks for is one
 `web-dist` actually stages flat beside it — `wordnet-tree.json`,
 `wordnet-names.txt`, `wordnet-glosses.txt` and `words-<category>.json` — that
-both `<hypernym-disc>` and `<word-disc>` are on the page, and that each one's
-own script is named there, since a section whose module is loaded elsewhere
-could not be lifted out on its own and that is the one way the two could quietly
-become a pair again. Only the names are checked, since nothing renders the
+`<hypernym-disc>`, `<word-disc>` and `<letter-disc>` are all on the page, and
+that each one's own script is named there, since a section whose module is
+loaded elsewhere could not be lifted out on its own and that is the one way the
+three could quietly become one block again. Only the names are checked, since
+nothing renders the
 markup, which is the limit this section already states about the CSS; renaming
 `word-disc.js` in the page fails it.
 

@@ -16,10 +16,12 @@
   likes. tools/serve.py falls back to out/ for exactly these names, so the page
   runs unchanged under `make serve` too.
 
-  The two discs paint on two threads, one worker apiece. The nested disc is
-  handed its own canvas and keeps it for the life of the page; the word disc's
-  worker owns nothing and answers with a bitmap, so neither waits on the other
-  and embedding one does not depend on embedding the other.
+  The nested disc and the word disc paint on two threads, one worker apiece.
+  The nested disc is handed its own canvas and keeps it for the life of the
+  page; the word disc's worker owns nothing and answers with a bitmap, so
+  neither waits on the other and embedding one does not depend on embedding the
+  other. The letter disc needs no worker: it draws at most 344 arcs, which is a
+  frame's work rather than a thread's.
 -->
 <style>
 /* The page's own furniture. Nothing below this block is needed by either
@@ -70,8 +72,16 @@ word-disc{
   --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
   --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
 }
-/* Written out once per element rather than as one selector naming both, so a
-   host lifting a section takes rules that mention only what it lifted. */
+letter-disc{
+  display:block; width:100%; height:min(72vh,640px);
+  --disc-ground:#0c1112; --disc-panel:#141b1c; --disc-ink:#e7eded;
+  --disc-muted:#90a1a1; --disc-accent:#59b491;
+  --disc-sat:.55; --disc-val:.88;
+  --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
+  --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
+}
+/* Written out once per element rather than as one selector naming all three,
+   so a host lifting a section takes rules that mention only what it lifted. */
 @media (prefers-color-scheme:light){
   hypernym-disc{
     --disc-ground:#eef1f0; --disc-panel:#fbfcfc; --disc-ink:#131a1b;
@@ -83,15 +93,20 @@ word-disc{
     --disc-muted:#5d6d6e; --disc-accent:#2c7359; --disc-warn:#b8342a;
     --disc-sat:.62; --disc-val:.60;
   }
+  letter-disc{
+    --disc-ground:#eef1f0; --disc-panel:#fbfcfc; --disc-ink:#131a1b;
+    --disc-muted:#5d6d6e; --disc-accent:#2c7359;
+    --disc-sat:.62; --disc-val:.60;
+  }
 }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>wordchain</h1>
-  <p class="note">Each disc below stands on its own. Copy either section into a
+  <p class="note">Each disc below stands on its own. Copy any section into a
   page of your own, together with the rule that gives that element its height
-  and its colours, and it needs nothing from the other.</p>
+  and its colours, and it needs nothing from the others.</p>
 
   <!-- WordNet by hypernym. Its own script, its own data, its own worker. -->
   <section>
@@ -110,6 +125,16 @@ word-disc{
     <h2>word-disc</h2>
     <script type="module" src="word-disc.js"></script>
     <word-disc fit src="words-animal.json"></word-disc>
+  </section>
+
+  <!-- The same category as the graph underneath the one above: 26 letters
+       rather than 1,582 words, with an arc for each of the 344 letter pairs
+       animal populates and its width the log of the words on it. The two read
+       the same file. -->
+  <section>
+    <h2>letter-disc</h2>
+    <script type="module" src="letter-disc.js"></script>
+    <letter-disc fit src="words-animal.json"></letter-disc>
   </section>
 </div>
 </body>
