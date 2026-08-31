@@ -342,7 +342,14 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   search box has something in it and the ring below otherwise. One per line,
   where `<word-disc>` lists its moves two up: a 240 px column has no room for
   two of "domestic dog", which is the same measurement that already drops a
-  suggestion's parent onto a second line here.
+  suggestion's parent onto a second line here. The list carries the box that
+  one does, a 1 px `--_edge` border on the `--_panel` ground with 3 px of
+  padding, drawn like the suggestions it shares the room with, and it is
+  `flex:1 1 auto` inside a stretching row, so the border runs down to the
+  definition at the foot of the column however few nodes the ring holds.
+  `.kids li` is `display:flex` and so block-level, and the rows abut on that
+  alone: the `line-height:0` that stops `<word-disc>`'s inline-block rows
+  leaving a strut's descent between every pair has nothing to fix here.
 - `hue-depth` defaults to 8 and `merge` to density, and the harness sets
   neither: it is one disc with a search box, no controls and no timings. Both
   attributes still work, so a comparison is one attribute away in the
@@ -368,6 +375,21 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   height; that is why the gloss runs to five lines there, where two would clip
   most definitions at 200 to 280 px wide. In the column a suggestion puts its
   parent on a second line, since 200 px has no room for both on one.
+  The column has a box around it, which is what separates it from the disc. It
+  is the frame's own `::before`, placed as an explicit grid item spanning
+  column 1 from the first row to the definition's, rather than an element
+  wrapping the column: the picker, the search box and the definition are
+  separate grid items, and the stacked layout puts the definition under the
+  disc rather than in a column, so nothing wraps them and CSS cannot move the
+  DOM. A pseudo-element is generated first, so it paints behind the items
+  sitting in it, and it carries `pointer-events:none`. It exists in wide mode
+  alone, since `content` is set only there. The items carry the inset that
+  keeps their text off the border, 10 px on the picker's top, on the search
+  box's sides and bottom and on the definition's sides and bottom, and the
+  definition's `margin-top:12px` went with it, the search box's 10 px of bottom
+  padding standing in for the gap. Both elements draw it. `<hypernym-disc>` has
+  no picker, so its box spans two rows rather than three and its search box
+  takes padding on all four sides.
 - The `fit` attribute makes the element fill the box it is given, with the
   stage taking whatever height the search box and the crumbs leave and staying
   square against whichever dimension binds first. Without it the stage is a
@@ -620,7 +642,26 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   list which drew no text should depend on as little from outside as it can, and
   `box-sizing: border-box`, because the page's own box-sizing rule does not
   cross into a shadow root and content-box put two halves and their padding past
-  the width and wrapped every second word onto a line of its own.
+  the width and wrapped every second word onto a line of its own. The list
+  carries a box of its own as well, a 1 px `--_edge` border on the `--_panel`
+  ground with 3 px of padding, which is the box the suggestions already draw in
+  that room. It was `flex:1 1 auto` inside a stretching row already, so the
+  border runs down to the definition at the foot of the column however few words
+  are in it.
+  An inline block sits in a line box that holds the inherited strut too, and the
+  strut's descent hangs below a row aligned to the top of that box. That left a
+  few pixels of list between every pair of rows that belonged to no row, so a
+  pointer travelling down the column crossed one between each pair and the hover
+  highlight blinked off and on again. `line-height:0` on the list zeroes the
+  strut, the line box comes out the height of the row itself and the rows abut,
+  and every row sets its own `line-height:1.5`, so nothing else moves. It is
+  deliberately not `font-size:0`, the careless version of the same fix: a row
+  that drew no text would still be a visible box under that, which is the fault
+  the grid this list replaced was thrown out for. The 8 px `margin-right` that
+  used to sit between the two rows of a line went for the same reason, dead
+  ground between two hover targets. The rows are `width:calc(50% - 1px)` with no
+  margin, so the pair still comes to 2 px short of the width and no rounding can
+  wrap them, and the words are held apart by their own 5 px side padding.
 - `word-layout.js` is that figure's layout written a second time, so the browser
   and the SVG put the same word at the same angle: the same 3.5 degree gap, the
   same wedge order, the same `_fan_key`. `check_web.mjs` holds it to the Python's
@@ -964,7 +1005,10 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   landscape grid gained a row for it, `grid-template-rows` running `auto
   minmax(0,1fr) auto auto`, and there is no row-gap, so with no index named that
   row measures nothing and every distance below it is what it was before the
-  picker existed.
+  picker existed. A row measuring nothing puts the top edge of the column's box
+  at the search box's own top, where the picker's 10 px of top padding was the
+  inset, so `:host([fit]) .frame.wide .pick[hidden] + .find{padding-top:10px}`
+  puts it back there.
 - `tools/export_words.py` writes `words-<category>.json`, one per category, plus
   `words-index.json`: 37 categories, 13,212 words, 197 KB. Flat names rather than
   a directory, since `web-dist` stages everything side by side and the modules

@@ -305,19 +305,31 @@ TPL.innerHTML = `
      the room with, and it takes whatever height the column has left, so the
      box runs down to the definition at the foot of the column however few
      words are in it. */
+  /* line-height:0 on the list, and every row setting its own: the rows are
+     inline blocks, so each line of them sits in a line box that also holds
+     the inherited strut, and the strut's descent hangs below a row aligned to
+     the top of that box. That gap is a few pixels of the list that is not any
+     row, so a pointer travelling down the column crosses one between every
+     pair and the highlight blinks off and on again. A zeroed strut leaves the
+     line box the height of the row itself and the rows abut. It is not
+     font-size:0, which would be the careless version of this: a row that drew
+     no text would still be a visible box here. */
   .moves .list{margin:0;padding:3px;list-style:none;flex:1 1 auto;min-height:0;
-    overflow-y:auto;scrollbar-width:thin;background:var(--_panel);
+    overflow-y:auto;scrollbar-width:thin;line-height:0;background:var(--_panel);
     border:1px solid var(--_edge);border-radius:2px}
   /* border-box because the page's own box-sizing rule does not cross into a
      shadow root, and content-box would put two halves and their padding past
-     the width and wrap every second word onto a line of its own. The pair
-     comes to 98%, so no rounding can wrap them either. */
+     the width and wrap every second word onto a line of its own.
+
+     The 8 px that used to sit between the two rows of a line is gone for the
+     reason the strut is: it was dead ground between two hover targets, and
+     the words are held apart by their own padding without it. The pair still
+     comes to 2 px short of the width, so no rounding can wrap them either. */
   .moves li{box-sizing:border-box;display:inline-block;vertical-align:top;
-    width:calc(50% - 5px);margin-right:8px;
+    width:calc(50% - 1px);
     color:var(--_ink);font-size:12.5px;line-height:1.5;
     padding:2px 5px;border-radius:2px;cursor:pointer;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .moves li:nth-child(2n){margin-right:0}
   .moves li:hover{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
