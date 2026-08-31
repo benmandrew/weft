@@ -207,6 +207,11 @@ class Canvas extends El {
    only thing the elements do with it is querySelector by class. */
 const fragment = () => {
   const frame = new El("div", "frame");
+  // Hidden as the template has it, since a host that names no index gets no
+  // picker and the element is what shows it.
+  const pick = new El("div", "pick");
+  pick.hidden = true;
+  pick.append(new El("select", "cat"));
   const find = new El("div", "find");
   const moves = new El("div", "moves");
   moves.append(new El("div", "why"), new El("ul", "list"));
@@ -217,7 +222,7 @@ const fragment = () => {
   stage.children[1].className = "over";
   const crumb = new El("div", "crumb");
   crumb.append(new El("span", "head"), new El("span", "tail"));
-  frame.append(find, stage, new El("div", "gloss"), crumb);
+  frame.append(pick, find, stage, new El("div", "gloss"), crumb);
   const root = new El("div", "");
   root.append(new El("style", ""), frame);
   return root;
@@ -238,6 +243,18 @@ globalThis.HTMLElement = class extends El {
   attachShadow() {
     this._shadow = new El("div", "");
     return this._shadow;
+  }
+  /* Setting an observed attribute calls the callback, which is what a browser
+     does and what the element counts on when it changes its own `src` from the
+     picker. Driven this way rather than by calling the callback by hand, for
+     the reason the resize observer keeps its callbacks: a test that reaches
+     past the browser's plumbing stops being a statement about the element. */
+  setAttribute(n, v) {
+    const was = this.getAttribute(n);
+    super.setAttribute(n, v);
+    if (this.constructor.observedAttributes?.includes(n)) {
+      this.attributeChangedCallback?.(n, was, String(v));
+    }
   }
 };
 const REGISTRY = new Map();
@@ -1281,7 +1298,6 @@ check(
   `a move set came back as ${list.children.length} rows, so it was paged`,
 );
 disc.setAttribute("limit", "0");
-disc.attributeChangedCallback("limit", null, "0");
 check(disc.stats.words === CROWD.length, `limit 0 drew ${disc.stats.words} of ${CROWD.length}`);
 /* The ceiling that used to sit at 24,000 and cost the seven largest categories
    their picture. animal holds 96,470 chords at no limit and the crowd below
@@ -1308,10 +1324,90 @@ check(drew.image > 0, "the bundle was not blitted after a resize");
 check(disc.stats.bundle, "the bundle went out over a resize");
 
 disc.setAttribute("limit", "40");
-disc.attributeChangedCallback("limit", "0", "40");
 check(disc.stats.words === 40, `limit 40 drew ${disc.stats.words}`);
 check(disc.stats.bundle && disc.stats.labelPx > 0, "40 words lost the bundle or the labels");
 disc.repaint();
+
+/* The category picker, which index-src turns on and nothing else does. Its one
+   piece of arithmetic is where a category's words are: export_words.py writes
+   the 37 files flat beside their index and web-dist stages them that way, so
+   the element takes the index's own path and swaps the last segment. Get that
+   wrong and the element asks a directory nobody has, which a browser reports
+   as a disc that never changes and nothing downstream can tell. */
+const INDEX = [
+  { name: "animal", words: WORDS.length },
+  { name: "bird", words: 3 },
+];
+const BIRDS = ["emu", "urubu", "umbrellabird"];
+const FILES = new Map([
+  ["/out/words-index.json", INDEX],
+  [
+    "/out/words-animal.json",
+    { category: "animal", words: WORDS, zipf: WORDS.map((_, i) => 8 - i) },
+  ],
+  ["/out/words-bird.json", { category: "bird", words: BIRDS, zipf: [3, 2, 1] }],
+]);
+const fetched = [];
+globalThis.fetch = async url => {
+  fetched.push(url);
+  if (!FILES.has(url)) throw new Error(`nothing at ${url}`);
+  return { json: async () => FILES.get(url) };
+};
+const settle = () => new Promise(r => setTimeout(r, 0));
+
+check(shadow.querySelector(".pick").hidden, "a disc given no index built a picker anyway");
+
+/* An index is enough to open on. Named without a src it means the first
+   category rather than a blank disc, which is the whole of what a host has to
+   write to get a disc that can be steered. */
+const picked = new WordDisc();
+picked.setAttribute("index-src", "/out/words-index.json");
+picked.connectedCallback();
+await settle();
+await settle();
+
+const cat = picked._shadow.querySelector(".cat");
+check(!picked._shadow.querySelector(".pick").hidden, "the index landed and the picker stayed off");
+check(
+  cat.children.map(o => o.value).join("|") === "animal|bird",
+  `the picker offers ${cat.children.map(o => o.value)}`,
+);
+check(
+  cat.children[0].textContent === `animal (${WORDS.length})`,
+  `the picker labels animal as "${cat.children[0].textContent}", so the count is not on it`,
+);
+check(
+  picked.getAttribute("src") === "/out/words-animal.json",
+  `an index alone opened ${picked.getAttribute("src")}`,
+);
+check(picked.stats.category === "animal", `an index alone drew ${picked.stats.category}`);
+check(cat.value === "animal", `the picker reads ${cat.value} for the words it opened on`);
+check(
+  fetched.filter(u => u.endsWith("words-index.json")).length === 1,
+  "the index was fetched more than once",
+);
+
+/* Choosing a category is a load, and what comes back is a different disc: a
+   chain over words that are no longer drawn has nothing to stand on. */
+picked.play(0);
+check(picked.chain.length === 1, "a word did not play on the disc the index opened");
+cat.value = "bird";
+fire(cat, "change");
+await settle();
+await settle();
+check(
+  picked.getAttribute("src") === "/out/words-bird.json",
+  `the picker asked for ${picked.getAttribute("src")}, which is not beside its index`,
+);
+check(picked.stats.category === "bird", `the picker chose bird and drew ${picked.stats.category}`);
+check(picked.words.join("|") === BIRDS.join("|"), `bird came back as ${picked.words}`);
+check(picked.chain.length === 0, "the chain survived a change of category");
+
+/* It follows a src the host set as well as its own change event, since the two
+   are the same choice made from either end. */
+picked.setAttribute("src", "/out/words-animal.json");
+await settle();
+check(cat.value === "animal", `a host-set src left the picker reading ${cat.value}`);
 
 /* embed.html is the one page `make web-dist` stages, and it names its modules,
    its elements and its data files by hand where the target finds the modules by

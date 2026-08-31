@@ -835,6 +835,37 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   moved the words out from under the pointer, and fired the resize observer,
   which rebuilt the bundle a stroke at a time. `<hypernym-disc>` never showed
   it because its crumb carries the root's name from the first zoom.
+- `index-src` names a `words-index.json` and is the whole of the category
+  picker: given one, the element fetches the index and puts a `<select>` of the
+  categories at the head of the column, above the search box. Named without it
+  nothing is built, since a page embedding a single disc is one category and one
+  file, and the picker is hidden as well where the index holds fewer than two
+  categories. Where a category's words are is its one piece of arithmetic:
+  `export_words.py` writes the 37 files and their index flat and side by side
+  and `web-dist` stages them that way, so the element takes the index's own path
+  and swaps the last segment, `/out/words-index.json` to `/out/words-bird.json`.
+  No base URL to resolve against and nothing for a host to name twice, and the
+  one thing it cannot survive is a query string on the index, which a directory
+  of exported files does not have. Choosing a category sets the element's own
+  `src`, so a pick goes down the load path a host swapping `src` already had and
+  the chain, the layout and the held bundle all go with it, a chain over words no
+  longer drawn having nothing to stand on. An index named without a `src` opens
+  on the first category in it rather than on a blank disc: `#load` has already
+  run and found nothing by the time the index resolves, so a `src` written by
+  hand still wins. The picker follows the words rather than leading them —
+  `#mark` is called from the `data` setter as well as after the options are
+  built — which is what makes the select right whichever of the index and the
+  word file lands first, and what moves it when a host sets `src` by hand.
+  `search="off"` is about finding a word, so it still hides the search box and
+  the moves list and it leaves the picker: the picker is the search box one
+  scale out, that one reaching a word inside a category and this one reaching
+  the category, so it sits at the head of the same column without being part of
+  that box. The select keeps its native appearance, since stripping it takes the
+  arrow with it and the arrow is what says the control opens a list. The
+  landscape grid gained a row for it, `grid-template-rows` running `auto
+  minmax(0,1fr) auto auto`, and there is no row-gap, so with no index named that
+  row measures nothing and every distance below it is what it was before the
+  picker existed.
 - `tools/export_words.py` writes `words-<category>.json`, one per category, plus
   `words-index.json`: 37 categories, 13,212 words, 197 KB. Flat names rather than
   a directory, since `web-dist` stages everything side by side and the modules
@@ -846,8 +877,9 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   is: one run resolves every category, where 38 ordinary rules would load WordNet
   38 times. `serve` and `web-dist` both depend on it. `web/index.html` stays the
   nested-arc harness and `web/words.html` is the word chain one, whose category
-  picker is the harness's own rather than the element's: a host page embeds one
-  category and the element takes one file.
+  picker is the element's now: it names `src` and `index-src` and nothing else,
+  its own header `<select>` and the script that filled it from the index having
+  gone. `web/embed.html` is untouched, one category and no picker.
 
 ## Shape
 
@@ -1004,6 +1036,18 @@ The assertions were mutation-tested: reversing the fan sort, dropping the hit
 test's upper neighbour, and removing the label floor each fail it, and restoring
 the per-word measurement fails the baseline one with iris and test 1.6 px below
 guppy and cow, the reported symptom exactly.
+
+The stub's `setAttribute` calls `attributeChangedCallback` for an observed
+attribute the way a browser does, which is what the element counts on when it
+sets its own `src` from the picker, and the two hand-written
+`attributeChangedCallback("limit", …)` calls went with it, for the reason the
+resize observer keeps its callbacks. A `fetch` stub serving an index and two
+word files is what then drives the picker: an index alone opens the first
+category, the options carry the word counts, choosing bird asks for the file
+beside the index, the words come back as bird's, the chain clears, and a `src`
+set by hand moves the select back. All of it was mutation-tested — dropping the
+directory from the derived path, dropping the `#mark` call in the `data` setter,
+refusing the auto-open, and hiding the picker unconditionally each fail it.
 
 The bundle's z-order is asserted over a synthetic set of 520 words and 10,400
 chords, read off a stub that records the colour each stroke went down in, which
