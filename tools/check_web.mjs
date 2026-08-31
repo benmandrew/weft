@@ -224,6 +224,9 @@ const fragment = () => {
 };
 
 globalThis.document = {
+  // Resolved, so the elements' document.fonts.ready callbacks are run rather
+  // than only parsed. Awaited once below, after the word disc's draw counts.
+  fonts: { ready: Promise.resolve() },
   createElement: tag =>
     tag === "canvas"
       ? new Canvas()
@@ -968,6 +971,16 @@ check(disc.stats.thread === "main", `the stub found a ${disc.stats.thread} to bu
 check(drew.image === 1, `the bundle was blitted ${drew.image} times, not once`);
 check(drew.curve === wordChords(L), `${drew.curve} curves for ${wordChords(L)} chords`);
 check(drew.fillText > WORDS.length, "fewer labels were drawn than there are words");
+/* The font swap, here rather than at the top of this block because it is a
+   whole extra draw and the three counts above describe one. Nothing has
+   awaited until now, so the callback connectedCallback queued on the stub's
+   resolved document.fonts.ready has been sitting in the microtask queue since;
+   this is where it runs. Asserting the blit is what says it ran at all — a
+   callback that silently did nothing would leave every fit measured against
+   the fallback, which is the fault this exists to catch, and it would pass. */
+const blits = drew.image;
+await document.fonts.ready;
+check(drew.image === blits + 1, `the font swap redrew ${drew.image - blits} times, not once`);
 /* Nothing is painted behind the hub's name. A panel wide enough to hold it
    covered the middle of the disc, which is where the long chords cross and so
    is the part of the figure worth seeing; the name carries its own ground

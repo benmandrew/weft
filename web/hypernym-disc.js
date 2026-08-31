@@ -318,6 +318,16 @@ class HypernymDisc extends HTMLElement {
     this.#ro.observe(this.#sr.querySelector(".stage"));
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#repaint);
+    // Canvas text is measured rather than laid out, so a face landing after the
+    // first frame repaints nothing on its own: the DOM reflows on a font swap
+    // and a drawn pixel cannot. The fit is cached on radius and text, carrying
+    // the font string it settled on, so the name is drawn in the face that
+    // arrived at a size and a line break solved against the fallback, and a
+    // narrower fallback then runs the fitted line past the hub radius. A host
+    // serving its monospace unpreloaded under `font-display: swap` paints
+    // exactly that. repaint() drops #fits and #toks and draws again, which is
+    // the whole of the fix here.
+    document.fonts?.ready?.then(() => this.repaint());
     // Before the fetch, not after the first draw asks for it. The worker's own
     // module fetch then runs alongside the tree's, so a slow link no longer
     // spends the whole deadline on the network and reads as a device with no
