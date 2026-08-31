@@ -349,7 +349,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   definition at the foot of the column however few nodes the ring holds.
   `.kids li` is `display:flex` and so block-level, and the rows abut on that
   alone: the `line-height:0` that stops `<word-disc>`'s inline-block rows
-  leaving a strut's descent between every pair has nothing to fix here.
+  leaving a strut's descent between every pair has nothing to fix here. The
+  `pointermove` handler is the other element's word for word, down to holding
+  the hover where a move lands on no row rather than clearing it. This disc
+  never showed the blink, its rows abutting, but the list's own padding is a
+  seam like any other and it would have blinked there.
 - `hue-depth` defaults to 8 and `merge` to density, and the harness sets
   neither: it is one disc with a search box, no controls and no timings. Both
   attributes still work, so a comparison is one attribute away in the
@@ -650,18 +654,29 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   are in it.
   An inline block sits in a line box that holds the inherited strut too, and the
   strut's descent hangs below a row aligned to the top of that box. That left a
-  few pixels of list between every pair of rows that belonged to no row, so a
-  pointer travelling down the column crossed one between each pair and the hover
-  highlight blinked off and on again. `line-height:0` on the list zeroes the
-  strut, the line box comes out the height of the row itself and the rows abut,
-  and every row sets its own `line-height:1.5`, so nothing else moves. It is
-  deliberately not `font-size:0`, the careless version of the same fix: a row
-  that drew no text would still be a visible box under that, which is the fault
-  the grid this list replaced was thrown out for. The 8 px `margin-right` that
-  used to sit between the two rows of a line went for the same reason, dead
-  ground between two hover targets. The rows are `width:calc(50% - 1px)` with no
-  margin, so the pair still comes to 2 px short of the width and no rounding can
-  wrap them, and the words are held apart by their own 5 px side padding.
+  few pixels of list between every pair of rows that belonged to no row, which a
+  pointer travelling down the column crossed between each pair.
+  `line-height:0` on the list zeroes the strut, the line box comes out the
+  height of the row itself and the rows abut, and every row sets its own
+  `line-height:1.5`, so nothing else moves. It is deliberately not
+  `font-size:0`, the careless version of the same fix: a row that drew no text
+  would still be a visible box under that, which is the fault the grid this list
+  replaced was thrown out for. The 8 px `margin-right` that used to sit between
+  the two rows of a line went for the same reason, dead ground between two hover
+  targets. The rows are `width:calc(50% - 1px)` with no margin, so the pair
+  still comes to 2 px short of the width and no rounding can wrap them, and the
+  words are held apart by their own 5 px side padding.
+  Closing those gaps left the hover highlight still blinking off and on as the
+  pointer went down the column, and the geometry was only a contributing cause.
+  The actual one was the list's own `pointermove` handler, which read
+  `e.target.closest("li[data-i]")` and, finding no row, called `#preview(-1)`
+  and cleared the hover. A pointer is over the list and over no row at every
+  seam that is left: the list's 3 px of padding, the 2 px of slack at the end of
+  a line, a hairline between two rows abutting at a fractional width. So every
+  crossing cleared the preview and the next row set it again, however narrow the
+  seams were made. A move landing on no row now returns and holds whatever the
+  last one set, and leaving the list is the only thing that clears the hover,
+  which is what the `pointerleave` listener beside it has always been for.
 - `word-layout.js` is that figure's layout written a second time, so the browser
   and the SVG put the same word at the same angle: the same 3.5 degree gap, the
   same wedge order, the same `_fan_key`. `check_web.mjs` holds it to the Python's
@@ -1188,6 +1203,17 @@ reversing the fan sort, dropping the hit
 test's upper neighbour, and removing the label floor each fail it, and restoring
 the per-word measurement fails the baseline one with iris and test 1.6 px below
 guppy and cow, the reported symptom exactly.
+
+The hover on the moves column is asserted there as well, which the stub's
+carrying no CSS is no bar to. A seam reaches the element as a `pointermove`
+whose target is the list rather than a row, which is exactly what a browser
+sends, so the stub can drive one. The check hovers a row and asserts the readout
+names that word, fires a move targeting the list itself and asserts the readout
+has not moved, then fires `pointerleave` and asserts it has. It matches the
+marked-up shape `<b>toa<span class="last">d</span></b>` rather than the bare
+word, since the readout marks a word's last letter in place and splits it with a
+span. It was mutation-tested too: restoring the `-1` branch fails the seam
+assertion, with the readout dropping back to the chain word.
 
 The stub's `setAttribute` calls `attributeChangedCallback` for an observed
 attribute the way a browser does, which is what the element counts on when it

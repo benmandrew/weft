@@ -1272,6 +1272,28 @@ check(listed().join("|") === "toad|trout|tuna", `after rat the column held ${lis
 disc.rewind(1);
 check(listed().includes("tiger"), `winding back did not put tiger back: ${listed()}`);
 
+/* Hovering a row is hovering its dot, and the seam between two rows is not a
+   place the hover ends. A pointer travelling down the column passes over the
+   list and over no row — the list's padding, the slack at the end of a line, a
+   hairline between two rows abutting at a fractional width — and clearing
+   there blinked the highlight off and on again between every pair. Only
+   leaving the list clears it. No CSS is needed to say so: the seam is a
+   pointermove whose target is the list rather than a row, which is exactly
+   what the browser sends. */
+disc.clear();
+point("cat");
+const onToad = '<b>toa<span class="last">d</span></b>';
+const row = list.children.find(li => li.textContent === "toad");
+fire(list, "pointermove", { target: row });
+check(gloss.innerHTML.includes(onToad), `hovering a row read as ${gloss.innerHTML}`);
+fire(list, "pointermove", { target: list });
+check(
+  gloss.innerHTML.includes(onToad),
+  `the seam between two rows dropped the hover: ${gloss.innerHTML}`,
+);
+fire(list, "pointerleave", {});
+check(!gloss.innerHTML.includes(onToad), `leaving the list kept the hover: ${gloss.innerHTML}`);
+
 /* A wedge run dry says so rather than emptying without a word. */
 disc.clear();
 point("emu");

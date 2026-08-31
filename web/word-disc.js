@@ -549,8 +549,16 @@ class WordDisc extends HTMLElement {
     // its dot, and clicking one is clicking it. Delegated, since the list is
     // rebuilt on every move.
     this.#listEl.addEventListener("pointermove", e => {
+      /* A pointer between two rows is over the list and over no row, and
+         clearing the preview there is what made the highlight blink off and
+         on again as it travelled down the column. Every seam does it: the
+         list's own padding, the slack at the end of a line, a hairline
+         between two rows that abut at a fractional width. So a move that
+         lands on no row holds what the last one set, and leaving the list is
+         the only thing that clears it, which is what pointerleave is for. */
       const li = e.target.closest("li[data-i]");
-      const i = li ? +li.dataset.i : -1;
+      if (!li) return;
+      const i = +li.dataset.i;
       if (i !== this.#hover) this.#preview(i);
     });
     this.#listEl.addEventListener("pointerleave", () => this.#preview(-1));
