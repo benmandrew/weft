@@ -87,16 +87,26 @@ const HUB_SIZES = [16, 14, 12, 10, 8],
 // to clear its own ground, but only its own. A disc large enough to hold it
 // took the middle of the figure out with it.
 //
-// A stroke is centred on the glyph outline, so the halo cannot sit off to one
-// side of the letter it belongs to. What it can do is stop looking like an
-// edge: at 0.3 of the type it merged the letters into one slab and read as a
-// shape behind the word rather than as ground around it. 0.16 is 2.6 px at the
-// top of the ladder, so 1.3 px clear of a glyph, against chords half a pixel
-// wide. The floor is 2 rather than 3 because the ladder tops out at 16 now: a
-// 3 px floor would bind at every rung and the fraction would never be read.
-// It takes over below 12.5 px, which is the two degraded rungs alone.
-const HALO = 0.16,
-  HALO_MIN = 2;
+// It is laid as copies of the same fillText the ink uses, ringed around the
+// letters, rather than as a strokeText under them. A stroke is centred on the
+// glyph outline, which says the halo is centred in the geometry and not in
+// what is drawn: a stroke is taken off the outline where a fill is a
+// rasterised glyph, and the two are positioned by different code, so the halo
+// could and did read as a shadow lying off to one side of the word. Copies
+// cannot. Every one is the same call at a known offset, so whatever the fill
+// does with the letters it does with their ground.
+//
+// HALO is how far that ground reaches past a letter, so it is half of the
+// stroke width it replaces and draws the same picture. At 0.3 of the type the
+// stroke had merged the letters into one slab and read as a shape behind the
+// word rather than as ground around it; 0.08 is 1.3 px at the top of the
+// ladder, against chords half a pixel wide. The floor takes over below 12.5
+// px, which is the two degraded rungs alone. HALO_STEPS is how many directions
+// the ring holds: eight leaves a scallop 0.076 of the reach deep, a tenth of a
+// pixel at the largest reach the ladder asks for.
+const HALO = 0.08,
+  HALO_MIN = 1,
+  HALO_STEPS = 8;
 // What the hub's baseline is measured against: a capital and an ascender,
 // which between them reach the top of anything a name can hold. Measured off
 // this rather than off the name itself, so every word in a face sits on the
@@ -1109,8 +1119,9 @@ class WordDisc extends HTMLElement {
      Nothing is drawn behind it. A panel disc wide enough to hold the name took
      the middle of the figure with it, and the middle is where the long chords
      cross — which is the picture, not something to cover up. So the text
-     carries its own ground instead, stroked under the fill and scaled to the
-     type: the only thing it hides is the shape of its own letters. */
+     carries its own ground instead, laid under the fill as ringed copies of
+     it and scaled to the type: the only thing it hides is the shape of its
+     own letters. */
   #hub(g) {
     const sel = this.#focus();
     const end = this.#chain.end;
@@ -1128,11 +1139,6 @@ class WordDisc extends HTMLElement {
     // and the em square is not what you see: its descender space is empty for
     // most words, so the type sits a pixel or two low.
     g.textBaseline = "alphabetic";
-    g.strokeStyle = this.#tok("--_ground", "#0c1112");
-    // Round, so the halo follows the letterforms rather than throwing spikes
-    // off every corner of them.
-    g.lineJoin = "round";
-    g.lineWidth = Math.max(HALO_MIN, px * HALO);
 
     /* The band the name is centred on. Measured off the face rather than off
        the word, which is the whole point: the ink of "iris" stops at the dot
@@ -1146,7 +1152,9 @@ class WordDisc extends HTMLElement {
     // The baseline of the first line, so the block is centred on the hub and
     // the hint below it takes its room off the top.
     const first = this.#cy - tall / 2 - (way ? HINT_H / 2 : 0) + band;
-    for (const [k, line] of lines.entries()) g.strokeText(line, this.#cx, first + k * lh);
+    // Every line's ground first and the ink after, so a line's halo cannot
+    // land on the letters of the line above it.
+    this.#halo(g, lines, first, lh, Math.max(HALO_MIN, px * HALO));
     g.fillStyle = ink;
     for (const [k, line] of lines.entries()) g.fillText(line, this.#cx, first + k * lh);
 
@@ -1156,10 +1164,26 @@ class WordDisc extends HTMLElement {
     // distance under every name and not lower under the ones ending in y.
     const y = first + (lines.length - 1) * lh + px * HUB_DROP + HINT_PX;
     g.font = `${HUB_WEIGHT} ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
-    g.lineWidth = Math.max(HALO_MIN, HINT_PX * HALO);
-    g.strokeText("↑ back", this.#cx, y);
+    this.#halo(g, ["↑ back"], y, 0, Math.max(HALO_MIN, HINT_PX * HALO));
     g.fillStyle = this.#tok("--_accent", "#59b491");
     g.fillText("↑ back", this.#cx, y);
+  }
+
+  /* The ground the hub's text carries with it, laid as `HALO_STEPS` copies of
+     the same call that draws the ink, ringed at `r` around each baseline. The
+     union reaches r past every letter, which is what a stroke of width 2r used
+     to do, and it cannot be anywhere else, since the offsets sum to nothing
+     and every copy is the fill the letters themselves are drawn with. */
+  #halo(g, lines, first, lh, r) {
+    g.fillStyle = this.#tok("--_ground", "#0c1112");
+    for (let s = 0; s < HALO_STEPS; s++) {
+      const a = (s / HALO_STEPS) * TAU,
+        dx = Math.cos(a) * r,
+        dy = Math.sin(a) * r;
+      for (const [k, line] of lines.entries()) {
+        g.fillText(line, this.#cx + dx, first + k * lh + dy);
+      }
+    }
   }
 
   /* What the pointer is on, or what the search left the highlight on. */

@@ -797,16 +797,28 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   a category's drawn chords pass inside the hub's radius, 279 of 658 in element
   at the worst and 183 of 449 in animal, and 100 to 156 of them come within 0.15
   of the ring's radius of dead centre. So the text carries its own ground
-  instead. It is stroked under the fill in `--disc-ground`, at a line width of
-  the type size times 0.16 and never under 2 px, with a round join so the halo
-  follows the letterforms rather than throwing spikes off their corners. The
-  only thing it hides is the shape of its own letters. At 0.3 the stroke was 10
-  px on a 33 px name, the size the ladder used to top out at, which merged the
-  letters into one slab and read as a shape
-  behind the word rather than as ground around it; 0.16 leaves 2.6 px clear of a
-  glyph at that size, against chords half a pixel wide. A stroke is centred on
-  the glyph outline, so the halo cannot sit off to one side of the letter it
-  belongs to. What made it look as though it did was the block being centred on
+  instead. It is laid under the fill in `--disc-ground` as `HALO_STEPS` copies
+  of the same `fillText` the ink uses, 8 of them ringed at `HALO` of the type
+  size and never under 1 px around each baseline, so the union reaches that far
+  past every letter. The only thing it hides is the shape of its own letters.
+  It was a `strokeText` under the fill, at twice that as a line width with a
+  round join, and the argument for it was that a stroke is centred on the glyph
+  outline and so cannot sit off to one side of the letter it belongs to. That
+  is true of the geometry and not of what is drawn: a stroke is taken off the
+  outline where a fill is a rasterised glyph, the two are positioned by
+  different code, and the halo read as a shadow lying down and right of the
+  word. It survived the fix below, and it went when the discs got sharp enough
+  under zoom to see it plainly. Copies cannot drift that way, since every one
+  is the call that draws the letters and the offsets sum to nothing, and
+  `check_web.mjs` asserts exactly that: one text, one radius, and a ring whose
+  centre is the point the ink goes down at. Eight directions leave a scallop
+  0.076 of the reach deep, a tenth of a pixel at the top of the ladder. `HALO`
+  is 0.08 rather than 0.16 because it is now the reach rather than a width, so
+  the picture is unchanged: 1.3 px clear of a glyph at 16 px type, against
+  chords half a pixel wide. At 0.3 of a 33 px name, the size the ladder used to
+  top out at, the ground merged the letters into one slab and read as a shape
+  behind the word rather than as ground around it.
+  The other half of the same complaint was the block being centred on
   the em square: `textBaseline: "middle"` centres a box whose descender space is
   empty for most words, so the type sat a pixel or two low — invisible at 12 px
   on a panel, and a halo hanging off the bottom of the name at 33 px over the
@@ -850,10 +862,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   over. It runs 16 down to 8 now, and it is the weight rather than the size that
   sets the name apart, since `disc-label.js`'s own ladder tops out at 12 and this
   one at 16. Legibility over the bundle is the halo's work rather than the size's.
-  `HALO_MIN` went from 3 px to 2 as a consequence: against a ladder topping out at
+  `HALO_MIN` went from 3 px to 2 as a consequence, and to 1 with the halving
+  that made `HALO` a reach: against a ladder topping out at
   16 a 3 px floor would bind at every rung and `HALO` would never be read, where
-  at 2 the fraction rules the three rungs a real disc uses and the floor rules the
-  two degraded ones. The "↑ back"
+  at half that the fraction rules the three rungs a real disc uses and the floor
+  rules the two degraded ones. The "↑ back"
   hint stays at 11 px, so the hierarchy under the name is unchanged, and the
   ladder keeps the two low rungs the shorter one ended on, which no disc of a
   usable size reaches: they are there so a frame too small for the hub to mean
@@ -1032,10 +1045,18 @@ the element agreeing with the layout. The stub's `measureText` reports ink
 metrics as well as a width, and reports them off the letters — a taller ascent
 for a capital, an ascender or a dotted i, a descent only for a descender —
 because reported flat it could not tell the fix from the bug. So the check
-asserts that every haloed line is stroked and filled at one point, which is what
-says the halo sits on its own letters, that the reference band is centred on the
+asserts that nothing in the hub is stroked at all and that the halo under a
+name is copies of it — one text, one radius, and a ring whose centre is the
+point the ink goes down at, which is what says the halo sits on its own letters
+— that the ink goes down last, that the reference band is centred on the
 hub, and that "iris", "guppy", "cow" and "test" all come back on one baseline.
-The assertions were mutation-tested: reversing the fan sort, dropping the hit
+The stub records the colour of every `fillText` for this, since the halo is now
+made of fills like the letters over it and the ground is what tells the two
+apart.
+The assertions were mutation-tested: shifting the whole ring down and right by
+its own radius, which is the artefact this replaced, fails the radius and the
+centre assertions; drawing the ink before the ground fails the order one; and
+reversing the fan sort, dropping the hit
 test's upper neighbour, and removing the label floor each fail it, and restoring
 the per-word measurement fails the baseline one with iris and test 1.6 px below
 guppy and cow, the reported symptom exactly.

@@ -171,7 +171,10 @@ class Canvas extends El {
       arc: () => both("arc"),
       fillText: (t, x, y) => {
         both("fillText");
-        this.text.fill.push({ t, x, y });
+        // The colour as well as the point, since the hub's halo is now made of
+        // fills like the letters it sits under and the ground is what tells
+        // the two apart.
+        this.text.fill.push({ t, x, y, c: this._g.fillStyle });
       },
       strokeText: (t, x, y) => {
         both("strokeText");
@@ -1034,7 +1037,7 @@ check(drew.image === blits + 1, `the font swap redrew ${drew.image - blits} time
 /* Nothing is painted behind the hub's name. A panel wide enough to hold it
    covered the middle of the disc, which is where the long chords cross and so
    is the part of the figure worth seeing; the name carries its own ground
-   instead, stroked under the fill. With the pointer off the disc and no chain
+   instead, laid under the fill. With the pointer off the disc and no chain
    there is no highlighted path either, so the overlay owes an arc to nothing
    at all — that count is what says the panel has gone. */
 over.drew.arc = 0;
@@ -1043,22 +1046,42 @@ over.drew.fillText = 0;
 over.text = { fill: [], stroke: [] };
 disc.repaint();
 check(over.drew.arc === 0, `the hub drew ${over.drew.arc} arcs behind its name`);
-check(over.drew.strokeText > 0, "the hub's name carries no halo, so the bundle runs through it");
+/* The ground the stub resolves the hub's halo to, everything else being ink,
+   muted or the warning colour. */
+const GROUND = "#0c1112";
+const inked = () => over.text.fill.filter(t => t.c !== GROUND);
+const ringed = () => over.text.fill.filter(t => t.c === GROUND);
+check(ringed().length > 0, "the hub's name carries no halo, so the bundle runs through it");
+/* And the halo is copies of the letters rather than a stroke under them. A
+   stroke is centred on the glyph outline, which centres it in the geometry
+   and not in what is drawn: a stroke comes off the outline where a fill is a
+   rasterised glyph, so the halo could read as a shadow lying off to one side.
+   Copies of the same call cannot, and this is what says they are copies —
+   one text, one radius, and offsets that sum to nothing, so the ring's centre
+   is the point the letters themselves go down at. */
+check(over.drew.strokeText === 0, `the hub stroked text ${over.drew.strokeText} times`);
+const letters = inked();
 check(
-  over.drew.strokeText === over.drew.fillText,
-  `${over.drew.strokeText} haloed against ${over.drew.fillText} drawn`,
+  letters.length === 1 && letters[0].t === "test",
+  `the hub drew ${JSON.stringify(letters.map(t => t.t))} in ink`,
 );
-/* A stroke is centred on the glyph outline, so the halo can only sit off to
-   one side of a letter if it is drawn somewhere else. It is not: every haloed
-   line is stroked and filled at one point, in one order. */
+const ring = ringed();
 check(
-  over.text.stroke.length === over.text.fill.length &&
-    over.text.stroke.every(
-      (h, k) =>
-        h.t === over.text.fill[k].t && h.x === over.text.fill[k].x && h.y === over.text.fill[k].y,
-    ),
-  "the halo and the letters it belongs to were drawn at different points",
+  ring.length >= 8 && ring.every(h => h.t === letters[0]?.t),
+  `the halo is ${ring.length} copies of ${JSON.stringify([...new Set(ring.map(h => h.t))])}`,
 );
+const radii = ring.map(h => Math.hypot(h.x - letters[0].x, h.y - letters[0].y));
+check(
+  radii[0] > 0 && Math.max(...radii) - Math.min(...radii) < 1e-9,
+  `the halo runs from ${Math.min(...radii).toFixed(3)} to ${Math.max(...radii).toFixed(3)} out`,
+);
+const ringMid = k => ring.reduce((s, h) => s + h[k], 0) / ring.length;
+check(
+  Math.abs(ringMid("x") - letters[0].x) < 1e-9 && Math.abs(ringMid("y") - letters[0].y) < 1e-9,
+  `the halo centres on ${ringMid("x").toFixed(3)},${ringMid("y").toFixed(3)} against letters at ${letters[0].x.toFixed(3)},${letters[0].y.toFixed(3)}`,
+);
+// And the ink goes down last, so no copy lands on the letters it is under.
+check(over.text.fill.at(-1).c !== GROUND, "the halo was drawn over the letters");
 /* And the block is centred on the face rather than on the em square, whose
    descender space is empty for most words and put the type a pixel or two
    low, and rather than on the word's own ink, which moved the name up and
@@ -1066,16 +1089,12 @@ check(
    runs below the baseline, so centring each word's ink gave each word its own
    baseline. */
 // Nothing hovered and no chain, so the hub names the category on one line
-// and draws no way back under it.
-check(
-  over.text.fill.length === 1 && over.text.fill[0].t === "test",
-  `the hub drew ${JSON.stringify(over.text.fill.map(t => t.t))}`,
-);
+// and draws no way back under it — which `letters` above has already counted.
 const size = +/([\d.]+)px/.exec(over._g.font)[1];
 // The band the hub measures off the face, which the stub reports for the
 // reference string and for any name holding a capital or an ascender.
 const band = 0.72 * size;
-const centre = over.text.fill[0].y - band / 2;
+const centre = letters[0].y - band / 2;
 check(
   Math.abs(centre - BOX / 2) < 0.01,
   `the name sits on a band centred at ${centre.toFixed(2)}, not on the hub at ${BOX / 2}`,
@@ -1087,8 +1106,9 @@ const baselines = new Map();
 for (const name of ["iris", "guppy", "cow", "test"]) {
   over.text.fill.length = 0;
   disc.data = { category: name, words: WORDS, zipf: WORDS.map((_, i) => 8 - i) };
-  const drawn = over.text.fill.filter(t => t.t === name);
-  check(drawn.length === 1, `the hub drew ${name} ${drawn.length} times`);
+  // The ink alone: the halo under it is the same string at eight offsets.
+  const drawn = over.text.fill.filter(t => t.t === name && t.c !== GROUND);
+  check(drawn.length === 1, `the hub drew ${name} ${drawn.length} times in ink`);
   if (drawn.length === 1) baselines.set(name, drawn[0].y);
 }
 check(
