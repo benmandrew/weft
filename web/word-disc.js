@@ -74,8 +74,15 @@ const HUB_SIZES = [33, 28, 24, 21, 18, 15, 12],
 // chords pass inside the hub's radius — element is the worst — so the name has
 // to clear its own ground, but only its own. A disc large enough to hold it
 // took the middle of the figure out with it.
-const HALO = 0.3,
-  HALO_MIN = 3.5;
+//
+// A stroke is centred on the glyph outline, so the halo cannot sit off to one
+// side of the letter it belongs to. What it can do is stop looking like an
+// edge: at 0.3 of the type it was 10 px wide on a 33 px name, which merged the
+// letters into one slab and read as a shape behind the word rather than as
+// ground around it. 0.16 is 2.6 px clear of a glyph at that size, against
+// chords half a pixel wide.
+const HALO = 0.16,
+  HALO_MIN = 3;
 // The search column beside the disc, and the gutter to it. Same thresholds as
 // <hypernym-disc>, so the two elements break to landscape together.
 const ASIDE_MIN = 200,
@@ -883,19 +890,41 @@ class WordDisc extends HTMLElement {
     else if (named !== end && this.#chain.played(named)) ink = this.#tok("--_warn", "#e8705f");
 
     g.textAlign = "center";
-    g.textBaseline = "middle";
+    // Alphabetic and placed by hand, because "middle" centres the em square
+    // and the em square is not what you see: its descender space is empty for
+    // most words, so the type sits a pixel or two low. That is invisible at
+    // 12 px on a panel and reads as a halo hanging off the bottom of the name
+    // at 33 px over the bundle. Centring the ink instead costs one measure per
+    // line, which the fitted-label cache already pays for.
+    g.textBaseline = "alphabetic";
     g.strokeStyle = this.#tok("--_ground", "#0c1112");
     // Round, so the halo follows the letterforms rather than throwing spikes
     // off every corner of them.
     g.lineJoin = "round";
-    const top = this.#cy - ((lines.length - 1) * lh) / 2 - (way ? HINT_H / 2 : 0);
     g.lineWidth = Math.max(HALO_MIN, px * HALO);
-    for (const [k, line] of lines.entries()) g.strokeText(line, this.#cx, top + k * lh);
+
+    // Where each line's ink starts and stops, either side of its baseline.
+    // A context that reports neither falls back to the proportions of the
+    // face, which is the shape of a Latin line and wrong by a pixel at worst.
+    const box = lines.map(line => {
+      const m = g.measureText(line);
+      const up = m.actualBoundingBoxAscent,
+        down = m.actualBoundingBoxDescent;
+      return Number.isFinite(up) && Number.isFinite(down)
+        ? { up, down }
+        : { up: px * 0.72, down: px * 0.2 };
+    });
+    const tall = box[0].up + (lines.length - 1) * lh + box.at(-1).down;
+    // The baseline of the first line, so the block's ink is centred on the hub
+    // and the hint below it takes its room off the top.
+    const first = this.#cy - tall / 2 - (way ? HINT_H / 2 : 0) + box[0].up;
+    for (const [k, line] of lines.entries()) g.strokeText(line, this.#cx, first + k * lh);
     g.fillStyle = ink;
-    for (const [k, line] of lines.entries()) g.fillText(line, this.#cx, top + k * lh);
+    for (const [k, line] of lines.entries()) g.fillText(line, this.#cx, first + k * lh);
 
     if (!way) return;
-    const y = top + (lines.length - 1) * lh + HINT_H;
+    // Under the name's ink rather than under its em box, for the same reason.
+    const y = first + (lines.length - 1) * lh + box.at(-1).down + HINT_PX;
     g.font = `${HUB_WEIGHT} ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
     g.lineWidth = Math.max(HALO_MIN, HINT_PX * HALO);
     g.strokeText("↑ back", this.#cx, y);

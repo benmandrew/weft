@@ -121,6 +121,9 @@ class Canvas extends El {
     // canvas was asked to draw can be made — the two discs share `drew`, and
     // the base's 110 dots would drown out the overlay's nothing.
     this.drew = { fillText: 0, strokeText: 0, stroke: 0, arc: 0, curve: 0, image: 0 };
+    // Where the text went, so a claim can be made about the halo sitting on
+    // the letter it belongs to rather than beside it.
+    this.text = { fill: [], stroke: [] };
     const both = what => {
       drew[what]++;
       this.drew[what]++;
@@ -149,11 +152,25 @@ class Canvas extends El {
       bezierCurveTo: () => both("curve"),
       stroke: () => both("stroke"),
       arc: () => both("arc"),
-      fillText: () => both("fillText"),
-      strokeText: () => both("strokeText"),
+      fillText: (t, x, y) => {
+        both("fillText");
+        this.text.fill.push({ t, x, y });
+      },
+      strokeText: (t, x, y) => {
+        both("strokeText");
+        this.text.stroke.push({ t, x, y });
+      },
       drawImage: () => both("image"),
       measureText(text) {
-        return { width: text.length * PX * (parseFloat(/([\d.]+)px/.exec(this.font)?.[1]) || 10) };
+        const px = parseFloat(/([\d.]+)px/.exec(this.font)?.[1]) || 10;
+        // The ink either side of the baseline as well as the width, since the
+        // hub centres on the ink and a context that reports neither takes a
+        // different path.
+        return {
+          width: text.length * PX * px,
+          actualBoundingBoxAscent: px * 0.72,
+          actualBoundingBoxDescent: px * 0.2,
+        };
       },
     };
   }
@@ -780,12 +797,42 @@ check(drew.fillText > WORDS.length, "fewer labels were drawn than there are word
 over.drew.arc = 0;
 over.drew.strokeText = 0;
 over.drew.fillText = 0;
+over.text = { fill: [], stroke: [] };
 disc.repaint();
 check(over.drew.arc === 0, `the hub drew ${over.drew.arc} arcs behind its name`);
 check(over.drew.strokeText > 0, "the hub's name carries no halo, so the bundle runs through it");
 check(
   over.drew.strokeText === over.drew.fillText,
   `${over.drew.strokeText} haloed against ${over.drew.fillText} drawn`,
+);
+/* A stroke is centred on the glyph outline, so the halo can only sit off to
+   one side of a letter if it is drawn somewhere else. It is not: every haloed
+   line is stroked and filled at one point, in one order. */
+check(
+  over.text.stroke.length === over.text.fill.length &&
+    over.text.stroke.every(
+      (h, k) =>
+        h.t === over.text.fill[k].t && h.x === over.text.fill[k].x && h.y === over.text.fill[k].y,
+    ),
+  "the halo and the letters it belongs to were drawn at different points",
+);
+/* And the block is centred on its ink rather than on the em square, whose
+   descender space is empty for most words and put the type a pixel or two
+   low — invisible at 12px on a panel, and a halo hanging off the bottom of
+   the name at 33px over the bundle. */
+// Nothing hovered and no chain, so the hub names the category on one line
+// and draws no way back under it.
+check(
+  over.text.fill.length === 1 && over.text.fill[0].t === "test",
+  `the hub drew ${JSON.stringify(over.text.fill.map(t => t.t))}`,
+);
+const up = 0.72,
+  down = 0.2;
+const size = +/([\d.]+)px/.exec(over._g.font)[1];
+const centre = over.text.fill[0].y - up * size + ((up + down) * size) / 2;
+check(
+  Math.abs(centre - BOX / 2) < 0.01,
+  `the name's ink is centred at ${centre.toFixed(2)}, not on the hub at ${BOX / 2}`,
 );
 
 /* Where the element puts word i, off the sizing it solved for this square.

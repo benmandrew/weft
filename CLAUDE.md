@@ -574,11 +574,22 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   at the worst and 183 of 449 in animal, and 100 to 156 of them come within 0.15
   of the ring's radius of dead centre. So the text carries its own ground
   instead. It is stroked under the fill in `--disc-ground`, at a line width of
-  the type size times 0.3 and never under 3.5 px, with a round join so the halo
-  follows the letterforms rather than throwing spikes off their corners. The only
-  thing it hides is the shape of its own letters. With no outline drawn, the
-  "↑ back" hint and the pointer cursor are what mark the hub as clickable; its
-  radius is unchanged.
+  the type size times 0.16 and never under 3 px, with a round join so the halo
+  follows the letterforms rather than throwing spikes off their corners. The
+  only thing it hides is the shape of its own letters. At 0.3 the stroke was 10
+  px on a 33 px name, which merged the letters into one slab and read as a shape
+  behind the word rather than as ground around it; 0.16 leaves 2.6 px clear of a
+  glyph at that size, against chords half a pixel wide. A stroke is centred on
+  the glyph outline, so the halo cannot sit off to one side of the letter it
+  belongs to. What made it look as though it did was the block being centred on
+  the em square: `textBaseline: "middle"` centres a box whose descender space is
+  empty for most words, so the type sat a pixel or two low — invisible at 12 px
+  on a panel, and a halo hanging off the bottom of the name at 33 px over the
+  bundle. The hub now places its baselines by hand from
+  `actualBoundingBoxAscent` and `actualBoundingBoxDescent`, so what is centred
+  is the ink, and a context reporting neither falls back to the proportions of a
+  Latin line. With no outline drawn, the "↑ back" hint and the pointer cursor
+  are what mark the hub as clickable; its radius is unchanged.
 - `disc-label.js`'s `fit` takes an optional size ladder and weight and defaults
   to what it had, so `<hypernym-disc>` is untouched at 12 down to 8 px and weight
   500, and `<word-disc>` asks for 33 down to 12 at 700. Its hub is the larger of
@@ -756,9 +767,12 @@ short of building one caught it. The stub records what the canvas was asked to
 draw and measures text off the font size it was set, both templates clone the
 same markup so one fragment serves either element, and the points a click is
 fired at are computed from `word-layout.js`, which makes a hit a statement about
-the element agreeing with the layout. The assertions were mutation-tested:
-reversing the fan sort, dropping the hit test's upper neighbour, and removing the
-label floor each fail it.
+the element agreeing with the layout. The stub's `measureText` reports ink
+metrics as well as a width, so the check can assert that every haloed line is
+stroked and filled at one point — which is what says the halo sits on its own
+letters — and that the name's ink is centred on the hub rather than its em box.
+The assertions were mutation-tested: reversing the fan sort, dropping the hit
+test's upper neighbour, and removing the label floor each fail it.
 
 Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
 `src/` on the path, and the tree is clean under it; the pyright CLI is not in
