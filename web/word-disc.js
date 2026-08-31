@@ -88,11 +88,19 @@ const HALO = 0.16,
 const ASIDE_MIN = 200,
   ASIDE_GAP = 18;
 const RESIZE_HOLD = 60;
-// How many moves the column lists. Every move set the 37 categories can offer
-// fits inside it — the largest measured is animal's 187 — so the cap only ever
-// truncates the list before the first move, which is the whole category rather
-// than a set of replies to anything.
-const MOVES_CAP = 300;
+// How many rows the column puts in the DOM at a time, and how near the foot of
+// it a scroll has to come before the next lot follow. Nothing is capped:
+// scrolling reaches the end of any list, and the work per move is a page
+// rather than a category.
+//
+// 200 is chosen so no move set is ever paged — the largest over the 37
+// categories is animal's 187, after "mollusc" — which leaves the list before
+// the first move as the only one that pages, and that one is the whole
+// category rather than a set of replies to anything. A page also overfills
+// the column at any size it can be, 100 lines two up against the 15 to 31 a
+// column holds, so the scrollbar says at once that there is more.
+const MOVES_PAGE = 200,
+  MOVES_NEAR = 240;
 
 // The wedge letter that sits outside the labels. Every other distance the disc
 // needs is solved in word-layout.js, where it can be checked without a canvas.
@@ -179,8 +187,8 @@ TPL.innerHTML = `
      largest categories drop their labels, so this is the only place the moves
      can be read rather than hunted for among the dots — and it is also where
      it overflows, since animal's median word offers 60 replies and its worst
-     187 against the 15 to 31 rows a column holds one-up. Two up and ordered
-     commonest first, so what overflows is the tail nobody reaches for. */
+     187 against the 15 to 31 rows a column holds one-up. Two up, and read
+     left to right and then down, which is what inline blocks do. */
   .moves{display:none}
   :host([fit]) .frame.wide .moves{display:flex;flex-direction:column;
     flex:1 1 auto;min-height:0;margin-top:9px}
@@ -219,9 +227,6 @@ TPL.innerHTML = `
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .moves li:nth-child(2n){margin-right:0}
   .moves li:hover{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
-  .moves .rest{display:block;width:auto;margin-right:0;font-family:var(--_mono);
-    font-size:10.5px;color:var(--_muted);padding:4px 5px 0;cursor:default}
-  .moves .rest:hover{background:none}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   /* The arrow is the resting state and #onMove lifts it to a pointer over
@@ -306,6 +311,10 @@ class WordDisc extends HTMLElement {
   #movesEl;
   #whyEl;
   #listEl;
+  // Every move, sorted, and how many of them are in the DOM. The rest follow
+  // as the column is scrolled.
+  #moves = [];
+  #listed = 0;
   #ro;
   #mq;
 
@@ -410,6 +419,10 @@ class WordDisc extends HTMLElement {
     this.#listEl.addEventListener("click", e => {
       const li = e.target.closest("li[data-i]");
       if (li) this.play(+li.dataset.i);
+    });
+    this.#listEl.addEventListener("scroll", () => {
+      const el = this.#listEl;
+      if (el.scrollTop + el.clientHeight > el.scrollHeight - MOVES_NEAR) this.#page();
     });
     this.#ro = new ResizeObserver(() => this.#fit());
     this.#ro.observe(this.#sr.querySelector(".stage"));
@@ -1216,8 +1229,11 @@ class WordDisc extends HTMLElement {
   }
 
   /* Every word that could be played next, listed in the column beside the
-     disc. `byHead` holds a wedge commonest first, so the list is already in
-     the order the disc drew it and the tail is what scrolls out of sight.
+     disc in alphabetical order, which is how one is found by eye in a list
+     that runs past the column. `byHead` holds a wedge commonest first, and
+     that order is still what decides which words are shown at all when the
+     whole category is longer than the cap: the sort is for reading and the
+     order is for choosing.
 
      Before the first move every word is a move, so the list is the category:
      that is the one case the cap truncates, and the only one, since no wedge
@@ -1231,12 +1247,15 @@ class WordDisc extends HTMLElement {
     if (!this.#ready) return;
     if (!this.#frame.classList.contains("wide")) {
       if (this.#listEl.childElementCount) this.#listEl.replaceChildren();
+      this.#moves = [];
+      this.#listed = 0;
       return;
     }
     const letter = this.#chain.letter;
     const all = [];
     if (letter < 0) for (let i = 0; i < this.#words.length; i++) all.push(i);
     else for (const j of this.#L.byHead[letter]) if (this.#chain.legal(j)) all.push(j);
+    all.sort((x, y) => (this.#words[x] < this.#words[y] ? -1 : 1));
 
     const lead = document.createElement("span");
     const key = document.createElement("b");
@@ -1247,19 +1266,32 @@ class WordDisc extends HTMLElement {
     }
     this.#whyEl.replaceChildren(lead, key);
 
-    const rows = all.slice(0, MOVES_CAP).map(i => {
+    this.#moves = all;
+    this.#listed = 0;
+    this.#listEl.replaceChildren();
+    this.#listEl.scrollTop = 0;
+    this.#page();
+  }
+
+  /* The next page of rows, appended. Nothing already placed is thrown away as
+     it goes out of view, which is what makes this an append rather than a
+     windowing scheme: scrolling back up is free and the scroll position never
+     has to be guessed at. */
+  #page() {
+    const to = Math.min(this.#moves.length, this.#listed + MOVES_PAGE);
+    if (to === this.#listed) return;
+    const rows = [];
+    for (let k = this.#listed; k < to; k++) {
       const li = document.createElement("li");
-      li.dataset.i = i;
-      li.textContent = this.#words[i];
-      return li;
-    });
-    if (all.length > rows.length) {
-      const rest = document.createElement("li");
-      rest.className = "rest";
-      rest.textContent = `and ${all.length - rows.length} more`;
-      rows.push(rest);
+      li.dataset.i = this.#moves[k];
+      li.textContent = this.#words[this.#moves[k]];
+      rows.push(li);
     }
-    this.#listEl.replaceChildren(...rows);
+    this.#listEl.append(...rows);
+    this.#listed = to;
+    // A page that did not fill the column leaves no scrollbar to ask for the
+    // next one, so it asks here instead. Bounded by the list.
+    if (this.#listEl.scrollHeight <= this.#listEl.clientHeight) this.#page();
   }
 
   /* The chain, each step a button that winds play back to just after it, and

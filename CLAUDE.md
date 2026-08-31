@@ -465,33 +465,43 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - Every word that could be played next is listed in the column beside the disc,
   under the search box, where nothing was drawn before. The suggestions only
   take that room while the box has something in it, and that is the rule between
-  the two: suggestions while you are typing, moves otherwise. `byHead` holds a
-  wedge commonest first, so the list is already in the order the disc drew it and
-  nothing is sorted. A word already played leaves the list and comes back when
-  play is wound off it, since `Chain.legal` is what fills it, the same method the
-  disc paints from. Hovering an entry is hovering its dot and clicking one is
+  the two: suggestions while you are typing, moves otherwise. The list is the
+  whole set sorted alphabetically, which is how a word is found by eye in a list
+  that runs past the column, and nothing is capped: scrolling reaches the end of
+  any list. A word already played leaves the list and comes back when play is
+  wound off it, since `Chain.legal` is what fills it, the same method the disc
+  paints from. Hovering an entry is hovering its dot and clicking one is
   clicking it, both through `#preview` and `play`, so the column and the disc
   cannot describe different things. It earns its room where the disc cannot
   label itself: uncapped, the 7 largest categories drop their labels, and the
   column is then the only place the moves can be read rather than found among the
-  dots. It is also where it overflows. Animal's median word offers 60 replies and
-  its worst 187, against the 15 to 31 rows a column holds one up, so the list
-  runs two up and commonest first, and what scrolls out of sight is the tail
-  nobody reaches for. `MOVES_CAP` is 300 and truncates one thing only, the list
-  before the first move, which is the whole category rather than a set of replies
-  to anything. No wedge any of the 37 categories has comes near it, the largest
-  measured being animal's 187, and what is cut says how much rather than stopping
-  without a word. Landscape only, like the readout's placement: the stacked
-  layout has no column, and there the suggestions are a dropdown over the disc.
-  Nothing is built in that shape, since it would be several hundred elements
-  behind `display:none`. The rows are inline blocks of half the width rather
+  dots. It is also where it overflows. Animal's median word offers 60 replies
+  and its worst 187, against the 15 to 31 rows a column holds one up, so the
+  list runs two up and scrolls. Rows go into the DOM a page at a time,
+  `MOVES_PAGE` being 200, and the next page follows when a scroll comes within
+  `MOVES_NEAR` of the foot, 240 px, so the work per move is a page rather than a
+  category. A page overfills the column at any size the column can be, 100 lines
+  two up against those 15 to 31, so the scrollbar says at once that there is
+  more, and a page that somehow did not fill the column asks for the next one
+  itself rather than waiting for a scroll that will never come. Rows already
+  placed stay placed. Nothing is thrown away as it goes out of view, so
+  scrolling back up is free and the scroll position never has to be guessed at,
+  which is what makes this an append rather than a windowing scheme. 200 is
+  where no move set is ever paged, the largest over the 37 categories being
+  animal's 187, after "mollusc", so a move set arrives whole and paging only
+  ever concerns the list before the first move, which is the whole category
+  rather than a set of replies to anything, 1,582 words for animal.
+  Landscape only, like the readout's placement: the stacked layout has no
+  column, and there the suggestions are a dropdown over the disc. Nothing is
+  built in that shape, since it would be several hundred elements behind
+  `display:none`. The rows are inline blocks of half the width rather
   than a two-column grid. A grid drew every box with nothing written in it once
   the rows overflowed the column, so the fix is the construct that cannot fail
   that way rather than a patch to the one that did: a scrolling block of inline
-  blocks is the oldest layout there is, and it keeps the reading order a ranked
-  list needs, left to right and then down. The row sets its own colour and
-  leading rather than inheriting them, on the principle that a list which drew
-  no text should depend on as little from outside as it can, and
+  blocks is the oldest layout there is, and the reading order came free with it,
+  left to right and then down, which is what inline blocks do. The row sets its
+  own colour and leading rather than inheriting them, on the principle that a
+  list which drew no text should depend on as little from outside as it can, and
   `box-sizing: border-box`, because the page's own box-sizing rule does not
   cross into a shadow root and content-box put two halves and their padding past
   the width and wrapped every second word onto a line of its own.

@@ -47,7 +47,7 @@ The centre of the disc names whatever the pointer is on, and otherwise the word 
 
 The element takes one category file and draws every word in it, with a `limit` attribute to cap that at a count, where `build` draws 110 — the SVG can grow its canvas and shrink its type where the element has only the frame the page gave it. Past a few hundred words the labels stop fitting and are dropped, and the centre names what the pointer is on instead.
 
-Where the window is wide enough for a column beside the disc, every word that could be played next is listed there, commonest first, and clicking one plays it. The list is most useful on the large categories, which are drawn without labels, where it is the only place the moves can be read rather than picked out among the dots; the search suggestions take the same column while you are typing.
+Where the window is wide enough for a column beside the disc, every word that could be played next is listed there in alphabetical order, reading left to right and then down, and clicking one plays it. The list is most useful on the large categories, which are drawn without labels, where it is the only place the moves can be read rather than picked out among the dots; the search suggestions take the same column while you are typing.
 
 `make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves both harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet and `/words.html` the word chain.
 

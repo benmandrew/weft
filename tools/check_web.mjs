@@ -96,6 +96,14 @@ class El {
   get childElementCount() {
     return this.children.length;
   }
+  // Enough scroll geometry for the moves column to page. A row apiece and no
+  // visible height, so one page is enough to overflow and the fill loop stops
+  // where a browser's would.
+  get scrollHeight() {
+    return this.children.length;
+  }
+  clientHeight = 0;
+  scrollTop = 0;
   // Settable, so a test can make the frame landscape and put the element
   // through the shape it only takes beside a column.
   getBoundingClientRect() {
@@ -908,13 +916,13 @@ check(!line.innerHTML.includes("warn"), "a step in the chain line was marked a r
 const listed = () => [...list.children].map(li => li.textContent);
 disc.clear();
 check(
-  listed().join("|") === WORDS.join("|"),
-  `before the first move the column is not the category: ${listed()}`,
+  listed().join("|") === [...WORDS].sort().join("|"),
+  `before the first move the column is not the category, in order: ${listed()}`,
 );
 check(why().includes("any one opens"), `an empty chain read as ${why()}`);
 
 point("cat");
-check(listed().join("|") === "tiger|toad|tuna|trout", `after cat the column held ${listed()}`);
+check(listed().join("|") === "tiger|toad|trout|tuna", `after cat the column held ${listed()}`);
 check(why() === "must start with T", `after cat the column said ${why()}`);
 /* A word already played is not a move, so it leaves the column when it is
    played and comes back when play is wound off it. */
@@ -922,7 +930,7 @@ point("tiger");
 check(!listed().includes("tiger"), `a played word stayed in the column: ${listed()}`);
 check(listed().join("|") === "rat", `after tiger the column held ${listed()}`);
 point("rat");
-check(listed().join("|") === "toad|tuna|trout", `after rat the column held ${listed()}`);
+check(listed().join("|") === "toad|trout|tuna", `after rat the column held ${listed()}`);
 disc.rewind(1);
 check(listed().includes("tiger"), `winding back did not put tiger back: ${listed()}`);
 
@@ -1008,17 +1016,41 @@ const CROWD = Array.from(
 );
 disc.data = { category: "crowd", words: CROWD, zipf: CROWD.map((_, i) => -i) };
 check(disc.stats.words === CROWD.length, `the default drew ${disc.stats.words} of ${CROWD.length}`);
-/* The column is capped, and 900 words with nothing played is the only thing
-   that reaches the cap: no wedge any category has comes near it, so a set of
-   replies is never the thing truncated. What is cut says so rather than
-   stopping without a word. */
+/* Nothing is capped: a page goes into the DOM and the rest follow as the
+   column is scrolled, so what is listed first is the head of the whole sorted
+   list rather than a selection from it. */
 check(
-  list.children.length === 301,
-  `900 words listed ${list.children.length}, not the cap and a line saying what is left`,
+  list.children.length === 200,
+  `900 words listed ${list.children.length}, not one page of them`,
 );
 check(
-  list.children.at(-1).textContent === "and 600 more",
-  `the cut read as ${list.children.at(-1).textContent}`,
+  [...list.children].map(li => li.textContent).join("|") ===
+    [...CROWD].sort().slice(0, 200).join("|"),
+  "the first page is not the head of the sorted list",
+);
+/* Scrolling to the foot brings the next page, and going on brings the rest of
+   them: the list ends where the category does and not at a cap. */
+const scroll = () => {
+  list.scrollTop = list.scrollHeight;
+  fire(list, "scroll", {});
+};
+scroll();
+check(list.children.length === 400, `one scroll listed ${list.children.length}, not two pages`);
+for (let k = 0; k < 10; k++) scroll();
+check(
+  list.children.length === CROWD.length,
+  `scrolling reached ${list.children.length} of ${CROWD.length}`,
+);
+check(
+  [...list.children].map(li => li.textContent).join("|") === [...CROWD].sort().join("|"),
+  "the whole list is not the category in order",
+);
+/* A move set is never paged: the largest over the 37 categories is animal's
+   187, after "mollusc", against a page of 200, so a wedge arrives whole. */
+disc.play(0);
+check(
+  list.children.length > 0 && list.children.length < 200,
+  `a move set came back as ${list.children.length} rows, so it was paged`,
 );
 disc.setAttribute("limit", "0");
 disc.attributeChangedCallback("limit", null, "0");
