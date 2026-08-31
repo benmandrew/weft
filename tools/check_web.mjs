@@ -2023,6 +2023,25 @@ check(
   "a frame dragged wide again with its stage unmoved stayed in the stacked layout",
 );
 
+/* And this disc gives its pixels back too, which here is the two canvases and
+   nothing else: it strokes its ribbons straight onto the base, so there is no
+   resting picture held beside them the way <word-disc> holds its bundle. */
+const lBig = lBase.width;
+check(lBig > 0, "the letter disc had no pixels to give back");
+nearScreen(false);
+check(
+  lBase.width === 0 && lOver.width === 0,
+  `a letter disc a screen away kept a ${lBase.width}px canvas`,
+);
+await new Promise(r => setTimeout(r, 80));
+const lWasStage = lStage._rect;
+lStage._rect = { width: BOX - 8, height: BOX - 8 };
+resize();
+check(lBase.width === 0 && lOver.width === 0, "a resize woke a letter disc that was a screen away");
+lStage._rect = lWasStage;
+nearScreen(true);
+check(lBase.width === lBig, `coming back left the letter canvas at ${lBase.width} of ${lBig}`);
+
 /* This disc gives its pixels back the same way, and its base canvas may belong to
    the painter: a dimension cannot be set on a transferred canvas, so the painter
    is asked to empty it. Driven here the painter is on this thread. */

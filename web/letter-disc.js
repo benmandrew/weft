@@ -27,6 +27,7 @@
 import { hsv, TAU } from "./disc-colour.js";
 import { href, label as catLabel } from "./disc-index.js";
 import { band, baseline, fit, halo, HALO, HALO_MIN, HUB_DROP } from "./disc-label.js";
+import { watch } from "./disc-idle.js";
 import { ratio } from "./disc-ratio.js";
 import {
   ALPHA,
@@ -138,6 +139,10 @@ class LetterDisc extends HTMLElement {
   #pickEl;
   #catEl;
   #ro;
+  // Set while the disc is more than a screen away and its canvases have been
+  // given back. #pw is 0 with it, which is what every draw path already tests.
+  #asleep = false;
+  #idle = null;
   #mq;
 
   #category = "";
@@ -211,9 +216,12 @@ class LetterDisc extends HTMLElement {
     });
     if (!this.#ready) this.#load();
     this.#loadIndex();
+    this.#idle = watch(this, this.#sleep, this.#wake);
   }
   disconnectedCallback() {
     this.#ro?.disconnect();
+    this.#idle?.disconnect();
+    this.#idle = null;
     this.#mq?.removeEventListener("change", this.#onScheme);
     this.#dq?.removeEventListener("change", this.#onRatio);
     this.#dq = null;
@@ -360,7 +368,7 @@ class LetterDisc extends HTMLElement {
   };
 
   #fit() {
-    if (!this.#ready) return;
+    if (!this.#ready || this.#asleep) return;
     if (this.#shape() && this.#pw) return;
     const box = this.#sr.querySelector(".stage").getBoundingClientRect();
     if (!box.width || !box.height) return;
@@ -379,6 +387,37 @@ class LetterDisc extends HTMLElement {
     clearTimeout(this.#fitTimer);
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
   }
+
+  /* A disc more than a screen away gives its pixels back, which here is the two
+     canvases and nothing else: this one strokes its ribbons straight onto the
+     base, so there is no resting picture held beside them the way <word-disc>
+     holds its bundle. #pw going to 0 is what stops every draw path, since each
+     already refuses an unsized stage, and #asleep is what stops #fit sizing
+     them again under the resize observer, which goes on firing at an element
+     nobody can see.
+
+     Nothing is dropped before the first fit: a disc that starts below the fold
+     never allocates rather than allocating and giving back. */
+  #sleep = () => {
+    if (this.#asleep) return;
+    this.#asleep = true;
+    if (!this.#pw) return;
+    for (const c of [this.#base, this.#over]) {
+      c.width = 0;
+      c.height = 0;
+    }
+    this.#pw = this.#ph = 0;
+  };
+
+  /* And takes them back a screen before it is read. */
+  #wake = () => {
+    if (!this.#asleep) return;
+    this.#asleep = false;
+    // Coming back into view is not a drag, and the disc is about to be read,
+    // so the fit goes through outright rather than on the trailing timer.
+    this.#resized = 0;
+    this.#fit();
+  };
 
   #resize = () => {
     clearTimeout(this.#fitTimer);

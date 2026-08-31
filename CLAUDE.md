@@ -130,11 +130,12 @@ Shared rules first, then what is particular to each.
   screen was showing it at. `#onRatio` re-arms a `(resolution: Xdppx)` query on
   every change, since a zoom moves that ratio and leaves the CSS box alone.
 - `disc-idle.js`'s `watch(el, sleep, wake)` is one `IntersectionObserver` at
-  `rootMargin: "100% 0px"`. Canvas pixels are 79-87% of what a page carrying two
-  discs holds, so a disc more than a screen away zeroes its canvases and sets
-  `#pw` to 0, which every draw path already refuses on; `#asleep` stops `#fit`
-  sizing them back. Nothing is dropped before the first fit, and waking sets
-  `#resized = 0` so the fit is not held on the drag timer.
+  `rootMargin: "100% 0px"`. Canvas pixels are 79-87% of what a page carrying
+  three discs holds, and `embed.html` runs all three down one column where at
+  most one is on screen, so a disc more than a screen away zeroes its canvases
+  and sets `#pw` to 0, which every draw path already refuses on; `#asleep` stops
+  `#fit` sizing them back. Nothing is dropped before the first fit, and waking
+  sets `#resized = 0` so the fit is not held on the drag timer.
 - The resize observer watches the frame as well as the stage. Stacked, the
   stage's box does not move when the frame is dragged wider, so watching the
   stage alone left an element stuck in the stacked layout for good.
@@ -319,7 +320,8 @@ Shared rules first, then what is particular to each.
 - `fade(alpha, pairs)` is `thin` in the same shape: 0.5 at or below a knee of
   120 pairs, `alpha * (120 / pairs) ** ALPHA_FALL` above it, `ALPHA_FALL` 0.5.
 - No worker and no held bitmap; 344 filled ribbons is a frame's work, so a
-  resize redraws.
+  resize redraws and its sleep is the two canvases alone. The base canvas is
+  its own rather than a worker's, so emptying it needs no message.
 - Hit testing is three bands. The ring band answers with an arc by binary search
   over ends that tile it exactly, the band outside answers with a letter, and
   inside the ring the path itself is asked through `isPointInPath`, topmost
