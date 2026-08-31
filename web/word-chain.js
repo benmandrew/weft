@@ -50,6 +50,11 @@ export class Chain {
   }
 
   legal(i) {
+    // An index the word list does not have is never a move. The disc can only
+    // offer one it has, but `play` is public and a host holding an index from
+    // before a `limit` change would otherwise put a word with no letters into
+    // the chain and take the paint down with it.
+    if (!(i >= 0 && i < this.#head.length)) return false;
     if (!this.#steps.length) return true;
     return i !== this.end && this.#head[i] === this.#tail[this.end];
   }
