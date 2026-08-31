@@ -28,7 +28,9 @@
  *
  * word-layout.js is the placement, word-chain.js the rule, word-bundle.js the
  * resting picture, and none of the three touches the DOM, so
- * tools/check_web.mjs runs all of them without a browser.
+ * tools/check_web.mjs runs all of them without a browser. disc-idle.js is the
+ * one thing here that does: it says when the disc is far enough from the
+ * screen to give its pixels back, which both elements answer the same way.
  *
  * Beside the disc, where the frame is wide enough for a column, every word
  * that could be played next is listed under the search box. It is where the
@@ -57,6 +59,7 @@ import { fit } from "./disc-label.js";
 import { ratio } from "./disc-ratio.js";
 import { Search } from "./disc-search.js";
 import { Chain } from "./word-chain.js";
+import { watch } from "./disc-idle.js";
 import { bundle as strokeBundle, curve, release, RING, square, thin } from "./word-bundle.js";
 import {
   at,
@@ -468,6 +471,11 @@ class WordDisc extends HTMLElement {
   #worker = null;
   #pending = null;
   #floor = 0;
+
+  // Set while the disc is more than a screen away and its canvases have been
+  // given back. #pw is 0 with it, which is what every draw path already tests.
+  #asleep = false;
+  #idle = null;
   // A bundle wanted while the worker is still answering, sent when it does.
   #queued = null;
   // Whether a draw is on the stack, so a bundle built on this thread is blitted
@@ -589,9 +597,12 @@ class WordDisc extends HTMLElement {
     });
     if (!this.#ready) this.#load();
     this.#loadIndex();
+    this.#idle = watch(this, this.#sleep, this.#wake);
   }
   disconnectedCallback() {
     this.#ro?.disconnect();
+    this.#idle?.disconnect();
+    this.#idle = null;
     this.#mq?.removeEventListener("change", this.#onScheme);
     this.#dq?.removeEventListener("change", this.#onRatio);
     this.#dq = null;
@@ -831,7 +842,7 @@ class WordDisc extends HTMLElement {
   };
 
   #fit() {
-    if (!this.#ready) return;
+    if (!this.#ready || this.#asleep) return;
     if (this.#shape() && this.#pw) return;
     const box = this.#sr.querySelector(".stage").getBoundingClientRect();
     if (!box.width || !box.height) return;
@@ -853,6 +864,43 @@ class WordDisc extends HTMLElement {
     clearTimeout(this.#fitTimer);
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
   }
+
+  /* A disc more than a screen away gives its pixels back: two canvases at
+     15.9 MB each and the resting bundle at 16.0 MB, on a 16 inch laptop at the
+     height the embedding page hands it. #pw going to 0 is what stops every draw
+     path, since each already refuses an unsized stage, and #asleep is what
+     stops #fit sizing them again under the resize observer, which goes on
+     firing at an element nobody can see.
+
+     Nothing is dropped before the first fit, since there is nothing there yet:
+     a disc that starts below the fold never allocates rather than allocating
+     and giving back. */
+  #sleep = () => {
+    if (this.#asleep) return;
+    this.#asleep = true;
+    if (!this.#pw) return;
+    release(this.#cache);
+    this.#cache = null;
+    this.#cachePx = 0;
+    this.#cacheKey = "";
+    this.#asked = "";
+    for (const c of [this.#base, this.#over]) {
+      c.width = 0;
+      c.height = 0;
+    }
+    this.#pw = this.#ph = 0;
+  };
+
+  /* And takes them back a screen before it is read. The fit sizes both
+     canvases and draws, and the draw asks for the bundle again. */
+  #wake = () => {
+    if (!this.#asleep) return;
+    this.#asleep = false;
+    // Coming back into view is not a drag, and the disc is about to be read,
+    // so the fit goes through outright rather than on the trailing timer.
+    this.#resized = 0;
+    this.#fit();
+  };
 
   #resize = () => {
     clearTimeout(this.#fitTimer);

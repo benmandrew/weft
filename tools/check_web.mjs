@@ -303,6 +303,21 @@ globalThis.ResizeObserver = class {
   observe() {}
   disconnect() {}
 };
+/* And the observer a disc gives its pixels back on, kept the same way, so a
+   test can scroll one off the screen as a browser does. `nearScreen(false)`
+   is a disc more than a viewport away and `nearScreen(true)` one coming
+   back. */
+const SEEN = [];
+globalThis.IntersectionObserver = class {
+  constructor(fn) {
+    SEEN.push(fn);
+  }
+  observe() {}
+  disconnect() {}
+};
+const nearScreen = isIntersecting => {
+  for (const fn of SEEN) fn([{ isIntersecting }]);
+};
 /* The listeners are kept, the way the resize observer's are, so a test can
    drive a change of resolution as a browser drives one. Removal goes by
    function rather than by query, since re-arming takes the listener off the
@@ -333,7 +348,9 @@ const BOX = 720;
 
 const MODULES = [
   "disc-colour.js",
+  "disc-idle.js",
   "disc-label.js",
+  "disc-lines.js",
   "disc-paint.js",
   "disc-ratio.js",
   "disc-search.js",
@@ -1457,6 +1474,37 @@ check(
 );
 zoom(2);
 
+/* A disc more than a screen away gives its pixels back. Two canvases and the
+   resting bundle are much the largest thing a page carrying one holds — 63.6 MB
+   for the four canvases of a page stacking two of these at the height its host
+   gives them, against 21 MB for every name, gloss and typed array together —
+   and a column can only show one disc at a time. Nothing downstream can tell:
+   the disc draws the same on the way back, which is the whole point of it. */
+// After the zoom above has settled, since a fit part way through a drag is
+// held on the trailing timer and this claim is about a canvas that is not
+// moving.
+await new Promise(r => setTimeout(r, 80));
+const bigBase = shadow.querySelector(".base").width;
+check(bigBase > 0 && disc.stats.bundle, "the disc had no pixels to give back");
+nearScreen(false);
+check(
+  shadow.querySelector(".base").width === 0 && shadow.querySelector(".over").width === 0,
+  `a disc a screen away kept a ${shadow.querySelector(".base").width}px canvas`,
+);
+check(!disc.stats.bundle, "a disc a screen away kept its bundle");
+/* And does not take them straight back. The resize observer goes on firing at
+   an element nobody can see, and the fit is what sizes the canvases. Past the
+   coalescing window, so a fit that went ahead would size them here and now
+   rather than on a timer this check would never see. */
+await new Promise(r => setTimeout(r, 80));
+for (const fn of OBSERVERS) fn();
+check(shadow.querySelector(".base").width === 0, "a resize woke a disc that was a screen away");
+nearScreen(true);
+check(
+  shadow.querySelector(".base").width === bigBase && disc.stats.bundle,
+  `coming back left the canvas at ${shadow.querySelector(".base").width} of ${bigBase}`,
+);
+
 /* A bundle that has been replaced has to be let go of. Its pixels sit outside
    the JS heap, so a collector sees a small object under no pressure and the
    tab holds 12.3 MB a piece for as long as it likes; a category picker is 37
@@ -1658,6 +1706,56 @@ check(!ring.hidden, "the ring below did not come back when the search closed");
 nest._shadow.querySelector(".frame")._rect = { width: BOX, height: BOX };
 for (const fn of OBSERVERS) fn();
 check(kidRows.children.length === 0, `${kidRows.children.length} rows survived stacking`);
+
+/* This disc gives its pixels back the same way, and it is the one whose base
+   canvas the painter may own: an element cannot set a dimension on a canvas it
+   has handed to a worker, so the painter is asked to empty it and sizes it
+   again from the next view. Driven here the painter is on this thread, which
+   is the path where the element empties the canvas itself. */
+nest._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
+for (const fn of OBSERVERS) fn();
+const nestBase = nest._shadow.querySelector(".base").width;
+check(nestBase > 0, "the nested disc had no pixels to give back");
+nearScreen(false);
+check(
+  nest._shadow.querySelector(".base").width === 0 &&
+    nest._shadow.querySelector(".over").width === 0,
+  "a nested disc a screen away kept its canvases",
+);
+await new Promise(r => setTimeout(r, 80));
+for (const fn of OBSERVERS) fn();
+check(
+  nest._shadow.querySelector(".base").width === 0 &&
+    nest._shadow.querySelector(".over").width === 0,
+  "a resize woke a nested disc that was a screen away",
+);
+nearScreen(true);
+check(
+  nest._shadow.querySelector(".base").width === nestBase,
+  `coming back left the nested canvas at ${nest._shadow.querySelector(".base").width}`,
+);
+
+/* The definitions, which are held as the file and an offset per line rather
+   than as 82,115 strings. An offset out by one returns the tail of the line
+   above, which reads as a definition and is nobody's, so the lines are what is
+   asserted rather than the shape. */
+const { Lines } = await import(mod("disc-lines.js"));
+const GLOSS = "a small carnivore\nthe first letter\n(mathematics) a set";
+const gl = new Lines(GLOSS);
+check(gl.length === 3, `three definitions came back as ${gl.length}`);
+check(gl.at(0) === "a small carnivore", `the first line is "${gl.at(0)}"`);
+check(gl.at(1) === "the first letter", `the second line is "${gl.at(1)}"`);
+check(gl.at(2) === "(mathematics) a set", `the last line is "${gl.at(2)}"`);
+check(gl.at(3) === "" && gl.at(-1) === "", "a line the file does not reach came back");
+check(new Lines("").length === 0, "an empty file has a line in it");
+check(new Lines(["one", "two"]).at(1) === "two", "an array of lines did not come back");
+/* And the readout reads one, which is what the element does with them. */
+nest.glosses = GLOSS;
+nest.zoomTo(0);
+check(
+  nest._shadow.querySelector(".gloss").textContent === "A small carnivore",
+  `the readout says "${nest._shadow.querySelector(".gloss").textContent}"`,
+);
 
 /* embed.html is the one page `make web-dist` stages, and it names its modules,
    its elements and its data files by hand where the target finds the modules by

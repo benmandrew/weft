@@ -17,6 +17,17 @@ let g = null;
 self.onmessage = ev => {
   const m = ev.data;
   if (m.canvas) g = m.canvas.getContext("2d");
+  /* The element is more than a screen away, so the canvas it handed over gives
+     its pixels back — 15.9 MB on a 16 inch laptop, 28.9 MB on a 5K display.
+     It is asked for here because the element cannot set a dimension on a
+     canvas it no longer owns, and `paint` sizes it again from the next view. */
+  if (m.sleep) {
+    if (g) {
+      g.canvas.width = 0;
+      g.canvas.height = 0;
+    }
+    return;
+  }
   if (m.layout) painter.layout(m.layout, m.hd);
   else if (m.hd !== undefined) painter.hueDepth(m.hd);
   if (m.view && g) {

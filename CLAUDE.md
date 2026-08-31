@@ -275,6 +275,22 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `(mathematics)`, which 2,959 do and which is conventionally lowercase, and
   never where the second letter is a capital, which is what stops the 4 like
   "cDNA copy of the RNA genome" from becoming "CDNA".
+- That file is 5.5 MB and the disc shows one definition at a time, so it is held
+  as the text and an `Int32Array` of line starts rather than split on the
+  newline. A substring keeps the whole text alive whatever shape it is in, so
+  the split bought only 82,115 string headers, 3.13 MB on top of the file, where
+  the offsets cost 328,464 bytes and a slice is cut when the pointer asks for
+  one. That is 2.8 MB back. `disc-lines.js` holds it as `Lines`, with `length`
+  and `at(i)`, where `at` returns "" for an index the file does not reach, which
+  is what the readout prints while the glosses are still on their way, and the
+  constructor takes the text or anything else a host hands the element, joined
+  back up so there is one shape downstream; the element's public `glosses`
+  property is that object rather than an array. It is a module rather than a
+  method because an offset table out by one returns the tail of the line above,
+  which reads as a definition and is nobody's, and `check_web.mjs` can say so
+  where a browser cannot — the argument `solve`, `square` and `thin` are already
+  there for. Names are deliberately not held this way: the search reads every
+  one of them on every query and would cut 82,115 slices to do it.
 - Below that the element prints the crumb path and nothing else. The path
   carries on past the current root with the chain of whatever the hub is
   naming, the node under the pointer or the one the search left the cursor on,
@@ -428,6 +444,36 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `matchMedia` stub keeps its listeners for this, the way the `ResizeObserver`
   one does, so a zoom is driven as a browser drives it; dropping the refit from
   `#onRatio` fails it.
+- A disc's canvases are much the largest thing a page carrying one holds. On the
+  article the two elements are embedded in, which gives each
+  `max(26rem, 100vh - 4rem)`, their four canvases come to 63.6 MB on a 16 inch
+  laptop, a stage of 1,021 CSS px, and 115.6 MB on a 5K display at 1,376,
+  against 21 MB for every name, gloss and typed array on the page put together:
+  canvas pixels are 79% to 87% of what the page holds. A page stacking two discs
+  down a column can only show one of them at a time, so the other was holding
+  31.8 MB or 57.8 MB of pixels nobody could see, and the word disc's resting
+  bundle another 16.0 MB or 30.3 MB on top. So a disc more than a screen from
+  the viewport gives its pixels back and takes them again on the way in, which
+  takes that article's steady state from 79.6 MB to 47.8 MB and from 145.8 MB to
+  88.0 MB. `disc-idle.js` exports `watch(el, sleep, wake)`, one
+  `IntersectionObserver` at `rootMargin: "100% 0px"`: a whole viewport above and
+  below, so the pixels are there before the disc is, where an element that woke
+  as its top edge crossed the fold would be repainting while it was already
+  being read, and nothing either side, since the discs sit in a column and a
+  page scrolls down. It says when and never what — what a disc drops is the
+  element's own. Both sleep by zeroing their canvases and setting `#pw` to 0,
+  which is what every draw path already refuses on, and `#asleep` is what stops
+  `#fit` sizing them straight back under the resize observer, which goes on
+  firing at an element nobody can see. `<word-disc>` releases its bundle as
+  well. `<hypernym-disc>`'s base canvas may belong to the worker by then, where
+  setting a dimension throws, so the worker is sent `{sleep: true}` and the
+  painter sizes it again from the next view it is handed. Nothing is dropped
+  before the first fit, so a disc that starts below the fold never allocates
+  rather than allocating and giving back. Waking sets `#resized = 0` so the fit
+  goes through outright rather than on the trailing timer that coalesces a drag:
+  coming back into view is not a drag, and the disc is about to be read. Where a
+  browser has no `IntersectionObserver`, `watch` returns null and the disc keeps
+  its pixels, which is the behaviour before this existed.
 - Only `rings` depths below the root are drawn, 14 by default. WordNet is 20
   deep and its outer rings are nearly empty — depth 13 spans 4.5% of the turn,
   depth 19 is one node — so dividing the radius by every depth put the visible
@@ -530,12 +576,12 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - `make web-dist` stages everything a page needs to run `<hypernym-disc>` flat
   in one directory, `out/web-dist` unless `DIST=` names another, which `make
   clean` removes with the rest of `out/`. Its contents are every `web/*.js`
-  module, twelve today, `web/embed.html`, the three exported data files and the
-  38 word files, 54 in all. The
+  module, fourteen today, `web/embed.html`, the three exported data files and the
+  38 word files, 56 in all. The
   module list is a glob rather than names written out, which is the whole point
   of the target: a consuming site copies the directory instead of keeping its
-  own list of filenames in step with this one, where a thirteenth module added here
-  leaves that site running twelve of thirteen and nothing says so. `index.html`
+  own list of filenames in step with this one, where a fifteenth module added here
+  leaves that site running fourteen of fifteen and nothing says so. `index.html`
   and `words.html` are left out, since they are the local harnesses and a host
   page carries its own markup, and `embed.html` is the exception because it is
   written for this directory: it asks for `wordnet-tree.json` and
@@ -1096,6 +1142,8 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/word-bundle-worker.js      builds it off the main thread
     web/disc-colour.js             TAU and hsv, read by both discs
     web/disc-ratio.js              the backing-store ratio and its budget, no DOM
+    web/disc-idle.js               whether a disc is near enough to be worth pixels
+    web/disc-lines.js              a text file's lines, kept as text and offsets
     web/words.html                 the word disc's harness, with a picker
     web/embed.html                 a section per disc, the one page web-dist ships
     tools/export_tree.py           writes the tree, its names and its glosses
@@ -1298,6 +1346,17 @@ stub grew a `closest` for it, a tag name optionally qualified by one class or
 one data attribute, since both discs delegate their list handlers off
 `e.target.closest("li[data-i]")` and without it a row could be built and counted
 here but never clicked.
+
+The stub keeps its `IntersectionObserver` callbacks the way it keeps the resize
+observer's, so a disc is scrolled off the screen the way a browser does it. Both
+elements are asserted to drop both canvases, and `<word-disc>` its bundle with
+them; that a resize while a disc is a screen away does not take the pixels back;
+and that coming back restores the canvas to the size it had. `Lines` is asserted
+on its lines rather than on its shape, and the readout is driven through the
+element. All of it was mutation-tested: dropping the `#asleep` guard in either
+`#fit`, dropping the canvas zeroing, dropping the bundle release from sleep,
+dropping the fit from wake, an offset out by one, and a slice that keeps its
+newline each fail it.
 
 A last block reads `web/embed.html` and holds it to the directory it ships in,
 since `web-dist` finds its modules by glob where that page names its modules,

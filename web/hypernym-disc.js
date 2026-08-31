@@ -46,7 +46,9 @@
  *             merge: "density" (default) splits merged runs at pixel
  *             boundaries and shades each by how many wedges it holds, "on"
  *             merges each run flat, "off" draws every wedge separately.
- * Properties: data, index, names, glosses. Methods: zoomTo(i), up(), reset(), repaint(), path(i).
+ * Properties: data, index, names, glosses (a disc-lines.js Lines, `length`
+ *             and `at(i)`, rather than an array of 82,115 strings).
+ * Methods: zoomTo(i), up(), reset(), repaint(), path(i).
  * Events: disc-hover {index,name,depth,leaves}, disc-zoom {index,name,path},
  *         disc-render {nodes,drawn,buildMs,drawMs,hitUs,name} after every repaint,
  *         disc-names {count,ms} once the names arrive.
@@ -57,6 +59,8 @@ import { Painter, TAU } from "./disc-paint.js";
 import { Search } from "./disc-search.js";
 import { fit } from "./disc-label.js";
 import { ratio } from "./disc-ratio.js";
+import { watch } from "./disc-idle.js";
+import { Lines } from "./disc-lines.js";
 
 // The "up" hint under the hub's name: its size, and the room it takes from the
 // name above it.
@@ -272,6 +276,10 @@ class HypernymDisc extends HTMLElement {
   #over;
   #crumb;
   #ro;
+  // Set while the disc is more than a screen away and its canvases have been
+  // given back, which is what #fit, #draw and #overlay all refuse on.
+  #asleep = false;
+  #idle = null;
   #q;
   #hits;
   #kidsEl;
@@ -289,7 +297,11 @@ class HypernymDisc extends HTMLElement {
   #sug = [];
   #pick = -1;
   #names = [];
-  #glosses = [];
+  /* The definitions, held as the file and an offset per line rather than as
+     82,115 strings: a substring keeps the whole text alive whatever shape it
+     is in, so splitting bought 3.1 MB of headers for a readout that shows one
+     line at a time. disc-lines.js is the shape. */
+  #glosses = new Lines();
   #par = [];
   // Where i's children start in the flat child list: #kidOff[i + 1] -
   // #kidOff[i] is the child count and the leaf test both. The 82,115 separate
@@ -456,9 +468,12 @@ class HypernymDisc extends HTMLElement {
     // worker at all.
     if (this.#route === undefined) this.#openPainter();
     if (!this.#ready) this.#load();
+    this.#idle = watch(this, this.#sleep, this.#wake);
   }
   disconnectedCallback() {
     this.#ro?.disconnect();
+    this.#idle?.disconnect();
+    this.#idle = null;
     this.#mq?.removeEventListener("change", this.#repaint);
     this.#dq?.removeEventListener("change", this.#onRatio);
     this.#dq = null;
@@ -593,11 +608,13 @@ class HypernymDisc extends HTMLElement {
     this.#overlay();
     this.#emit("disc-names", { count: this.#names.length, ms: this.#namesMs });
   }
+  /* The file's lines, `length` and `at(i)`, rather than an array: see
+     disc-lines.js for why the definitions are not 82,115 strings. */
   get glosses() {
     return this.#glosses;
   }
   set glosses(v) {
-    this.#glosses = typeof v === "string" ? v.split("\n") : Array.from(v);
+    this.#glosses = new Lines(v);
     if (this.#ready) this.#showGloss();
   }
 
@@ -827,7 +844,7 @@ class HypernymDisc extends HTMLElement {
   };
 
   #fit() {
-    if (!this.#ready) return;
+    if (!this.#ready || this.#asleep) return;
     // Only once something is drawn: the first fit goes ahead on the box it
     // has, since a toggle that left the stage the same size would fire no
     // further observation and there would be nothing on screen to correct.
@@ -853,6 +870,40 @@ class HypernymDisc extends HTMLElement {
     clearTimeout(this.#fitTimer);
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
   }
+
+  /* A disc more than a screen away gives its pixels back. The overlay is the
+     element's own; the base may belong to the worker by now, where setting a
+     dimension throws, so the painter is asked to empty it and sizes it again
+     on the next view it is sent. #asleep is what stops #fit taking them
+     straight back under the resize observer, which goes on firing at an
+     element nobody can see, and what stops the draws.
+
+     Nothing is dropped before the first fit: a disc that starts below the fold
+     never allocates rather than allocating and giving back. */
+  #sleep = () => {
+    if (this.#asleep) return;
+    this.#asleep = true;
+    if (!this.#pw) return;
+    this.#over.width = 0;
+    this.#over.height = 0;
+    if (this.#route === "worker") this.#worker.postMessage({ sleep: true });
+    else if (this.#route === "main") {
+      this.#base.width = 0;
+      this.#base.height = 0;
+    }
+    this.#pw = this.#ph = 0;
+  };
+
+  /* And takes them back a screen before it is read, through the fit, which
+     sizes the overlay and sends the view the painter sizes the base from. */
+  #wake = () => {
+    if (!this.#asleep) return;
+    this.#asleep = false;
+    // Coming back into view is not a drag, and the disc is about to be read,
+    // so the fit goes through outright rather than on the trailing timer.
+    this.#resized = 0;
+    this.#fit();
+  };
 
   #resize = () => {
     clearTimeout(this.#fitTimer);
@@ -919,7 +970,7 @@ class HypernymDisc extends HTMLElement {
      tree and the hue depth only when it changes, so a repaint is a small
      message however large the tree. */
   #draw() {
-    if (!this.#ready) return;
+    if (!this.#ready || this.#asleep) return;
     this.#rw = (this.#rmax - this.#r0) / this.#rings();
     if (this.#route === undefined) return this.#openPainter();
     if (this.#route === "wait") return this.#armFloor();
@@ -1042,7 +1093,7 @@ class HypernymDisc extends HTMLElement {
   }
 
   #overlay() {
-    if (!this.#ready) return;
+    if (!this.#ready || this.#asleep) return;
     this.#showGloss();
     this.#showTail();
     const g = this.#over.getContext("2d");
@@ -1349,7 +1400,7 @@ class HypernymDisc extends HTMLElement {
      genome" becoming "CDNA". The other 4,042 already start on a proper noun. */
   #showGloss() {
     const sel = this.#focus();
-    const g = this.#glosses[sel >= 0 ? sel : this.#root] ?? "";
+    const g = this.#glosses.at(sel >= 0 ? sel : this.#root);
     this.#glossEl.textContent = /^[a-z](?![A-Z])/.test(g) ? g[0].toUpperCase() + g.slice(1) : g;
   }
   #crumbs() {
