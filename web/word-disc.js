@@ -181,15 +181,40 @@ TPL.innerHTML = `
   .moves .why{font-family:var(--_mono);font-size:10.5px;color:var(--_muted);
     flex:none;padding-bottom:5px}
   .moves .why b{color:var(--_accent);font-weight:600}
+  /* Two up, by inline blocks of half the width rather than by a grid.
+
+     A grid laid these out and, past the point where the rows overflowed the
+     column, drew every box with nothing written in it — the words were in the
+     DOM and the rows took a hover, so it was the layout and not the list. It
+     was not reproducible here, since make web runs the modules against a
+     stub with no CSS in it at all, so the fix is the construct that cannot
+     fail that way rather than a patch to the one that did: a scrolling block
+     of inline blocks is the oldest layout there is, and it keeps the reading
+     order a ranked list needs, left to right and then down.
+
+     Colour and leading are set on the row rather than inherited, for the same
+     reason: a list that draws no text should depend on as little from outside
+     as it can. A row is 12.5px over 1.5, so a column holds 15 to 31 rows one
+     up and twice that across. The rows are built as elements with nothing
+     between them, so there is no whitespace to collapse between two inline
+     blocks and no font-size:0 on the list to swallow it — which would be a
+     careless thing to add to a list that was drawing nothing. */
   .moves .list{margin:0;padding:0;list-style:none;flex:1 1 auto;min-height:0;
-    overflow-y:auto;scrollbar-width:thin;
-    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
-    column-gap:8px;align-content:start}
-  .moves li{font-size:12.5px;padding:2px 5px;border-radius:2px;cursor:pointer;
+    overflow-y:auto;scrollbar-width:thin}
+  /* border-box because the page's own box-sizing rule does not cross into a
+     shadow root, and content-box would put two halves and their padding past
+     the width and wrap every second word onto a line of its own. The pair
+     comes to 98%, so no rounding can wrap them either. */
+  .moves li{box-sizing:border-box;display:inline-block;vertical-align:top;
+    width:calc(50% - 5px);margin-right:8px;
+    color:var(--_ink);font-size:12.5px;line-height:1.5;
+    padding:2px 5px;border-radius:2px;cursor:pointer;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .moves li:nth-child(2n){margin-right:0}
   .moves li:hover{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
-  .moves .rest{grid-column:1/-1;font-family:var(--_mono);font-size:10.5px;
-    color:var(--_muted);padding:4px 5px 0}
+  .moves .rest{display:block;width:auto;margin-right:0;font-family:var(--_mono);
+    font-size:10.5px;color:var(--_muted);padding:4px 5px 0;cursor:default}
+  .moves .rest:hover{background:none}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   /* The arrow is the resting state and #onMove lifts it to a pointer over

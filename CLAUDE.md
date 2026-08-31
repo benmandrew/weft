@@ -484,7 +484,17 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   without a word. Landscape only, like the readout's placement: the stacked
   layout has no column, and there the suggestions are a dropdown over the disc.
   Nothing is built in that shape, since it would be several hundred elements
-  behind `display:none`.
+  behind `display:none`. The rows are inline blocks of half the width rather
+  than a two-column grid. A grid drew every box with nothing written in it once
+  the rows overflowed the column, so the fix is the construct that cannot fail
+  that way rather than a patch to the one that did: a scrolling block of inline
+  blocks is the oldest layout there is, and it keeps the reading order a ranked
+  list needs, left to right and then down. The row sets its own colour and
+  leading rather than inheriting them, on the principle that a list which drew
+  no text should depend on as little from outside as it can, and
+  `box-sizing: border-box`, because the page's own box-sizing rule does not
+  cross into a shadow root and content-box put two halves and their padding past
+  the width and wrapped every second word onto a line of its own.
 - `word-layout.js` is that figure's layout written a second time, so the browser
   and the SVG put the same word at the same angle: the same 3.5 degree gap, the
   same wedge order, the same `_fan_key`. `check_web.mjs` holds it to the Python's
@@ -730,7 +740,14 @@ order of the bands rather than the scores, which move whenever a penalty is
 retuned, that a multiword subsequence query still reaches a multiword name
 through the character-mask prune, that holding every character of a query is
 not the same as holding them in order, and that `fit` returns the face it set.
-It needs no data files, so it does not depend on the exported tree.
+It needs no data files, so it does not depend on the exported tree. The stub
+carries no CSS, so the check covers the JavaScript and nothing about layout: a
+rule that drew every row of a list as an empty box passes it, and did, since the
+words were in the DOM and the rows took a hover, which left the fault entirely
+in the stylesheet and entirely invisible here. What it can still say about the
+markup is what it asserts, that the elements are built and hold what they
+should; anything about how they are laid out has to be looked at in a browser,
+which is what `make serve` is for.
 
 It also drives `<word-disc>` rather than only importing it. A field initialiser
 naming a constant a refactor had moved parses, imports, and throws only when a
