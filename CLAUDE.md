@@ -448,6 +448,20 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   that one. Materialising the edges is 96,470 of them for animal at `limit 0`,
   against 26 arrays. A word cannot follow itself, the same exclusion `render.py`
   makes when it builds the bundle.
+- The element draws every word the category has unless the host names a `limit`,
+  where `build` draws 110. Zero is no limit rather than a blank disc, the way a
+  lifted count reads in a head or a tail. The two differ for a reason rather
+  than by drift: the SVG grows its canvas until adjacent labels clear each other
+  and shrinks the type once it runs out at 30 inches, where the element has
+  whatever frame the host gave it and drops the labels instead. A count is a
+  thing to ask for on a disc that cannot grow. Measured uncapped in a 720 px
+  frame, 19 of the 37 categories keep their labels, down to building at 207
+  words and 5.6 px, and 30 keep the resting bundle. The 7 that lose it are drug,
+  body-part, city, plant, job, food and animal, from 750 words and 24,898 chords
+  up to 1,582 and 96,470, past `MAX_BUNDLE`, where the bundle reads as fog
+  rather than as a picture. Where the labels go, the hub names what the pointer
+  is on and the search box reaches a word by name, so the disc is still played
+  the same way.
 - `word-layout.js` is that figure's layout written a second time, so the browser
   and the SVG put the same word at the same angle: the same 3.5 degree gap, the
   same wedge order, the same `_fan_key`. `check_web.mjs` holds it to the Python's

@@ -27,8 +27,8 @@
  * word-layout.js is the placement, word-chain.js the rule, and neither touches
  * the DOM, so tools/check_web.mjs runs both without a browser.
  *
- * Attributes: src, limit (110, or 0 for every word), readout="off",
- *             search="off", fit
+ * Attributes: src, limit (0, every word the category has; a count caps it),
+ *             readout="off", search="off", fit
  * Properties: data, words, chain, stats. Methods: play(i), undo(), rewind(k),
  *             clear(), repaint().
  * Events: word-hover {index,word,replies}, word-play {index,word,chain},
@@ -391,13 +391,23 @@ class WordDisc extends HTMLElement {
     };
   }
 
-  /* 110 by default, the same count `build` draws, and 0 for every word the
-     category has — a count being lifted reads as all of them. */
+  /* Every word the category has, unless the host names a count. Zero is no
+     limit rather than a blank disc, the way it reads in a head or a tail, and
+     it is the default because a category is a word list and cutting one to its
+     commonest 110 is a thing to ask for rather than to have done.
+
+     `build` still draws 110, and the two differ for a reason: the SVG grows
+     its canvas until the labels clear each other and shrinks the type when it
+     runs out, where the element has whatever frame the host gave it and drops
+     the labels instead. The 18 largest categories therefore come up unlabelled,
+     with the hub naming what the pointer is on and the search box reaching a
+     word by name, and the 7 largest lose the resting bundle as well, since
+     96,470 chords for animal read as fog rather than as a picture. */
   #limit() {
     const want = this.getAttribute("limit");
-    if (want === null) return 110;
+    if (want === null) return 0;
     const n = Math.round(+want);
-    return Number.isFinite(n) && n >= 0 ? n : 110;
+    return Number.isFinite(n) && n >= 0 ? n : 0;
   }
 
   #build() {

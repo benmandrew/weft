@@ -746,6 +746,11 @@ const gloss = shadow.querySelector(".gloss");
 const line = shadow.querySelector(".crumb").querySelector(".head");
 
 check(disc.words.join("|") === WORDS.join("|"), `the element drew ${disc.words}`);
+/* No attribute is every word the category has, not a cut at some count of
+   them: `build` draws 110 and the element does not, because the SVG can grow
+   its canvas and shrink its type where the element has only the frame it was
+   given. */
+check(!disc.hasAttribute("limit"), "the driven element was given a limit");
 
 check(disc.stats.bundle, "8 words did not get a resting bundle");
 check(drew.image === 1, `the bundle was blitted ${drew.image} times, not once`);
@@ -893,6 +898,7 @@ const CROWD = Array.from(
   (_, i) => ABC[i % 26] + ABC[((i / 26) | 0) % 26] + ABC[((i / 676) | 0) % 26] + ABC[(i * 7) % 26],
 );
 disc.data = { category: "crowd", words: CROWD, zipf: CROWD.map((_, i) => -i) };
+check(disc.stats.words === CROWD.length, `the default drew ${disc.stats.words} of ${CROWD.length}`);
 disc.setAttribute("limit", "0");
 disc.attributeChangedCallback("limit", null, "0");
 check(disc.stats.words === CROWD.length, `limit 0 drew ${disc.stats.words} of ${CROWD.length}`);

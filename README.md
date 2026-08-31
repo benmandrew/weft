@@ -45,7 +45,7 @@ A word already played is not a move, and the element says so three ways before t
 
 The centre of the disc names whatever the pointer is on, and otherwise the word play is standing on; clicking it takes one step back. That name is set large and bold over the curves rather than on a panel, since the middle of the disc is where the long chords cross and covering it would hide the part of the figure worth seeing. A search box reaches a word by name. The line above the chain says what the current word hands over on and how many words can follow it, or that nothing can, which is the end of the round.
 
-The element takes one category file and a `limit` attribute, 110 words by default as in `build`, or 0 for every word the category has. Past a few hundred words the labels stop fitting and are dropped, and the centre names what the pointer is on instead.
+The element takes one category file and draws every word in it, with a `limit` attribute to cap that at a count, where `build` draws 110 — the SVG can grow its canvas and shrink its type where the element has only the frame the page gave it. Past a few hundred words the labels stop fitting and are dropped, and the centre names what the pointer is on instead.
 
 `make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves both harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet and `/words.html` the word chain.
 
