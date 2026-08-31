@@ -1199,20 +1199,45 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   Pointing at an arc or a letter lights it and dims the rest, by one scrim fill
   over the frame rather than a second pass over 344 arcs, which takes the ring
   bands and the letters down with it so the highlight reads against the whole
-  figure. A letter lights everything touching it in either direction. The column
-  beside the disc lists whatever letter was last clicked into and never what is
-  hovered, which is what stops a list rebuilding under a pointer on its way to a
-  row. At rest it is every arc the category has, heaviest first; drilled into a
-  letter it is that letter's arcs, the leaving ones and then the arriving ones,
-  the arriving rows dimmed as the ring band has them. Clicking the hub puts it
-  back to every arc.
+  figure. A letter lights everything touching it in either direction. Clicking
+  one drills into the letter, which the hub names and the readout describes, and
+  an arc drills to the letter it leaves, since that is where play sets out from.
+  Pointing never drills: `#preview` moves what the pointer is on and never
+  `#letter`, so a hover cannot shift what a click landed on. Clicking the hub is
+  the way back out to the whole category, which is the one thing clicking an arc
+  cannot do.
 - The readout under the disc names the words on the arc the pointer is on rather
   than counting them: an arc is 32 words and the readout is which 32, up to 14
-  of them, which is what ties this disc to `<word-disc>`. The search box reaches
-  a word and highlights the arc it sits on, since a word is not drawn here and
-  its letter pair is. The labels are 26 single letters outside the ring, dropped
-  where the arc is narrower than the glyph, with the hub naming what the pointer
-  is on instead, which is `<word-disc>`'s answer at its own label floor.
+  of them, which is what ties this disc to `<word-disc>`. It is also the only
+  place a drilled-into letter is described: at rest it counts the picture, and
+  with a letter drilled into it says how many words start and end there and how
+  many arcs run out and in, where the hub gives the letter and nothing else on
+  the disc says a word about it. The labels are 26 single letters outside the
+  ring, dropped where the arc is narrower than the glyph, with the hub naming
+  what the pointer is on instead, which is `<word-disc>`'s answer at its own
+  label floor.
+- It carries none of the three things the other two discs put in the column
+  beside them: no search box, no list of arcs and no crumb line. What a click
+  drills into is read in the hub and in the readout rather than named a third
+  time in a column, and a path one letter deep is nothing to draw a crumb line
+  of. The column stays for the two things that are not about a drilled-into
+  letter, the picker at its head and the readout at its foot, level with the
+  bottom of the disc, where it runs to five lines against the two it gets
+  stacked. Three grid rows do it, the picker's and the readout's with the slack
+  between them, and there is no row-gap, so with no index named the picker's
+  row measures nothing and every distance below it is what it was without the
+  picker. Nothing draws a box around the column, where both other discs do:
+  theirs encloses a search box and a scrolling list, and a border round a
+  picker that carries its own and a readout of one paragraph is a tall empty
+  rectangle beside the disc with two lines of text at the foot of it. The 10 px
+  inset that box wanted went with it, so the picker and the readout sit flush
+  at the column's left edge.
+- A failed fetch is reported in the readout, the one line written there off data
+  that never arrived. `#showRead` returns on `#ready`, so a words failure holds
+  that line for good, and an index that fails on its own holds it only until the
+  words land: the disc draws either way and a missing picker says so by not
+  being there. The crumb line this used to be written into held both for good,
+  and `#failed` went with it.
 - Hit testing is three tests over three bands. The ring band answers with an arc
   by binary search over ends laid out clockwise from the top, the same absence
   of a spatial index both other discs have, and the ends tile each half of each
@@ -1515,18 +1540,23 @@ of degrees everywhere, which is the proportional-arc invariant; to the width
 being the log; to every letter's ends tiling its two halves exactly, with the
 arcs and the gaps coming to a turn; to those ends being strictly increasing, so
 the binary search is sound, with every slot answered at both its edges and the
-gaps between letters answering nobody; to the pull running with the turn; to the
-fade's shape; and to the sizing staying inside its own square at every size and
-coming back positive, the disc that drops its letters having the bigger ring
-either side of the label floor. On the element it asserts one fill per arc in
-more than one colour and light before heavy, the resting list heaviest first, a
-pointer on a computed ring point naming the right arc with the readout naming
-its words, a pointer outside the ring naming the letter, a hover leaving the
-very same row objects in place, a click drilling to the letter an arc leaves, an
-arriving row being marked, the seam that `<word-disc>`'s column already asserts,
-where a move landing on no row holds the highlight and only `pointerleave`
-clears it, the hub's halo being copies of the ink ringed at one radius with the
-ink last, the search reaching a word's arc, and stacking dropping the rows. Six shapes a real
+gaps between letters answering nobody; to the pull running with the turn; to
+the fade's shape; and to the sizing staying inside its own square at every size
+and coming back positive, the disc that drops its letters having the bigger
+ring either side of the label floor. On the element it asserts one fill per arc
+in more than one colour and light before heavy, the resting readout counting
+the picture, a pointer on a computed ring point naming the right arc with the
+readout naming its words, a pointer outside the ring naming the letter, a hover
+never drilling where a click does, an arc drilling to the letter it leaves, the
+hub taking the disc back out to the whole category, the hub's halo being copies
+of the ink ringed at one radius with the ink last, and a narrowed frame
+dropping the column with a frame dragged wide again getting it back. That the
+search box, the list and the crumb line are gone is read off the module's own
+text rather than off the shadow root, since the stub builds one fragment for
+all three templates and every element gets a search box in it whether its own
+markup names one or not: `letter-disc.js` has to carry no `class="q"`,
+`class="hits"`, `class="arcs"` or `class="crumb"`, which is the argument the
+`embed.html` block below already makes about reading a file. Six shapes a real
 category can put through the geometry are run past it as well — nothing at all,
 one word, one loop, a letter nothing starts with, a letter nothing ends with,
 and one letter throughout — since each lands the split at an end of its arc or
@@ -1541,13 +1571,13 @@ That walk covers a second word set whose arcs straddle the top of the ring,
 which is not decoration — a wedge found as the span from the lowest turn to the
 highest is the same answer wherever nothing wraps, so a broken search for the
 largest gap is inert on any set that has no such arc, and two of those eight do.
-All eighteen mutations tried were caught: equal node arcs, linear weight, a
+All seventeen mutations tried were caught: equal node arcs, linear weight, a
 heavy-first draw order, a fixed pull, a split fixed at half rather than by
 weight, a split nudged outside its arc, a narrowed wedge, a weakened prune, an
-unsound prune, the largest gap not actually found, clearing the highlight on a
-seam, rebuilding the column on a hover, the resting list in layout order, a hub
-with no ground, the ring band not answering, the band outside it not answering,
-an arc drilling to its target, and a column listing arriving before leaving.
+unsound prune, the largest gap not actually found, a hub with no ground, the
+ring band not answering, the band outside it not answering, an arc drilling to
+its target, a `#preview` that drills, a hub click that does nothing, and a
+search box put back into the template.
 
 The stub keeps its `IntersectionObserver` callbacks the way it keeps the resize
 observer's, so a disc is scrolled off the screen the way a browser does it. Both

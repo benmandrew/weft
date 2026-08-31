@@ -285,12 +285,7 @@ const fragment = () => {
   // for their own by class.
   const kids = new El("div", "kids");
   kids.append(new El("div", "why"), new El("ul", "list"));
-  // <letter-disc>'s list of the arcs in the picture. Same two parts again,
-  // its own element, since one fragment serves all three templates and each
-  // disc reaches for its own by class.
-  const arcs = new El("div", "arcs");
-  arcs.append(new El("div", "why"), new El("ul", "list"));
-  find.append(new El("input", "q"), new El("ul", "hits"), moves, kids, arcs);
+  find.append(new El("input", "q"), new El("ul", "hits"), moves, kids);
   const stage = new El("div", "stage");
   stage.append(new Canvas(), new Canvas());
   stage.children[0].className = "base";
@@ -2088,6 +2083,7 @@ check(
    The points a pointer is moved to are computed from letter-graph.js rather
    than guessed, which is what makes a hit a statement about the element
    agreeing with its own layout. */
+const { existsSync, readFileSync } = await import("node:fs");
 const LetterDisc = REGISTRY.get("letter-disc");
 check(LetterDisc !== undefined, "letter-disc never reached the registry");
 
@@ -2104,13 +2100,21 @@ const lShadow = ld._shadow;
 const lBase = lShadow.querySelector(".base");
 const lOver = lShadow.querySelector(".over");
 const lGloss = lShadow.querySelector(".gloss");
-const lCrumb = lShadow.querySelector(".crumb").querySelector(".head");
-const lTail = lShadow.querySelector(".crumb").querySelector(".tail");
-const arcsEl = lShadow.querySelector(".arcs");
-const arcRows = arcsEl.querySelector(".list");
-const arcWhy = () => [...arcsEl.querySelector(".why").children].map(c => c.textContent).join("");
-const arcList = () =>
-  arcRows.children.map(li => li.children.map(sp => sp.textContent ?? "").join("")).join("|");
+/* This disc carries none of the three things the other two put in the column:
+   no search box, no list and no crumb line. What a click drills into is read
+   in the hub and in the readout, and there is nothing else to read it in, so
+   what the readout says is the whole of what the checks below have to go on.
+
+   Read off the module rather than the shadow root, because the stub builds one
+   fragment for all three templates and every element gets a search box in it
+   whether its own markup names one or not — the same reason the embed.html
+   block below reads a file. */
+{
+  const tpl = readFileSync(new URL("../web/letter-disc.js", import.meta.url), "utf8");
+  for (const gone of ['class="q"', 'class="hits"', 'class="arcs"', 'class="crumb"']) {
+    check(!tpl.includes(gone), `letter-disc's markup still carries ${gone}`);
+  }
+}
 
 check(ld.stats.pairs === 6 && ld.stats.loops === 2, `the element drew ${ld.stats.pairs} arcs`);
 check(
@@ -2132,17 +2136,13 @@ for (let k = 1; k < LL.order.length; k++) {
 }
 check(rising, "the arcs are not drawn light before heavy");
 
-/* The column lists every arc at rest, heaviest first, which is what says at
-   once which letter pairs a category is made of. Sorting it alphabetically, or
-   leaving it in the layout's own order, fails this. */
-check(arcWhy() === "6 arcs · heaviest first", `the resting list is headed "${arcWhy()}"`);
+/* At rest the readout counts the picture, since nothing else on this disc
+   does now. */
 check(
-  arcList() === "A → A2|C → T2|T → N2|D → G1|N → N1|T → D1",
-  `the resting list reads ${arcList()}`,
+  lGloss.innerHTML.includes("<b>9</b> words over <b>6</b> letters") &&
+    lGloss.innerHTML.includes("<b>6</b> arcs"),
+  `the resting readout says "${lGloss.innerHTML}"`,
 );
-/* Held before anything is pointed at, since the claim below is that these very
-   objects are still in the list afterwards. */
-const heldRows = arcRows.children[0];
 
 /* A pointer on the ring, at the middle of a known end. The geometry is the
    element's own — solve at the stage's square, centred on it — so a hit here
@@ -2168,10 +2168,6 @@ check(
   lGloss.innerHTML.includes("<b>C → T</b>") && lGloss.innerHTML.includes("cat, cot"),
   `the arc reads "${lGloss.innerHTML}"`,
 );
-/* The crumb carries what the pointer is on past the category, muted, the way
-   both other discs carry theirs. */
-check(lTail.innerHTML.includes("C → T"), `the crumb tail reads "${lTail.innerHTML}"`);
-
 /* A pointer outside the ring is on a letter, which lights everything touching
    it in either direction — the letter's whole part in the picture. */
 const tArc = LL.arcs.find(a => a.letter === 19);
@@ -2182,52 +2178,26 @@ check(
   `the letter reads "${lGloss.innerHTML}"`,
 );
 
-/* Pointing never rebuilds the column, which is what stops a list moving under
-   a pointer on its way to a row. Two hovers have been through since those rows
-   were held — an arc and a letter — and they are still the same objects, which
-   is the only way from here to say nothing was rebuilt rather than rebuilt to
-   the same names. Calling #showList from #preview fails this. */
-check(arcRows.children[0] === heldRows, "a hover rebuilt the column");
-check(arcWhy() === "6 arcs · heaviest first", `a hover moved the list to "${arcWhy()}"`);
-
-/* A click drills, which is the one thing pointing cannot do: the column
-   becomes that letter's arcs, leaving ones first and then arriving. An arc
-   drills to the letter it leaves. */
+/* A click drills, which is the one thing pointing cannot do, and an arc
+   drills to the letter it leaves. Pointing never does it: what the pointer is
+   on and what a click drilled into are separate, so a hover cannot move the
+   second. Calling show from #preview fails the first of these. */
+check(ld.letter === "", `a hover drilled to ${ld.letter}`);
 fire(lOver, "click", ringPt(heavyEnd));
 check(ld.letter === "C", `clicking the C→T arc drilled to ${ld.letter}`);
-check(arcList() === "C → T2", `C's column reads ${arcList()}`);
-check(arcWhy() === "C1 out, 0 in · ", `C's column is headed "${arcWhy()}"`);
-check(lCrumb.innerHTML.includes(">C<"), `the crumb does not name C: "${lCrumb.innerHTML}"`);
 
 fire(lOver, "click", letterPt(tArc));
 check(ld.letter === "T", `clicking T's band drilled to ${ld.letter}`);
-/* fanKey's order: the destinations in the order the ring visits them, counted
-   backwards from T's own letter, which puts N before D. */
-check(arcList() === "T → N2|T → D1|C → T2", `T's column reads ${arcList()}`);
-/* An arriving arc reads apart from a leaving one, as the ring band has it. */
-check(
-  arcRows.children.map(li => (li.classList.contains("in") ? "in" : "out")).join("|") ===
-    "out|out|in",
-  "the column does not mark an arriving arc",
-);
-
-/* The seam. A pointer between two rows is over the list and over no row, which
-   is what a browser sends, and clearing the highlight there is what makes it
-   blink off and on all the way down a column. A move that lands on no row
-   holds what the last one set; only leaving the list clears it. Restoring the
-   clearing branch fails the second of these. */
-fire(arcRows, "pointermove", { target: arcRows.children[0] });
-check(ld.arc?.to === "N", `hovering a row named ${JSON.stringify(ld.arc)}`);
-check(arcRows.children[0].classList.contains("on"), "a hovered row is not marked");
-fire(arcRows, "pointermove", { target: arcRows });
-check(ld.arc?.to === "N", "a move landing on no row cleared the highlight");
-fire(arcRows, "pointerleave", {});
-check(ld.arc === null, "leaving the list left the highlight behind");
+/* And the hub is the way back out, which is the one thing clicking an arc
+   cannot do. */
+fire(lOver, "click", { offsetX: lmid, offsetY: lmid });
+check(ld.letter === "", `clicking the hub left the disc drilled into ${ld.letter}`);
 
 /* The hub, which is disc-label.js's halo and baseline now rather than a second
    copy of <word-disc>'s. Nothing is stroked, the ground is copies of the ink's
    own call ringed at one radius about the point the ink goes down at, and the
    ink goes last. */
+fire(lOver, "pointerleave", {});
 ld.show(-1);
 lOver.drew.strokeText = 0;
 lOver.text = { fill: [], stroke: [] };
@@ -2252,29 +2222,13 @@ check(
   "the hub drew its ink before its ground",
 );
 
-/* The suggestions and the arc list want the same room, and only one of them is
-   being asked for at a time. A word is not drawn on this disc — its letter
-   pair is — so searching for one reaches the arc it sits on, which is the
-   whole of what this disc can say about a word. */
-const lq = lShadow.querySelector(".q");
-lq.value = "toad";
-fire(lq, "input", {});
-check(arcsEl.hidden, "a query left the arc list drawn under the suggestions");
-check(
-  ld.arc?.from === "T" && ld.arc?.to === "D",
-  `searching toad reached ${JSON.stringify(ld.arc)}`,
-);
-fire(lq, "blur", {});
-check(!arcsEl.hidden, "the arc list did not come back when the search closed");
-
-/* Stacked there is no column, so the rows are dropped rather than left behind
-   display:none — 344 of them for animal. */
+/* Stacked, the column goes and the readout drops under the disc. */
 const lFrame = lShadow.querySelector(".frame");
 const lStage = lShadow.querySelector(".stage");
 lFrame._rect = { width: BOX, height: BOX };
 lStage._rect = { width: BOX, height: BOX };
 resize();
-check(arcRows.children.length === 0, `${arcRows.children.length} rows survived stacking`);
+check(!lFrame.classList.contains("wide"), "a narrowed frame kept the column beside the disc");
 
 /* And back again, which is the half of it that a page being dragged wider has
    to do and that firing every callback on every resize could never show.
@@ -2291,7 +2245,6 @@ check(
   lFrame.classList.contains("wide"),
   "a frame dragged wide again with its stage unmoved stayed in the stacked layout",
 );
-check(arcRows.children.length > 0, "the column did not come back when the frame went wide again");
 
 /* This disc gives its pixels back the same way, and it is the one whose base
    canvas the painter may own: an element cannot set a dimension on a canvas it
@@ -2352,7 +2305,6 @@ check(
    renamed here would be copied under its new name and left unreferenced by the
    page, with nothing to say so. This is what says so. Only the names are
    checked — nothing here renders the markup. */
-const { existsSync, readFileSync } = await import("node:fs");
 const page = readFileSync(new URL("../web/embed.html", import.meta.url), "utf8");
 for (const [, src] of page.matchAll(/(?:src|names-src|glosses-src)="([^"]+)"/g)) {
   if (src.endsWith(".js"))
