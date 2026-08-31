@@ -491,6 +491,15 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   disc, which the SVG has no need of, because a name has to read over the bundle
   behind it; clicking it is the way back, one step, which is the one thing
   clicking a word cannot do.
+- The gloss and the crumb below the disc are held to a height whatever they
+  hold, and that is what stops the disc moving under the pointer. Under `fit`
+  the frame is a flex column and the stage takes what those two leave, so a
+  block that grows by a line takes a line off the disc's height and, the stage
+  being square, as much off its width. The crumb was the one that bit: it is
+  empty until the pointer names a word, so crossing onto the disc shrank it,
+  moved the words out from under the pointer, and fired the resize observer,
+  which rebuilt the bundle a stroke at a time. `<hypernym-disc>` never showed
+  it because its crumb carries the root's name from the first zoom.
 - `tools/export_words.py` writes `words-<category>.json`, one per category, plus
   `words-index.json`: 37 categories, 13,212 words, 197 KB. Flat names rather than
   a directory, since `web-dist` stages everything side by side and the modules

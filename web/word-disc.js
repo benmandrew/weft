@@ -136,14 +136,25 @@ TPL.innerHTML = `
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   canvas.over{cursor:pointer;touch-action:none}
   :host([readout="off"]) .gloss,:host([readout="off"]) .crumb{display:none}
+  /* Both are held to a height whatever they hold, which is the whole of what
+     stops the disc moving under the pointer: with the fit attribute set the
+     frame is a flex column and the stage takes what these two leave, so a
+     block below the disc that grows by a line takes a line off the disc's
+     height and, the stage being square, as much off its width. The crumb is
+     the one that bit. It is empty until the pointer names a word, so crossing
+     onto the disc shrank it, which moved the words out from under the pointer
+     and fired the resize observer, which rebuilt the bundle a stroke at a
+     time. The gloss shows blank rather than hiding while empty for the same
+     reason, so the disc does not jump once when the words land. A host that
+     wants neither block has readout="off". */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
     margin-top:7px;overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .gloss:empty{display:none}
   .gloss .warn{color:var(--_warn)}
   .gloss .key{font-family:var(--_mono);color:var(--_accent)}
   .crumb{font-family:var(--_mono);font-size:11px;color:var(--_muted);line-height:1.6;
-    margin-top:3px;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+    min-height:1.6em;margin-top:3px;white-space:nowrap;overflow-x:auto;
+    scrollbar-width:none}
   .crumb::-webkit-scrollbar{display:none}
   .crumb button{font:inherit;color:var(--_accent);background:none;border:0;padding:0;
     cursor:pointer;text-decoration:underline;text-underline-offset:2px}
