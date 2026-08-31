@@ -180,12 +180,16 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   379 of the 16,933 sibling groups hold nodes of differing rank. Nesting needs a
   tree and the hypernyms are a DAG, so each synset keeps its first hypernym and
   drops the other 2,313 edges; every node survives, only cross-links go.
-  Children are held the same way, as one offsets array rather than a list per
-  node: the child count and the leaf test are both `#kidOff[i + 1] -
-  #kidOff[i]`, and the flat list of child indices stays local to `#build`,
-  since nothing outside it walks children. As 82,115 plain arrays, two thirds
-  of them the empty one a leaf never reads, they held 4.8 MB of retained heap
-  against 657 KB, and the build's median went 5.3 ms to 1.6 ms.
+  Children are held the same way, as one offsets array and one flat array of
+  child indices rather than a list per node: the child count and the leaf test
+  are both `#kidOff[i + 1] - #kidOff[i]`, and `#kidIdx` is what answers which
+  children, retained rather than left local to `#build` now that the column
+  lists the ring below the root. As 82,115 plain arrays, two thirds of them the
+  empty one a leaf never reads, they held 4.8 MB of retained heap against
+  657 KB, and the build's median went 5.3 ms to 1.6 ms. Retaining `#kidIdx`
+  moves neither figure: that 657 KB is exactly the two arrays, `#kidOff` an
+  `Int32Array(N + 1)` at 328,464 bytes and `#kidIdx` an `Int32Array(N - 1)` at
+  328,456.
 - The layout never reads a name, so the export is two files and the element
   fetches them in that order: `wordnet-tree.json` is the structure at 42 KB
   brotli, `wordnet-names.txt` the names for the same indices at 311 KB. First
@@ -291,6 +295,54 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   the leaf count, so a host that wants them can print its own. A failed fetch
   still reports there, and a `#failed` flag holds that message until a zoom,
   which is how long it survived when the line was written whole.
+- Where the frame is wide enough for a column, the element lists every node one
+  ring out from the current root under the search box: what a click on the disc
+  would open, read as a list rather than picked out of a fringe of wedges. It is
+  the same column, the same landscape threshold and the same paging
+  `<word-disc>` lists its moves in, `KIDS_PAGE` at 200 and `KIDS_NEAR` at 240,
+  and WordNet's widest node holds 661 children with 16 nodes over a page, so
+  paging is a path that runs here rather than one that never does. The order is
+  the order the disc draws them, and it costs no sort: `#build` lays a parent's
+  angles out in one pass over its children as they sit in the flat child array,
+  so a slice of that array is already wedge order. Sorting alphabetically, as
+  `<word-disc>` sorts its moves, would put the list and the disc in different
+  orders and there is no reading one against the other after that. A node with
+  children of its own reads apart from a leaf — `.kids li.leaf` is muted with
+  the cursor left an arrow, where a branch takes the ink colour and a pointer —
+  because only the branch is a way further in, and the header line above the
+  list reads `3 below · 1 opens further`, the branch count in the accent.
+  A branch row also prints, right-aligned against the column's edge, what that
+  branch weighs: the leaves under it against every leaf in the ring, muted and
+  monospaced as every other number the element prints. The row is a flex of a
+  name span and a weight span, where it was one line of text, and the name
+  still ellipsises. It is one division rather than a sum over the row's
+  siblings, because a node's leaf count is its children's added up, so the
+  ring's own total is `#leaves` at the root. It is also exactly the share of
+  the turn the wedge takes — `#build` divides a parent's span by its leaf count
+  and gives each child its own count of them — so the figure printed is the
+  width of the arc it names and can be read against the disc rather than only
+  against the other rows. Three digits at most, since a ring of 661 nodes has
+  shares in the hundredths and a column has no room to say so: rounded whole
+  above 9.95%, one decimal down to 0.095%, and everything below that reads
+  `<0.1%`. The two thresholds are the rounding boundaries rather than 10 and
+  0.1, so 9.96% prints as `10%` rather than `10.0%`. A leaf prints nothing. It
+  weighs one leaf, which is the ring's floor rather than anything about the
+  node, and it is the row with nothing below it, so the figure is a branch's
+  alone and its absence is a third thing saying which rows are a way further
+  in, beside the muted colour and the arrow cursor.
+  Hovering a row is hovering its wedge and clicking one is clicking it, both
+  through the same `#preview` and `#go` the pointer and the search box use, so
+  the column and the disc cannot describe different things. `#go` gained a
+  guard for it: a leaf whose parent is already the root is pinned rather than
+  zoomed to, since clicking a leaf row would otherwise zoom to where the disc
+  already is, rebuild the list under the click that came out of it and throw
+  its scroll back to the top. That fixes the same needless redraw for a leaf
+  reached by search that was already in view. The suggestions and this list
+  share the room on the rule `<word-disc>` already sets, suggestions while the
+  search box has something in it and the ring below otherwise. One per line,
+  where `<word-disc>` lists its moves two up: a 240 px column has no room for
+  two of "domestic dog", which is the same measurement that already drops a
+  suggestion's parent onto a second line here.
 - `hue-depth` defaults to 8 and `merge` to density, and the harness sets
   neither: it is one disc with a search box, no controls and no timings. Both
   attributes still work, so a comparison is one attribute away in the
@@ -1060,6 +1112,33 @@ under 26 × `BANDS` and under a quarter of the strokes, so the batching survived
 the interleave. All three were mutation-tested too: collapsing `BANDS` to 1
 reproduces the original bug exactly, running letter A from stroke 0 to stroke
 399 of 10,400, and turning the alternation off fails the second.
+
+`<hypernym-disc>` is constructed there too, for the first time: until the column
+gained its list the check drove `<word-disc>` alone and ran the nested disc's
+modules without ever putting the tag on screen. It is driven over a six-node
+tree named so that draw order and alphabetical order differ, the root's children
+being zebra, moss and apple, so a list that came back sorted fails. What is
+asserted is the row order, the leaf marking, the header line, that clicking a
+branch row zooms and the list becomes that node's ring, and that clicking a leaf
+row leaves the root where it is and leaves the very same row objects in place,
+which is the only way from here to say nothing was rebuilt rather than rebuilt
+to the same names. The weights are asserted there too, moss holding two of the
+root's four leaves and so reading 50%, and the ring of leaves it opens onto
+printing nothing. A second tree is then fed to the same element to pin the
+formatting, six nodes reaching none of the rounding boundaries: a root of 10,000
+leaves under four branches holding 996, 990, 9 and 8,005 of them, which reads
+`10%`, `9.9%`, `<0.1%` and `80%`. Then that a query hides the list and closing
+the search brings it back, and that stacking drops the rows rather than leaving
+them behind `display:none`. All of it was mutation-tested: sorting the list
+alphabetically, dropping the leaf class, dropping the `#showKids` call in
+`zoomTo`, dropping the `#go` guard, and leaving the list drawn under the
+suggestions each fail it, as do inverting the ratio, dividing by the row count
+rather than the leaf count, dropping the rounded-whole rung, dropping the
+`<0.1%` floor, and printing a weight on leaves too. The
+stub grew a `closest` for it, a tag name optionally qualified by one class or
+one data attribute, since both discs delegate their list handlers off
+`e.target.closest("li[data-i]")` and without it a row could be built and counted
+here but never clicked.
 
 A last block reads `web/embed.html` and holds it to the directory it ships in,
 since `web-dist` finds its modules by glob where that page names its modules,

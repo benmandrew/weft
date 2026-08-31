@@ -26,6 +26,15 @@
  * sparse to see. Capping it fills the frame, and what falls off the edge is one
  * zoom away, since zooming makes the node the new root and re-counts from it.
  *
+ * Beside the disc, where the frame is wide enough for a column, every node
+ * one ring out from the current root is listed under the search box: what a
+ * click on the disc would open, read as a list rather than picked out of a
+ * fringe of wedges. It is in the order the disc draws them, and a node with
+ * children of its own reads apart from a leaf, since only the one is a way
+ * further in. Such a node prints what it weighs against the column's right
+ * edge: the leaves under it over every leaf in the ring, which is the same
+ * fraction as the share of the turn its wedge takes.
+ *
  * The search box takes the same two steps as the pointer. Picking a suggestion
  * previews it, which is the hover path and nothing else, and Enter is the
  * click: it zooms. A leaf has nothing to zoom into, so Enter on one goes to its
@@ -56,6 +65,14 @@ const HINT_PX = 9,
 // taking only once the frame is this much wider than a disc filling its height.
 const ASIDE_MIN = 200,
   ASIDE_GAP = 18;
+// How many rows of the ring below go into the DOM at a time, and how near the
+// foot of the list a scroll has to come before the next lot follow. The same
+// two counts <word-disc> lists its moves by, and for the same reason: the work
+// per zoom is a page rather than a ring. WordNet's widest node holds 661
+// children and 16 hold more than a page, so paging is a real path here rather
+// than one that never runs.
+const KIDS_PAGE = 200,
+  KIDS_NEAR = 240;
 // How long a resize is held open. A drag fires the observer every frame and
 // each frame costs the painter a whole remerge, since the merge is measured in
 // pixels and the radius moved.
@@ -136,6 +153,48 @@ TPL.innerHTML = `
   .hits .n b{font-weight:600;color:var(--_accent)}
   .hits .p{margin-left:auto;font-family:var(--_mono);font-size:10.5px;
     color:var(--_muted);overflow:hidden;text-overflow:ellipsis}
+  /* Every node one ring out from the current root, in the column the
+     suggestions otherwise leave empty. The two share that room on the rule
+     <word-disc> already sets: suggestions while the box has something in it,
+     the ring below otherwise.
+
+     One per line, where <word-disc> lists its moves two up. A 240 px column
+     has no room for two of "domestic dog", which is the same measurement that
+     already drops a suggestion's parent onto a second line here. Landscape
+     only: the stacked layout has no column, and nothing is built in that
+     shape rather than several hundred rows sitting behind display:none. */
+  .kids{display:none}
+  :host([fit]) .frame.wide .kids{display:flex;flex-direction:column;
+    flex:1 1 auto;min-height:0;margin-top:9px}
+  :host([fit]) .frame.wide .kids[hidden]{display:none}
+  .kids .why{font-family:var(--_mono);font-size:10.5px;color:var(--_muted);
+    flex:none;padding-bottom:5px}
+  .kids .why b{color:var(--_accent);font-weight:600}
+  .kids .list{margin:0;padding:0;list-style:none;flex:1 1 auto;min-height:0;
+    overflow-y:auto;scrollbar-width:thin}
+  /* Colour and leading are set on the row rather than inherited, the rule
+     <word-disc>'s list is built to: a list that draws no text should depend on
+     as little from outside it as it can.
+
+     A name and, on a branch, what it weighs, laid out the way a suggestion
+     lays out its name and its parent. The weight is four to six characters
+     rather than a name, so the two stay on one line where a suggestion has to
+     break. */
+  .kids li{box-sizing:border-box;display:flex;gap:8px;align-items:baseline;
+    color:var(--_ink);font-size:12.5px;line-height:1.5;padding:2px 5px;
+    border-radius:2px;cursor:pointer}
+  .kids li .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* Right-aligned against the column's edge rather than the longest name, so
+     the figures read down as a column of their own. Muted and monospaced, as
+     every other number this element prints is. */
+  .kids li .w{margin-left:auto;flex:none;font-family:var(--_mono);
+    font-size:10.5px;color:var(--_muted)}
+  /* A leaf is not a way in. Clicking one holds the highlight on it where a
+     branch opens a disc of its own, so it reads muted and the cursor stays an
+     arrow over it — the same three-ways-before-the-click rule <word-disc>
+     refuses a used word by. */
+  .kids li.leaf{color:var(--_muted);cursor:default}
+  .kids li:hover{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   canvas.over{cursor:pointer;touch-action:none}
@@ -169,6 +228,7 @@ TPL.innerHTML = `
            spellcheck="false" aria-controls="hits" aria-expanded="false"
            aria-autocomplete="list" placeholder="Waiting for names…" disabled>
     <ul class="hits" id="hits" role="listbox" hidden></ul>
+    <div class="kids"><div class="why"></div><ul class="list"></ul></div>
   </div>
   <div class="stage">
     <canvas class="base" aria-hidden="true"></canvas>
@@ -196,6 +256,13 @@ class HypernymDisc extends HTMLElement {
   #ro;
   #q;
   #hits;
+  #kidsEl;
+  #whyEl;
+  #listEl;
+  // The ring below the root, and how many of it are in the DOM. The rest
+  // follow as the column is scrolled.
+  #below = [];
+  #listed = 0;
   #frame;
   #glossEl;
   // Built on the first query rather than when the names land, so a page that
@@ -206,12 +273,18 @@ class HypernymDisc extends HTMLElement {
   #names = [];
   #glosses = [];
   #par = [];
-  // Where i's children start in the flat child list, which is the build's
-  // own and goes no further: #kidOff[i + 1] - #kidOff[i] is the child count,
-  // and nothing outside #build walks the children themselves. The 82,115
-  // separate arrays this replaces held 4.8 MB, two thirds of them the empty
-  // one a leaf never reads.
+  // Where i's children start in the flat child list: #kidOff[i + 1] -
+  // #kidOff[i] is the child count and the leaf test both. The 82,115 separate
+  // arrays this pair replaces held 4.8 MB, two thirds of them the empty one a
+  // leaf never reads, against 657 KB for the two Int32Arrays here.
   #kidOff;
+  /* Which children, in the order the disc draws them. #build lays a parent's
+     angles out in one pass over this slice, so it is wedge order already and
+     the column below the search box needs no sort. Held on the element rather
+     than left in #build now that something outside it walks children; that is
+     328,456 bytes against #kidOff's 328,464, and the 657 KB above is the two
+     of them, so it was never the saving. */
+  #kidIdx;
   #depth;
   #leaves;
   #a0;
@@ -288,6 +361,9 @@ class HypernymDisc extends HTMLElement {
     this.#tailEl = this.#crumb.querySelector(".tail");
     this.#q = this.#sr.querySelector(".q");
     this.#hits = this.#sr.querySelector(".hits");
+    this.#kidsEl = this.#sr.querySelector(".kids");
+    this.#whyEl = this.#kidsEl.querySelector(".why");
+    this.#listEl = this.#kidsEl.querySelector(".list");
     this.#frame = this.#sr.querySelector(".frame");
     this.#glossEl = this.#sr.querySelector(".gloss");
   }
@@ -313,6 +389,23 @@ class HypernymDisc extends HTMLElement {
     this.#hits.addEventListener("click", e => {
       const li = e.target.closest("li");
       if (li) this.#go(this.#sug[+li.dataset.k].i);
+    });
+    // The list does exactly what the disc does: hovering a row is hovering
+    // its wedge, and clicking one is clicking it. Delegated, since the rows
+    // are rebuilt on every zoom.
+    this.#listEl.addEventListener("pointermove", e => {
+      const li = e.target.closest("li[data-i]");
+      const i = li ? +li.dataset.i : -1;
+      if (i !== this.#hover) this.#preview(i);
+    });
+    this.#listEl.addEventListener("pointerleave", () => this.#preview(-1));
+    this.#listEl.addEventListener("click", e => {
+      const li = e.target.closest("li[data-i]");
+      if (li) this.#go(+li.dataset.i);
+    });
+    this.#listEl.addEventListener("scroll", () => {
+      const el = this.#listEl;
+      if (el.scrollTop + el.clientHeight > el.scrollHeight - KIDS_NEAR) this.#page();
     });
     this.#ro = new ResizeObserver(() => this.#fit());
     this.#ro.observe(this.#sr.querySelector(".stage"));
@@ -502,6 +595,110 @@ class HypernymDisc extends HTMLElement {
     this.#root = i >= 0 ? i : 0;
     this.#cursor = this.#root;
     this.#crumbs();
+    this.#showKids();
+  }
+
+  /* The ring below the current root: every node a click on the disc would open,
+     and the leaves that end there.
+
+     In the order the disc draws them, which costs no sort. #build lays a
+     parent's angles out in one pass over its children as they sit in #kidIdx,
+     so a slice of that array is already wedge order; sorting the names
+     alphabetically here, as <word-disc> sorts its moves, would put the list
+     and the disc in different orders and there is no reading the one against
+     the other after that.
+
+     Landscape only, like the suggestions it shares the column with, and built
+     on the way in rather than kept behind display:none: WordNet's widest node
+     holds 661 children. */
+  #showKids() {
+    if (!this.#ready) return;
+    if (!this.#frame.classList.contains("wide")) {
+      if (this.#listEl.childElementCount) this.#listEl.replaceChildren();
+      this.#below = [];
+      this.#listed = 0;
+      return;
+    }
+    const off = this.#kidOff;
+    const all = Array.from(this.#kidIdx.subarray(off[this.#root], off[this.#root + 1]));
+    let open = 0;
+    for (const i of all) if (!this.#isLeaf(i)) open++;
+
+    const lead = document.createElement("span");
+    const n = document.createElement("b");
+    const tail = document.createElement("span");
+    if (!all.length) lead.textContent = "nothing below";
+    else {
+      lead.textContent = `${all.length} below · `;
+      n.textContent = open;
+      tail.textContent = open === 1 ? " opens further" : " open further";
+    }
+    this.#whyEl.replaceChildren(lead, n, tail);
+
+    this.#below = all;
+    this.#listed = 0;
+    this.#listEl.replaceChildren();
+    this.#listEl.scrollTop = 0;
+    this.#page();
+  }
+
+  /* What a branch weighs: the leaves under it against every leaf in the ring.
+
+     Those two are one division rather than a sum over the row's siblings,
+     because a node's leaf count is its children's added up, so the ring's own
+     total is #leaves at the root. It is also exactly the share of the turn the
+     wedge takes — #build divides a parent's span by its leaf count and gives
+     each child its own count of them — so the figure printed here is the width
+     of the arc it names and can be read against the disc rather than only
+     against the other rows.
+
+     Three digits at most, since a ring of 661 nodes has shares in the
+     hundredths and a column has no room to say so: rounded whole above 9.95%,
+     one decimal down to 0.095%, and everything below that reads <0.1%. The
+     first two thresholds are the rounding boundaries rather than 10 and 0.1,
+     so 9.96% prints as 10% rather than 10.0%. */
+  #weight(i, total) {
+    const pct = (100 * this.#leaves[i]) / total;
+    if (pct >= 9.95) return `${Math.round(pct)}%`;
+    if (pct >= 0.095) return `${pct.toFixed(1)}%`;
+    return "<0.1%";
+  }
+
+  /* The next page of rows, appended. Nothing already placed is thrown away as
+     it scrolls out of view, which is what makes this an append rather than a
+     windowing scheme: scrolling back is free and no scroll position has to be
+     guessed at. */
+  #page() {
+    const to = Math.min(this.#below.length, this.#listed + KIDS_PAGE);
+    if (to === this.#listed) return;
+    const rows = [];
+    const total = this.#leaves[this.#root] || 1;
+    for (let k = this.#listed; k < to; k++) {
+      const i = this.#below[k];
+      const li = document.createElement("li");
+      li.dataset.i = i;
+      const name = document.createElement("span");
+      name.className = "n";
+      name.textContent = this.#label(i);
+      li.append(name);
+      // A leaf weighs one leaf, which is the ring's floor rather than anything
+      // about the node, and it is the row that has nothing below it. So the
+      // figure is a branch's alone, and its absence is the third thing saying
+      // which rows are a way further in.
+      if (this.#isLeaf(i)) li.className = "leaf";
+      else {
+        const w = document.createElement("span");
+        w.className = "w";
+        w.textContent = this.#weight(i, total);
+        li.append(w);
+      }
+      rows.push(li);
+    }
+    this.#listEl.append(...rows);
+    this.#listed = to;
+    // A page that did not fill the column leaves no scrollbar to ask for the
+    // next one, so it asks here instead. Bounded by the list.
+    if (this.#listEl.scrollHeight <= this.#listEl.clientHeight) this.#page();
   }
 
   /* Every pass is one forward or one backward loop, because a parent's index
@@ -519,6 +716,7 @@ class HypernymDisc extends HTMLElement {
     const idx = new Int32Array(off[N]);
     for (let i = 0; i < N; i++) if (par[i] >= 0) idx[at[par[i]]++] = i;
     this.#kidOff = off;
+    this.#kidIdx = idx;
 
     this.#depth = new Int16Array(N);
     this.#leaves = new Int32Array(N);
@@ -577,6 +775,9 @@ class HypernymDisc extends HTMLElement {
     const want = this.hasAttribute("fit") && f.width - f.height >= ASIDE_MIN + ASIDE_GAP;
     if (want === this.#frame.classList.contains("wide")) return false;
     this.#frame.classList.toggle("wide", want);
+    // Built on the way in and dropped on the way out, since the list exists
+    // only in this shape and #showKids is what decides that.
+    if (this.#ready) this.#showKids();
     return true;
   }
 
@@ -986,7 +1187,11 @@ class HypernymDisc extends HTMLElement {
     this.#closeFind();
     if (!this.#isLeaf(i)) this.zoomTo(i);
     else if (this.#par[i] >= 0) {
-      this.zoomTo(this.#par[i]);
+      // Only where its parent is not already the root. A leaf clicked in the
+      // column beside the disc has the root for a parent, and zooming to where
+      // the disc already is would rebuild the list under the click that came
+      // out of it and throw its scroll back to the top.
+      if (this.#par[i] !== this.#root) this.zoomTo(this.#par[i]);
       this.#cursor = i;
       this.#overlay();
     }
@@ -1022,6 +1227,9 @@ class HypernymDisc extends HTMLElement {
       }),
     );
     this.#hits.hidden = this.#sug.length === 0;
+    // Suggestions while the box has something in it, the ring below otherwise:
+    // the two want the same room and only one of them is being asked for.
+    this.#kidsEl.hidden = this.#sug.length > 0;
     this.#q.setAttribute("aria-expanded", String(this.#sug.length > 0));
   }
 
@@ -1045,6 +1253,7 @@ class HypernymDisc extends HTMLElement {
     this.#pick = -1;
     this.#hits.replaceChildren();
     this.#hits.hidden = true;
+    this.#kidsEl.hidden = false;
     this.#q.setAttribute("aria-expanded", "false");
     this.#q.removeAttribute("aria-activedescendant");
   };
@@ -1057,6 +1266,7 @@ class HypernymDisc extends HTMLElement {
     this.#draw();
     this.#overlay();
     this.#crumbs();
+    this.#showKids();
     this.#emit("disc-zoom", { index: i, name: this.#label(i), path: this.path(i) });
   }
   up() {

@@ -62,11 +62,29 @@ class El {
     return true;
   }
   append(...kids) {
+    for (const kid of kids) if (kid instanceof El) kid._parent = this;
     this.children.push(...kids);
   }
   replaceChildren(...kids) {
+    for (const kid of kids) if (kid instanceof El) kid._parent = this;
     this.children = kids;
     this._html = "";
+  }
+  /* Enough selector to answer what the elements actually ask: a tag name, on
+     its own or qualified by one class or one data attribute. Both discs
+     delegate their list handlers off `e.target.closest("li[data-i]")`, so
+     without this a row could be built and counted here but never clicked. */
+  closest(sel) {
+    const m = /^([a-z]+)?(?:\[data-([\w-]+)\]|\.([\w-]+))?$/.exec(sel);
+    if (!m) return null;
+    const [, tag, data, cls] = m;
+    for (let el = this; el instanceof El; el = el._parent) {
+      if (tag && el.tagName !== tag) continue;
+      if (data && !(data in el.dataset)) continue;
+      if (cls && !el.classList.contains(cls)) continue;
+      return el;
+    }
+    return null;
   }
   set innerHTML(v) {
     this._html = v;
@@ -215,7 +233,12 @@ const fragment = () => {
   const find = new El("div", "find");
   const moves = new El("div", "moves");
   moves.append(new El("div", "why"), new El("ul", "list"));
-  find.append(new El("input", "q"), new El("ul", "hits"), moves);
+  // <hypernym-disc>'s list of the ring below the root. Same two parts, its own
+  // element, since one fragment serves either template and the two discs reach
+  // for their own by class.
+  const kids = new El("div", "kids");
+  kids.append(new El("div", "why"), new El("ul", "list"));
+  find.append(new El("input", "q"), new El("ul", "hits"), moves, kids);
   const stage = new El("div", "stage");
   stage.append(new Canvas(), new Canvas());
   stage.children[0].className = "base";
@@ -1408,6 +1431,107 @@ check(picked.chain.length === 0, "the chain survived a change of category");
 picked.setAttribute("src", "/out/words-animal.json");
 await settle();
 check(cat.value === "animal", `a host-set src left the picker reading ${cat.value}`);
+
+/* And <hypernym-disc> itself, built. Every check above it drives the pipeline
+   the element calls rather than the element, which leaves its class body — the
+   one place a field initialiser naming a constant a refactor moved parses,
+   imports, and then throws the first time a page puts the tag on screen. That
+   has happened to the other element, and nothing short of constructing one
+   catches it.
+
+   What is driven is the list of the ring below the root: the nodes a click on
+   the disc would open, which is the one part of the element with no canvas in
+   it at all. */
+const HypernymDisc = REGISTRY.get("hypernym-disc");
+check(HypernymDisc !== undefined, "hypernym-disc never reached the registry");
+
+/* A root with three children, the middle one a branch. Named so the order the
+   disc draws them in is not the order they sort in: alphabetical would read
+   apple, moss, zebra, which is what <word-disc> does to its moves and what
+   this list must not do, since a list ordered differently from the disc cannot
+   be read against it. */
+const TREE = [-1, 0, 0, 0, 2, 2];
+const TREE_NAMES = ["thing", "zebra", "moss", "apple", "moss cap", "moss stem"];
+
+const nest = new HypernymDisc();
+nest.connectedCallback();
+// Landscape and fitted, the only shape with a column beside the disc.
+nest.setAttribute("fit", "");
+nest._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
+nest.data = { par: TREE, names: TREE_NAMES };
+
+const ring = nest._shadow.querySelector(".kids");
+const kidRows = ring.querySelector(".list");
+const kidNames = () => kidRows.children.map(li => li.children[0].textContent).join("|");
+const kidMarks = () => kidRows.children.map(li => li.className).join("|");
+// A branch prints what it weighs and a leaf prints nothing, so the second span
+// is there or it is not.
+const kidWeights = () => kidRows.children.map(li => li.children[1]?.textContent ?? "").join("|");
+const kidWhy = () =>
+  ring
+    .querySelector(".why")
+    .children.map(c => c.textContent)
+    .join("");
+
+check(kidNames() === "zebra|moss|apple", `the ring below the root reads ${kidNames()}`);
+/* A leaf is a dead end and a branch is a way further in, and the list says
+   which is which before the click, as the disc's own cursor does. */
+check(kidMarks() === "leaf||leaf", `the rows are marked ${kidMarks()}`);
+check(kidWhy() === "3 below · 1 opens further", `the list is headed "${kidWhy()}"`);
+/* What a branch weighs: the leaves under it against every leaf in the ring,
+   which is the same fraction as the share of the turn its wedge takes. moss
+   holds two of the root's four leaves. */
+check(kidWeights() === "|50%|", `the rows weigh ${kidWeights()}`);
+
+/* Clicking a row is clicking its wedge. */
+fire(kidRows, "click", { target: kidRows.children[1] });
+check(nest.index === 2, `a branch row left the root at ${nest.index}`);
+check(kidNames() === "moss cap|moss stem", `moss opened onto ${kidNames()}`);
+check(kidMarks() === "leaf|leaf", `moss's children are marked ${kidMarks()}`);
+check(kidWhy() === "2 below · 0 open further", `a ring of leaves is headed "${kidWhy()}"`);
+check(kidWeights() === "|", `a ring of leaves weighs ${kidWeights()}`);
+
+/* A leaf is not one. Clicking a leaf already on screen holds the highlight
+   where a branch opens a disc, and going to its parent — which is where the
+   disc already is — would rebuild the list under the click that came out of
+   it and throw the scroll back to the top. */
+const held = kidRows.children[0];
+fire(kidRows, "click", { target: kidRows.children[0] });
+check(nest.index === 2, `a leaf row moved the root to ${nest.index}`);
+// The rows are the same objects, which is the only way to say from here that
+// nothing was rebuilt rather than rebuilt to the same names.
+check(kidRows.children[0] === held, "a leaf click rebuilt the list under itself");
+
+/* Three digits at most, over a ring whose shares span three orders of
+   magnitude: a root of 10,000 leaves under four branches holding 996, 990, 9
+   and 8,005 of them. Rounded whole above 9.95%, one decimal down to 0.095%,
+   and everything below that a floor rather than a row of zeroes. Inverting the
+   ratio, or dividing by the row count rather than the leaf count, fails every
+   one of them. */
+const SHARES = [996, 990, 9, 8005];
+const TIERS = [-1];
+for (let b = 0; b < SHARES.length; b++) TIERS.push(0);
+SHARES.forEach((n, b) => {
+  for (let k = 0; k < n; k++) TIERS.push(1 + b);
+});
+nest.data = { par: TIERS, names: ["all", "a", "b", "c", "d"] };
+check(kidNames() === "a|b|c|d", `the wide ring reads ${kidNames()}`);
+check(kidWeights() === "10%|9.9%|<0.1%|80%", `the wide ring weighs ${kidWeights()}`);
+
+/* The suggestions and the ring below want the same room, and only one of them
+   is being asked for at a time. */
+const nestQ = nest._shadow.querySelector(".q");
+nestQ.value = "a";
+fire(nestQ, "input", {});
+check(ring.hidden, "a query left the ring below drawn under the suggestions");
+fire(nestQ, "blur", {});
+check(!ring.hidden, "the ring below did not come back when the search closed");
+
+/* Stacked there is no column, so the rows are dropped rather than left behind
+   display:none — 661 of them at WordNet's widest node. */
+nest._shadow.querySelector(".frame")._rect = { width: BOX, height: BOX };
+for (const fn of OBSERVERS) fn();
+check(kidRows.children.length === 0, `${kidRows.children.length} rows survived stacking`);
 
 /* embed.html is the one page `make web-dist` stages, and it names its modules,
    its elements and its data files by hand where the target finds the modules by
