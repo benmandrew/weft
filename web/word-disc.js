@@ -428,6 +428,17 @@ class WordDisc extends HTMLElement {
     this.#ro.observe(this.#sr.querySelector(".stage"));
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#onScheme);
+    // The same font swap hypernym-disc guards against, and #resize rather than
+    // repaint() because this element also solves its label size from #widest, a
+    // measureText over every word in the category, which repaint() leaves alone
+    // along with the geometry solved off it. #resize is the path that drops
+    // #widest, #fits, #toks and the bundle cache, measures again and solves
+    // again, and it is idempotent against a box that has not moved. #box is
+    // null until the first fit, and a face landing before that needs nothing,
+    // since the first fit measures with it.
+    document.fonts?.ready?.then(() => {
+      if (this.#box) this.#resize();
+    });
     if (!this.#ready) this.#load();
   }
   disconnectedCallback() {

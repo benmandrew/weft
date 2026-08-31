@@ -562,6 +562,28 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   discs read the same letter wheel and `<word-disc>` needs none of the rest of
   that 405-line Painter. `disc-paint.js` re-exports `TAU`, so its import sites
   and `hypernym-disc.js`'s are unchanged.
+- Both elements redo their text measuring when `document.fonts.ready` settles.
+  Canvas text is measured rather than laid out: the DOM reflows when a face
+  swaps in, a drawn pixel cannot, and `disc-label.js`'s `fit` is cached on
+  `radius|text` carrying the font string it settled on, so nothing re-runs by
+  itself. A host serving its monospace unpreloaded under `font-display: swap`,
+  which is IBM Plex Mono on the site this is embedded in, paints the first
+  frame against the fallback and then replays that cached fit in the real face,
+  at a size and a line break solved for the fallback; where the fallback is the
+  narrower of the two the fitted line runs past the hub radius.
+  `<hypernym-disc>` calls `repaint()`, which drops `#fits` and `#toks` and draws
+  again, and that is the whole of it there. `<word-disc>` calls `#resize`
+  instead, because it also solves its label size from `#widest`, one
+  `measureText` per drawn word and 1,582 of them for animal uncapped, which
+  `repaint()` leaves alone along with the geometry solved off it. `#resize`
+  drops `#widest`, `#fits`, `#toks` and the bundle cache, measures and solves
+  again, and is idempotent against a box that has not moved; it is guarded on
+  `#box`, null until the first fit, since a face landing before that is the
+  face the first fit measures with. `tools/check_web.mjs`'s stub resolves
+  `document.fonts.ready`, so the callback is run rather than only parsed, which
+  is the fault that check exists for. The limit is that `document.fonts.ready`
+  settles once: a face that only starts loading afterwards never fires it
+  again.
 - The resting bundle is every chord the SVG draws, cached to an offscreen canvas
   once per size and blitted per frame, dimmed to 0.22 once a chain is being
   built. It is a stroke per chord rather than one path per letter, because the
