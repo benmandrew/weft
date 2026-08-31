@@ -20,12 +20,15 @@
  * being a click that does nothing.
  *
  * The static figure is still underneath. Every chord the SVG draws is cached
- * to an offscreen canvas once per size, so a click blits the bundle and draws
- * only the fan on top of it. That is what keeps a move a single frame at any
- * word count the bundle is worth drawing at.
+ * to a bitmap and blitted per frame, so a click blits the bundle and draws
+ * only the fan on top of it, which is what keeps a move a single frame at any
+ * word count. That bitmap is held in a square of its own rather than the
+ * frame's and is built on a worker, so a resize scales the blit instead of
+ * paying a stroke for each of up to 96,470 chords on this thread.
  *
- * word-layout.js is the placement, word-chain.js the rule, and neither touches
- * the DOM, so tools/check_web.mjs runs both without a browser.
+ * word-layout.js is the placement, word-chain.js the rule, word-bundle.js the
+ * resting picture, and none of the three touches the DOM, so
+ * tools/check_web.mjs runs all of them without a browser.
  *
  * Beside the disc, where the frame is wide enough for a column, every word
  * that could be played next is listed under the search box. It is where the
@@ -37,7 +40,8 @@
  * Properties: data, words, chain, stats. Methods: play(i), undo(), rewind(k),
  *             clear(), repaint().
  * Events: word-hover {index,word,replies}, word-play {index,word,chain},
- *         word-chain {chain,words,stuck}, word-render {words,chords,drawMs}
+ *         word-chain {chain,words,stuck},
+ *         word-render {words,chords,drawMs,bundle,bundlePx,thread}
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
  *          --disc-warn --disc-sat --disc-val --disc-font --disc-mono
  */
@@ -45,6 +49,7 @@ import { hsv, TAU } from "./disc-colour.js";
 import { fit } from "./disc-label.js";
 import { Search } from "./disc-search.js";
 import { Chain } from "./word-chain.js";
+import { bundle as strokeBundle, curve, RING, square, thin } from "./word-bundle.js";
 import {
   at,
   chords,
@@ -60,14 +65,20 @@ import {
 // The hub's "back" hint: its size, and the room it takes from the name above.
 const HINT_PX = 11,
   HINT_H = 15;
-// The sizes the hub's name steps down through, and its weight. Larger and
-// heavier than disc-label.js's own ladder because nothing is drawn in the
-// middle of this disc but the name, and it has to carry over the bundle
-// behind it rather than sit on a panel in front of it. It keeps the two low
-// rungs the shorter ladder ended on, which a disc of any usable size never
-// reaches: they are there so a frame too small for the hub to mean anything
-// degrades the way it used to rather than worse.
-const HUB_SIZES = [33, 28, 24, 21, 18, 15, 12],
+// The sizes the hub's name steps down through, and its weight. It is the
+// weight rather than the size that sets the name apart now: disc-label.js's
+// own ladder tops out at 12 px and this one at 16, where it used to reach 33.
+//
+// 33 came in when the panel behind the name went and the room it had been
+// taking came free, and taking the room was the mistake. Set that large the
+// name is the figure rather than a label on it, and the figure is the disc:
+// the long chords cross in the middle, which is the part worth seeing and the
+// part the name sits over. 16 leaves it legible over the bundle — the halo
+// does that work, not the size — and gives the chords the middle back. The
+// bottom two rungs are where the shorter ladder ends, and no disc of a usable
+// size reaches them: they are there so a frame too small for the hub to mean
+// anything degrades rather than clips.
+const HUB_SIZES = [16, 14, 12, 10, 8],
   HUB_WEIGHT = 700;
 // The halo under the hub's text, as a fraction of the type size and never
 // thinner than this. It is what replaces the panel: 100 to 280 of a category's
@@ -77,12 +88,23 @@ const HUB_SIZES = [33, 28, 24, 21, 18, 15, 12],
 //
 // A stroke is centred on the glyph outline, so the halo cannot sit off to one
 // side of the letter it belongs to. What it can do is stop looking like an
-// edge: at 0.3 of the type it was 10 px wide on a 33 px name, which merged the
-// letters into one slab and read as a shape behind the word rather than as
-// ground around it. 0.16 is 2.6 px clear of a glyph at that size, against
-// chords half a pixel wide.
+// edge: at 0.3 of the type it merged the letters into one slab and read as a
+// shape behind the word rather than as ground around it. 0.16 is 2.6 px at the
+// top of the ladder, so 1.3 px clear of a glyph, against chords half a pixel
+// wide. The floor is 2 rather than 3 because the ladder tops out at 16 now: a
+// 3 px floor would bind at every rung and the fraction would never be read.
+// It takes over below 12.5 px, which is the two degraded rungs alone.
 const HALO = 0.16,
-  HALO_MIN = 3;
+  HALO_MIN = 2;
+// What the hub's baseline is measured against: a capital and an ascender,
+// which between them reach the top of anything a name can hold. Measured off
+// this rather than off the name itself, so every word in a face sits on the
+// same baseline. HUB_RISE and HUB_DROP are the proportions of a Latin line,
+// used only where a context reports no ink metrics and to leave the hint its
+// room under a name that may or may not have a descender in it.
+const HUB_REF = "Hd",
+  HUB_RISE = 0.72,
+  HUB_DROP = 0.2;
 // The search column beside the disc, and the gutter to it. Same thresholds as
 // <hypernym-disc>, so the two elements break to landscape together.
 const ASIDE_MIN = 200,
@@ -115,9 +137,24 @@ const PULL = 0.32,
 // built and the fan on top is the thing to read. palette.Theme's edge_alpha.
 const EDGE_ALPHA = 0.2,
   BUNDLE_DIM = 0.22;
-// Chords past which the bundle is fog rather than a picture, and not worth the
-// stroke apiece a resize would pay for it. animal at no limit holds 125,000.
-const MAX_BUNDLE = 24000;
+/* Chords past which no bundle is drawn at all. It used to stand at 24,000,
+   which is where the stroke apiece a resize paid for stopped being worth it,
+   and it cost the seven largest categories their picture: animal holds 96,470
+   chords at no limit, food 57,320, job 50,275, plant 48,033, city 36,693,
+   body-part 35,732 and drug 24,898. The bundle is built off the frame's size
+   and off this thread now, so a resize blits rather than rebuilds and none of
+   those seven pays anything on the main thread for its picture.
+
+   What is left is a guard against a word list nothing here ships. Chords go as
+   the square of the words, so it draws every category the tool has at no limit
+   and refuses a list half again as large. */
+const MAX_BUNDLE = 200000;
+
+// What the worker gets to answer in, timed from the first bundle the element
+// actually wants rather than from the worker's construction. A worker that
+// loads and never answers otherwise leaves the disc without its picture for
+// good, where the cost of finding that out is the picture arriving this late.
+const WORKER_FLOOR = 400;
 
 const TPL = document.createElement("template");
 TPL.innerHTML = `
@@ -339,10 +376,31 @@ class WordDisc extends HTMLElement {
   #ready = false;
   #loadedSrc = null;
 
-  // The bundle, drawn once per size and blitted per frame.
+  /* The bundle, drawn once per word set and blitted per frame. It is held in
+     its own square rather than the frame's, so a resize scales the blit and
+     only a crossed size step rebuilds; the old bitmap keeps being drawn until
+     the new one lands, which is why a rebuild has no blank in it. */
   #cache = null;
+  #cachePx = 0;
+  // What the held bitmap is of, and what has been asked for: the word set and
+  // the colours through #gen, the square through the size step.
+  #cacheKey = "";
+  #asked = "";
+  #gen = 0;
   #chordCount = 0;
   #drawMs = 0;
+
+  // Where the bundle is built: undefined until wanted, "wait" while the worker
+  // is answering, then "worker" or "main" for the rest of the element's life.
+  #route = undefined;
+  #worker = null;
+  #pending = null;
+  #floor = 0;
+  // A bundle wanted while the worker is still answering, sent when it does.
+  #queued = null;
+  // Whether a draw is on the stack, so a bundle built on this thread is blitted
+  // by the draw that asked for it rather than starting a second one.
+  #drawing = false;
 
   #cx = 0;
   #cy = 0;
@@ -360,6 +418,9 @@ class WordDisc extends HTMLElement {
   #widest = 0;
   #toks = new Map();
   #fits = new Map();
+  // The ink band per font, held beside the fitted lines and cleared with them,
+  // since a resize or a restyle can change the face as well as the size.
+  #bands = new Map();
   // Whether the cursor is currently a pointer and whether the pointer is over
   // the hub, both held so the cursor can be recomputed after a move as well as
   // after a pointer event.
@@ -433,6 +494,17 @@ class WordDisc extends HTMLElement {
   disconnectedCallback() {
     this.#ro?.disconnect();
     this.#mq?.removeEventListener("change", this.#onScheme);
+    // Terminated, where the nested disc's is not: this one holds no canvas of
+    // the element's, so there is nothing that could only be handed over once
+    // and nothing to lose by opening another if the element is put back.
+    clearTimeout(this.#floor);
+    this.#floor = 0;
+    this.#pending?.terminate();
+    this.#worker?.terminate();
+    this.#pending = this.#worker = null;
+    this.#route = undefined;
+    this.#queued = null;
+    this.#asked = this.#cacheKey;
   }
   attributeChangedCallback(n, was, now) {
     if (was === now) return;
@@ -491,6 +563,11 @@ class WordDisc extends HTMLElement {
       of: this.#all.length,
       chords: this.#chordCount,
       bundle: this.#cache !== null,
+      // The square the bundle is held at and the thread it was drawn on, which
+      // is the only way a host can tell a picture built beside the page from
+      // one built in front of it.
+      bundlePx: this.#cachePx,
+      thread: this.#route === "worker" ? "worker" : "main",
       labelPx: this.#labelPx,
       drawMs: this.#drawMs,
       chain: this.#chain?.length ?? 0,
@@ -507,8 +584,9 @@ class WordDisc extends HTMLElement {
      runs out, where the element has whatever frame the host gave it and drops
      the labels instead. The 18 largest categories therefore come up unlabelled,
      with the hub naming what the pointer is on and the search box reaching a
-     word by name, and the 7 largest lose the resting bundle as well, since
-     96,470 chords for animal read as fog rather than as a picture. */
+     word by name. They keep their bundle: animal's 96,470 chords are drawn on
+     a worker into a square of their own, so what the seven largest categories
+     used to lose to the ceiling costs this thread nothing. */
   #limit() {
     const want = this.getAttribute("limit");
     if (want === null) return 0;
@@ -527,7 +605,13 @@ class WordDisc extends HTMLElement {
     this.#cursor = -1;
     this.#search = null;
     this.#widest = 0;
+    // A different word set, so the held bundle is of words that are no longer
+    // on the disc and goes rather than being blitted until its replacement
+    // lands. A resize keeps its bundle; this cannot.
     this.#cache = null;
+    this.#cacheKey = "";
+    this.#asked = "";
+    this.#gen++;
     this.#closeFind();
     this.#q.disabled = this.#words.length === 0;
     if (!this.#q.disabled) this.#q.placeholder = "Search words…";
@@ -569,10 +653,11 @@ class WordDisc extends HTMLElement {
       return;
     }
     this.#box = { w: box.width, h: box.height, dpr, pw, ph };
-    // The bundle is a stroke per chord and has to be drawn again at the new
-    // radius, so a drag would pay for it every frame. The first change goes
-    // through outright and the rest are coalesced; the canvases stretch until
-    // the drag stops.
+    // The bundle no longer costs a drag anything, since it is blitted at the
+    // new radius rather than restroked, but the dots, the labels and the sizing
+    // they are solved against are still a frame's work at 1,582 words. The
+    // first change goes through outright and the rest are coalesced; the
+    // canvases stretch until the drag stops.
     if (performance.now() - this.#resized > RESIZE_HOLD) return this.#resize();
     clearTimeout(this.#fitTimer);
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
@@ -594,8 +679,13 @@ class WordDisc extends HTMLElement {
     this.#cy = b.h / 2;
     this.#toks.clear();
     this.#fits.clear();
+    this.#bands.clear();
     this.#widest = 0;
-    this.#cache = null;
+    // The bundle is not dropped here. It is held in its own square rather than
+    // this one, so the blit scales it to the new radius and only a crossed
+    // size step asks for another — which is what took the build from once per
+    // size to once per word set, and with it the ceiling that lost the seven
+    // largest categories their picture.
     this.#measure();
     this.#geometry(Math.min(b.w, b.h));
     this.#draw();
@@ -649,60 +739,130 @@ class WordDisc extends HTMLElement {
     return this.#cy - Math.sin(this.#L.ang[i]) * this.#r * at;
   }
 
-  /* A cubic bowed towards the centre, which is what makes a chord read as the
-     pair of letters it joins rather than as a line across the disc. Four
-     control points and no sampling, the same curve `_curve` writes into the
-     SVG. */
+  /* The fan and the chain, in the frame's own coordinates. `curve` is shared
+     with word-bundle.js, so the live chords and the resting ones underneath
+     them are the same shape drawn at two scales. */
   #chord(g, i, j, pull) {
-    const x0 = this.#x(i),
-      y0 = this.#y(i),
-      x1 = this.#x(j),
-      y1 = this.#y(j);
-    g.moveTo(x0, y0);
-    g.bezierCurveTo(
-      this.#cx + (x0 - this.#cx) * pull,
-      this.#cy + (y0 - this.#cy) * pull,
-      this.#cx + (x1 - this.#cx) * pull,
-      this.#cy + (y1 - this.#cy) * pull,
-      x1,
-      y1,
-    );
+    curve(g, this.#cx, this.#cy, this.#x(i), this.#y(i), this.#x(j), this.#y(j), pull);
   }
 
-  /* Every chord the SVG draws, onto a canvas of its own, once per size.
-     A stroke apiece rather than one path per letter, because the alpha has to
-     accumulate where curves overlap the way it does in the figure — batched
-     into one path a bundle composites once and reads flat.
+  /* Ask for the bundle the disc as it stands wants, and say nothing if that is
+     the one already held or already asked for. Nothing here waits: the held
+     bitmap goes on being blitted, stretched to the new radius, until a newer
+     one arrives, which is why a rebuild has no blank in it. */
+  #wantBundle() {
+    if (!this.#words.length || this.#chordCount > MAX_BUNDLE) return;
+    const px = square(this.#r, this.#dpr);
+    const key = `${this.#gen}:${px}`;
+    if (key === this.#cacheKey || key === this.#asked) return;
+    this.#asked = key;
+    const spec = {
+      id: key,
+      px,
+      ang: Float64Array.from(this.#L.ang),
+      byHead: this.#L.byHead,
+      tail: this.#L.tail,
+      live: this.#L.live,
+      // Resolved here rather than in the worker, which has no element to read
+      // a custom property off.
+      colours: Array.from({ length: LETTERS }, (_, L) => this.#hue(L)),
+      pull: this.#words.length > DENSE ? PULL_DENSE : PULL,
+      alpha: thin(this.#words.length > DENSE ? EDGE_ALPHA * 0.55 : EDGE_ALPHA, this.#chordCount),
+      // Half a CSS pixel once the square has been blitted down onto the ring,
+      // which is the weight the figure was tuned at.
+      lineWidth: (0.5 * px * RING) / this.#r,
+    };
+    if (this.#route === undefined) this.#openBundler();
+    if (this.#route === "wait") this.#queued = spec;
+    else if (this.#route === "worker") this.#worker.postMessage(spec);
+    else this.#here(spec);
+  }
 
-     Past MAX_BUNDLE it is fog rather than a picture and is skipped: the fan
-     the chain lights is the thing to read at that density, and the resize
-     would otherwise pay a stroke for each of 125,000 curves. */
-  #bundle() {
-    if (this.#cache || !this.#words.length) return;
-    if (this.#chordCount > MAX_BUNDLE) return;
+  /* The same module the worker runs, against a canvas of this document's. What
+     a browser without OffscreenCanvas or Worker falls back to, and what
+     tools/check_web.mjs drives, so the fallback cannot drift from the fast
+     path. */
+  #here(spec) {
     const c = document.createElement("canvas");
-    c.width = this.#pw;
-    c.height = this.#ph;
+    c.width = spec.px;
+    c.height = spec.px;
     const g = c.getContext("2d");
     if (!g) return;
-    g.setTransform(this.#dpr, 0, 0, this.#dpr, 0, 0);
-    g.lineWidth = 0.5;
-    g.globalAlpha = this.#words.length > DENSE ? EDGE_ALPHA * 0.55 : EDGE_ALPHA;
-    const pull = this.#words.length > DENSE ? PULL_DENSE : PULL;
-    // Grouped by the source word's letter, which is the colour, so the stroke
-    // style is set 26 times rather than once per curve.
-    for (const L of this.#L.live) {
-      g.strokeStyle = this.#hue(L);
-      for (const i of this.#L.byHead[L]) {
-        for (const j of this.#L.byHead[this.#L.tail[i]]) {
-          if (j === i) continue;
-          g.beginPath();
-          this.#chord(g, i, j, pull);
-          g.stroke();
-        }
-      }
+    strokeBundle(g, spec);
+    this.#gotBundle({ id: spec.id, px: spec.px, bitmap: c });
+  }
+
+  /* A bundle that has landed, from either thread. A stale one is dropped: the
+     word set or the colours may have moved on while it was being drawn, and
+     the key is what says so.
+
+     The redraw is skipped where this thread built it, since the draw that
+     asked for it is still running and will blit it a line further down. From
+     the worker it is a frame of its own, which is what fades the picture in
+     under a disc that is already there. */
+  #gotBundle(m) {
+    if (!m.bitmap || m.id !== this.#asked) return;
+    this.#cache = m.bitmap;
+    this.#cachePx = m.px;
+    this.#cacheKey = m.id;
+    if (!this.#drawing) this.#draw();
+  }
+
+  /* Where the bundle gets built. Nothing is handed over, unlike the nested
+     disc — the worker makes its own canvas and transfers a bitmap back — so
+     there is no canvas that can only be given away once, and no reason to
+     leave the worker running when the element disconnects.
+
+     Opened when a bundle is first wanted rather than when the element
+     connects, since its module fetch would otherwise race the word file's for
+     a picture that cannot be drawn until that file has landed anyway. */
+  #openBundler() {
+    this.#route = "wait";
+    const settle = here => {
+      if (this.#route !== "wait") return;
+      clearTimeout(this.#floor);
+      this.#floor = 0;
+      this.#pending = null;
+      this.#route = here ? "main" : "worker";
+      const spec = this.#queued;
+      this.#queued = null;
+      if (!spec) return;
+      if (here) this.#here(spec);
+      else this.#worker.postMessage(spec);
+    };
+    if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined")
+      return settle(true);
+    let w;
+    try {
+      w = new Worker(new URL("./word-bundle-worker.js", import.meta.url), { type: "module" });
+    } catch {
+      return settle(true);
     }
-    this.#cache = c;
+    this.#pending = w;
+    w.onerror = () => {
+      w.terminate();
+      if (this.#route === "wait") return settle(true);
+      // One that answered and then threw: back to this thread, with the bundle
+      // that was in flight asked for again.
+      this.#route = "main";
+      this.#worker = null;
+      this.#asked = "";
+      this.#draw();
+    };
+    w.onmessage = ev => {
+      if (!ev.data.ready) return this.#gotBundle(ev.data);
+      this.#worker = w;
+      settle(false);
+    };
+    /* The deadline, started with the first bundle actually wanted rather than
+       with the worker's construction, which would spend it on the network and
+       read a slow link as a device with no worker. What it guards is a worker
+       that loads and never answers, and what it costs is a disc without its
+       picture for that long. */
+    this.#floor = setTimeout(() => {
+      this.#pending?.terminate();
+      settle(true);
+    }, WORKER_FLOOR);
   }
 
   /* The disc as it stands: the bundle, the fan out of the chain end, the chain
@@ -711,17 +871,21 @@ class WordDisc extends HTMLElement {
   #draw() {
     if (!this.#ready || !this.#pw) return;
     const t0 = performance.now();
-    this.#bundle();
+    this.#drawing = true;
+    this.#wantBundle();
+    this.#drawing = false;
     const g = this.#base.getContext("2d");
     g.setTransform(this.#dpr, 0, 0, this.#dpr, 0, 0);
     g.clearRect(0, 0, this.#pw / this.#dpr, this.#ph / this.#dpr);
 
     const live = this.#chain.length > 0;
     if (this.#cache) {
+      // The square holds its ring at RING of itself, so inverting that puts the
+      // bundle's ring on this one whatever size either was drawn at. That is
+      // the whole of what a resize costs now.
+      const side = this.#r / RING;
       g.globalAlpha = live ? BUNDLE_DIM : 1;
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      g.drawImage(this.#cache, 0, 0);
-      g.setTransform(this.#dpr, 0, 0, this.#dpr, 0, 0);
+      g.drawImage(this.#cache, this.#cx - side / 2, this.#cy - side / 2, side, side);
       g.globalAlpha = 1;
     }
 
@@ -868,6 +1032,26 @@ class WordDisc extends HTMLElement {
     this.#hub(g);
   }
 
+  /* How far the face puts ink above the baseline, measured once per font off
+     HUB_REF rather than off the name being drawn. A capital and an ascender,
+     because between them they reach the top of anything a name can hold, and
+     no descender, because what sits below the baseline hangs below the centre
+     rather than moving it. A context reporting no ink metrics falls back to
+     the proportions of a Latin line, which is wrong by a pixel at worst. */
+  #band(g) {
+    const held = this.#bands.get(g.font);
+    if (held !== undefined) return held;
+    const up = g.measureText(HUB_REF).actualBoundingBoxAscent;
+    const band = Number.isFinite(up) && up > 0 ? up : this.#fitPx(g) * HUB_RISE;
+    this.#bands.set(g.font, band);
+    return band;
+  }
+
+  // The size out of a font string, for the fallback above alone.
+  #fitPx(g) {
+    return parseFloat(/([\d.]+)px/.exec(g.font)?.[1]) || HUB_SIZES.at(-1);
+  }
+
   #fitted(g, text, r) {
     const key = `${r}|${text}`;
     const had = this.#fits.get(key);
@@ -910,10 +1094,7 @@ class WordDisc extends HTMLElement {
     g.textAlign = "center";
     // Alphabetic and placed by hand, because "middle" centres the em square
     // and the em square is not what you see: its descender space is empty for
-    // most words, so the type sits a pixel or two low. That is invisible at
-    // 12 px on a panel and reads as a halo hanging off the bottom of the name
-    // at 33 px over the bundle. Centring the ink instead costs one measure per
-    // line, which the fitted-label cache already pays for.
+    // most words, so the type sits a pixel or two low.
     g.textBaseline = "alphabetic";
     g.strokeStyle = this.#tok("--_ground", "#0c1112");
     // Round, so the halo follows the letterforms rather than throwing spikes
@@ -921,28 +1102,27 @@ class WordDisc extends HTMLElement {
     g.lineJoin = "round";
     g.lineWidth = Math.max(HALO_MIN, px * HALO);
 
-    // Where each line's ink starts and stops, either side of its baseline.
-    // A context that reports neither falls back to the proportions of the
-    // face, which is the shape of a Latin line and wrong by a pixel at worst.
-    const box = lines.map(line => {
-      const m = g.measureText(line);
-      const up = m.actualBoundingBoxAscent,
-        down = m.actualBoundingBoxDescent;
-      return Number.isFinite(up) && Number.isFinite(down)
-        ? { up, down }
-        : { up: px * 0.72, down: px * 0.2 };
-    });
-    const tall = box[0].up + (lines.length - 1) * lh + box.at(-1).down;
-    // The baseline of the first line, so the block's ink is centred on the hub
-    // and the hint below it takes its room off the top.
-    const first = this.#cy - tall / 2 - (way ? HINT_H / 2 : 0) + box[0].up;
+    /* The band the name is centred on. Measured off the face rather than off
+       the word, which is the whole point: the ink of "iris" stops at the dot
+       and the ink of "guppy" runs below the baseline, so centring each word's
+       own ink moved the name up and down as the pointer crossed the disc. The
+       band is the same for every word in a face, so the baseline is too, and
+       a descender now hangs below the centre the way it does in any line of
+       type instead of dragging the line up to meet it. */
+    const band = this.#band(g);
+    const tall = band + (lines.length - 1) * lh;
+    // The baseline of the first line, so the block is centred on the hub and
+    // the hint below it takes its room off the top.
+    const first = this.#cy - tall / 2 - (way ? HINT_H / 2 : 0) + band;
     for (const [k, line] of lines.entries()) g.strokeText(line, this.#cx, first + k * lh);
     g.fillStyle = ink;
     for (const [k, line] of lines.entries()) g.fillText(line, this.#cx, first + k * lh);
 
     if (!way) return;
-    // Under the name's ink rather than under its em box, for the same reason.
-    const y = first + (lines.length - 1) * lh + box.at(-1).down + HINT_PX;
+    // Off the last baseline and a notional descender, rather than off whatever
+    // the last line's own ink happened to reach, so the hint sits at one
+    // distance under every name and not lower under the ones ending in y.
+    const y = first + (lines.length - 1) * lh + px * HUB_DROP + HINT_PX;
     g.font = `${HUB_WEIGHT} ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
     g.lineWidth = Math.max(HALO_MIN, HINT_PX * HALO);
     g.strokeText("↑ back", this.#cx, y);
@@ -1155,7 +1335,12 @@ class WordDisc extends HTMLElement {
   repaint() {
     this.#toks.clear();
     this.#fits.clear();
-    this.#cache = null;
+    this.#bands.clear();
+    // The letter wheel is read off two custom properties, so a theme is a
+    // different bundle. The old one is kept on screen while the new one is
+    // drawn, since a moment of the wrong colours reads better than the picture
+    // going out and coming back.
+    this.#gen++;
     this.#draw();
     this.#overlay();
   }

@@ -29,7 +29,7 @@ The three selection commands share the filters that decide which words a categor
 
 `make -j` renders every category, one file each, so editing a module redraws all 37 and an untouched tree redraws none. `make clean` removes the output directory, `OUT=` moves it, and `CONFIG=` names a config file.
 
-`make web-dist` gathers everything a page needs to run either element into one flat directory, `out/web-dist` unless `DIST=` names another: the browser modules, the exported WordNet tree, and one file per category. The modules are found by glob rather than listed by name, so a site that embeds a disc copies the directory instead of keeping its own list of filenames in step with this one; the two harness pages stay behind, as the local pages a host replaces with its own markup.
+`make web-dist` gathers everything a page needs to run either element into one flat directory, `out/web-dist` unless `DIST=` names another: the browser modules, the exported WordNet tree, one file per category, and `embed.html`, a page holding one section per disc that asks for its data beside itself, so the directory can be copied whole and served from anywhere. Each section carries its own script, its own settings and its own height, and nothing on the page places one disc relative to the other, so a section can be lifted out and dropped wherever a host page wants it without bringing the other along. It is a page to serve as it stands and the markup to read when writing your own. The modules are found by glob rather than listed by name, so a site that embeds a disc copies the directory instead of keeping its own list of filenames in step with this one; the two harness pages stay behind, as the local pages a host replaces with its own markup.
 
 ## Outputs
 
@@ -47,9 +47,11 @@ The centre of the disc names whatever the pointer is on, and otherwise the word 
 
 The element takes one category file and draws every word in it, with a `limit` attribute to cap that at a count, where `build` draws 110 — the SVG can grow its canvas and shrink its type where the element has only the frame the page gave it. Past a few hundred words the labels stop fitting and are dropped, and the centre names what the pointer is on instead.
 
+Every chord the printed figure draws sits under the playable disc at any word count, so the largest categories keep their picture rather than going bare. It is built beside the page rather than in front of it, and a resize rescales the picture that is already there, so dragging the window edge does not stall on it.
+
 Where the window is wide enough for a column beside the disc, every word that could be played next is listed there in alphabetical order, reading left to right and then down, and clicking one plays it. The list is most useful on the large categories, which are drawn without labels, where it is the only place the moves can be read rather than picked out among the dots; the search suggestions take the same column while you are typing.
 
-`make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves both harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet and `/words.html` the word chain.
+`make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves the harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet, `/words.html` the word chain, and `/embed.html` a section apiece for the two of them, animal with every word drawn.
 
 ## Configuration
 

@@ -132,6 +132,12 @@ class Canvas extends El {
     // Where the text went, so a claim can be made about the halo sitting on
     // the letter it belongs to rather than beside it.
     this.text = { fill: [], stroke: [] };
+    // And where the bundle was blitted, since it is held in a square of its
+    // own and put back on the ring by inverting one fraction.
+    this.images = [];
+    // The colour each stroke went down in, in the order they were drawn, which
+    // is the only way to make a claim about z-order without rasterising.
+    this.inks = [];
     const both = what => {
       drew[what]++;
       this.drew[what]++;
@@ -158,7 +164,10 @@ class Canvas extends El {
       lineTo() {},
       fill() {},
       bezierCurveTo: () => both("curve"),
-      stroke: () => both("stroke"),
+      stroke: () => {
+        both("stroke");
+        this.inks.push(this._g.strokeStyle);
+      },
       arc: () => both("arc"),
       fillText: (t, x, y) => {
         both("fillText");
@@ -168,16 +177,23 @@ class Canvas extends El {
         both("strokeText");
         this.text.stroke.push({ t, x, y });
       },
-      drawImage: () => both("image"),
+      drawImage: (_img, ...box) => {
+        both("image");
+        this.images.push(box);
+      },
       measureText(text) {
         const px = parseFloat(/([\d.]+)px/.exec(this.font)?.[1]) || 10;
-        // The ink either side of the baseline as well as the width, since the
-        // hub centres on the ink and a context that reports neither takes a
-        // different path.
+        /* The ink either side of the baseline as well as the width, and it has
+           to depend on the letters: a real face puts "iris" between the dot
+           and the baseline and hangs "guppy" below it, which is what made the
+           hub's name move as the pointer crossed the disc. Reported flat, the
+           stub could not tell a fix from the bug. */
         return {
           width: text.length * PX * px,
-          actualBoundingBoxAscent: px * 0.72,
-          actualBoundingBoxDescent: px * 0.2,
+          // The dot on an i is in the tall class, since it is what the name
+          // moving under the pointer was first noticed on.
+          actualBoundingBoxAscent: px * (/[A-Zbdfhijklt]/.test(text) ? 0.72 : 0.52),
+          actualBoundingBoxDescent: px * (/[gjpqy]/.test(text) ? 0.2 : 0),
         };
       },
     };
@@ -227,7 +243,13 @@ globalThis.customElements = {
     REGISTRY.set(name, cls);
   },
 };
+// The callbacks are kept, so a test can resize the element the way a browser
+// does rather than reaching for a private method.
+const OBSERVERS = [];
 globalThis.ResizeObserver = class {
+  constructor(fn) {
+    OBSERVERS.push(fn);
+  }
   observe() {}
   disconnect() {}
 };
@@ -248,6 +270,8 @@ const MODULES = [
   "disc-search.js",
   "disc-worker.js",
   "hypernym-disc.js",
+  "word-bundle.js",
+  "word-bundle-worker.js",
   "word-chain.js",
   "word-disc.js",
   "word-layout.js",
@@ -750,6 +774,146 @@ check(
 );
 check(wordAt(L, turn, 2 * Math.PI - 0.001) === -1, "the gap before the top answered with a word");
 
+/* The resting bundle's own square. It is sized here rather than in the element
+   because a square that comes back below the ring it holds draws a blurred
+   bundle and nothing downstream can tell, and because the step is what makes a
+   resize a blit rather than a rebuild. */
+const {
+  bundle: strokeBundle,
+  curve: wordCurve,
+  BANDS,
+  KNEE,
+  RING,
+  MAX_PX,
+  square,
+  thin,
+} = await import(mod("word-bundle.js"));
+const ABC26 = "abcdefghijklmnopqrstuvwxyz";
+
+check(square(300, 2) * RING >= 300 * 2, `square(300, 2) holds a ring short of the radius asked`);
+check(
+  square(300, 2) === square(304, 2),
+  `four pixels of radius moved the square from ${square(300, 2)} to ${square(304, 2)}`,
+);
+check(square(4000, 2) === MAX_PX, `a huge disc asked for ${square(4000, 2)} rather than the cap`);
+check(square(10, 1) > 0, `a tiny disc sized its bundle at ${square(10, 1)}`);
+
+/* The stroke thinned by what the disc holds. An alpha of zero draws nothing
+   and one above the tuned value draws more ink than the value it was tuned at,
+   and the element could notice neither, which is why the rule is here. Written
+   down as the shape rather than the numbers, since FALL is a knob. */
+check(thin(0.11, KNEE) === 0.11, `at the knee the alpha moved to ${thin(0.11, KNEE)}`);
+check(thin(0.2, 1) === 0.2, `a sparse category was thinned to ${thin(0.2, 1)}`);
+/* animal, the densest the corpus has, against language, the densest the value
+   was ever exercised on. Thinner, and still ink rather than nothing. */
+const thinnest = thin(0.11, 96470);
+check(thinnest > 0 && thinnest < 0.11, `96,470 chords came back at ${thinnest}`);
+check(
+  thin(0.11, 96470) < thin(0.11, 24898),
+  `animal is not thinner than drug: ${thin(0.11, 96470)} against ${thin(0.11, 24898)}`,
+);
+/* Held above the floor the rasteriser has. Coverage for a half-pixel stroke is
+   already partial, so an alpha this side of a hundredth is a bundle that is
+   drawn and cannot be seen. */
+check(thinnest > 0.01, `the densest category draws at ${thinnest}, which is under the floor`);
+
+/* Every chord, stroked one at a time: batched into one path per letter the
+   alpha stops accumulating where curves overlap and the bundle reads flat. */
+const bundleCanvas = new Canvas();
+const strokes = strokeBundle(bundleCanvas.getContext("2d"), {
+  px: 512,
+  ang: L.ang,
+  byHead: L.byHead,
+  tail: L.tail,
+  live: L.live,
+  // A colour apiece rather than one for all 26, so the order they went down in
+  // can be read back off the stub.
+  colours: Array.from({ length: 26 }, (_, i) => `L${i}`),
+  pull: 0.32,
+  alpha: 0.2,
+  lineWidth: 1,
+});
+check(
+  strokes === wordChords(L) && bundleCanvas.drew.stroke === strokes,
+  `the bundle drew ${bundleCanvas.drew.stroke} strokes for ${wordChords(L)} chords`,
+);
+check(
+  bundleCanvas.drew.curve === strokes,
+  `${bundleCanvas.drew.curve} curves against ${strokes} strokes`,
+);
+check(typeof wordCurve === "function", "word-bundle.js exports no shared curve");
+
+/* The z-order. Drawn letter by letter, every chord leaving Z composited over
+   every chord leaving A and the fringe read as the back of the alphabet. Each
+   letter is cut into BANDS slices now, so what is asserted is that no letter's
+   chords are a contiguous run: a wedge whose chords all sit together is a wedge
+   sitting under or over a neighbour everywhere they cross. Written down as a
+   spread rather than an exact schedule, since that moves whenever BANDS does.
+
+   A word set large enough for the bands to bite, since 13 chords over 5 wedges
+   cannot show an interleave however it is ordered. */
+const SPREAD = Array.from({ length: 520 }, (_, i) => {
+  const a = ABC26[i % 26];
+  return a + ABC26[(i >> 2) % 26] + ABC26[(i * 5 + 1) % 26];
+});
+const spreadL = wordLayout(SPREAD);
+const spreadCanvas = new Canvas();
+const spreadStrokes = strokeBundle(spreadCanvas.getContext("2d"), {
+  px: 512,
+  ang: spreadL.ang,
+  byHead: spreadL.byHead,
+  tail: spreadL.tail,
+  live: spreadL.live,
+  colours: Array.from({ length: 26 }, (_, i) => `L${i}`),
+  pull: 0.2,
+  alpha: 0.11,
+  lineWidth: 1,
+});
+check(
+  spreadStrokes === wordChords(spreadL),
+  `${spreadStrokes} strokes for ${wordChords(spreadL)} chords once the bands cut them up`,
+);
+
+const inks = spreadCanvas.inks;
+const seen = new Map();
+inks.forEach((ink, k) => {
+  const held = seen.get(ink) ?? { first: k, last: k, n: 0 };
+  held.last = k;
+  held.n++;
+  seen.set(ink, held);
+});
+/* Every wedge with a slice to put in each band reaches both ends of the stack.
+   Before the bands the first letter drawn ended before the second began, so
+   `last` for A was under its own count rather than near the top. */
+for (const [ink, held] of seen) {
+  if (held.n < BANDS) continue;
+  check(
+    held.first < inks.length * 0.1 && held.last > inks.length * 0.9,
+    `${ink} runs from ${held.first} to ${held.last} of ${inks.length}, so it is not spread through the stack`,
+  );
+}
+check(seen.size > 1, `the spread set drew in ${seen.size} colours, so there is no order to check`);
+/* And the bands run both ways. Spreading the slices is not enough on its own:
+   drawn in the same order in every band, a letter is still under its neighbour
+   at every crossing. So a pair has to appear in both orders — which rotating
+   the order within a band does not give, since that keeps the cycle and only
+   moves where it starts. */
+const pairs = new Set();
+for (let k = 1; k < inks.length; k++)
+  if (inks[k] !== inks[k - 1]) pairs.add(`${inks[k - 1]}>${inks[k]}`);
+check(
+  [...pairs].some(p => pairs.has(p.split(">").reverse().join(">"))),
+  "no two letters were drawn in both orders, so one is under the other at every crossing",
+);
+/* And the batching survived it: the colour is what canvas has to parse, so a
+   band-by-band interleave has to stay far short of a change per stroke. */
+let changes = 0;
+for (let k = 1; k < inks.length; k++) if (inks[k] !== inks[k - 1]) changes++;
+check(
+  changes <= BANDS * 26 && changes < inks.length / 4,
+  `${changes} colour changes over ${inks.length} strokes, against a ceiling of ${BANDS * 26}`,
+);
+
 /* And <word-disc> itself, driven. Every check above this runs a module the
    element calls; none of them constructs it, and a class body is where the
    things that only fail on construction live — a field initialiser naming a
@@ -767,6 +931,10 @@ check(WordDisc !== undefined, "word-disc never reached the registry");
 const fire = (el, type, ev) => {
   for (const fn of el._on.get(type) ?? []) fn(ev);
 };
+
+// The tally is shared, and the bundle above drew into it. Zeroed here so the
+// counts below are the element's own.
+for (const k of Object.keys(drew)) drew[k] = 0;
 
 const disc = new WordDisc();
 disc.connectedCallback();
@@ -793,6 +961,10 @@ check(disc.words.join("|") === WORDS.join("|"), `the element drew ${disc.words}`
 check(!disc.hasAttribute("limit"), "the driven element was given a limit");
 
 check(disc.stats.bundle, "8 words did not get a resting bundle");
+/* There is no Worker here, so what is driven below is the fallback — the same
+   word-bundle.js the worker runs, against a canvas of this document's, which
+   is what stops the two drifting. */
+check(disc.stats.thread === "main", `the stub found a ${disc.stats.thread} to build on`);
 check(drew.image === 1, `the bundle was blitted ${drew.image} times, not once`);
 check(drew.curve === wordChords(L), `${drew.curve} curves for ${wordChords(L)} chords`);
 check(drew.fillText > WORDS.length, "fewer labels were drawn than there are words");
@@ -824,24 +996,44 @@ check(
     ),
   "the halo and the letters it belongs to were drawn at different points",
 );
-/* And the block is centred on its ink rather than on the em square, whose
+/* And the block is centred on the face rather than on the em square, whose
    descender space is empty for most words and put the type a pixel or two
-   low — invisible at 12px on a panel, and a halo hanging off the bottom of
-   the name at 33px over the bundle. */
+   low, and rather than on the word's own ink, which moved the name up and
+   down as the pointer crossed the disc: "iris" stops at the dot and "guppy"
+   runs below the baseline, so centring each word's ink gave each word its own
+   baseline. */
 // Nothing hovered and no chain, so the hub names the category on one line
 // and draws no way back under it.
 check(
   over.text.fill.length === 1 && over.text.fill[0].t === "test",
   `the hub drew ${JSON.stringify(over.text.fill.map(t => t.t))}`,
 );
-const up = 0.72,
-  down = 0.2;
 const size = +/([\d.]+)px/.exec(over._g.font)[1];
-const centre = over.text.fill[0].y - up * size + ((up + down) * size) / 2;
+// The band the hub measures off the face, which the stub reports for the
+// reference string and for any name holding a capital or an ascender.
+const band = 0.72 * size;
+const centre = over.text.fill[0].y - band / 2;
 check(
   Math.abs(centre - BOX / 2) < 0.01,
-  `the name's ink is centred at ${centre.toFixed(2)}, not on the hub at ${BOX / 2}`,
+  `the name sits on a band centred at ${centre.toFixed(2)}, not on the hub at ${BOX / 2}`,
 );
+
+/* One baseline for every name in a face, whatever ink the letters have. Three
+   shapes: a dot and no descender, a descender and no ascender, and neither. */
+const baselines = new Map();
+for (const name of ["iris", "guppy", "cow", "test"]) {
+  over.text.fill.length = 0;
+  disc.data = { category: name, words: WORDS, zipf: WORDS.map((_, i) => 8 - i) };
+  const drawn = over.text.fill.filter(t => t.t === name);
+  check(drawn.length === 1, `the hub drew ${name} ${drawn.length} times`);
+  if (drawn.length === 1) baselines.set(name, drawn[0].y);
+}
+check(
+  new Set(baselines.values()).size === 1,
+  `the name moved with its letters: ${[...baselines].map(([n, y]) => `${n} at ${y.toFixed(2)}`).join(", ")}`,
+);
+// Back to the category the checks below read.
+disc.data = { category: "test", words: WORDS, zipf: WORDS.map((_, i) => 8 - i) };
 
 /* Where the element puts word i, off the sizing it solved for this square.
    Computed rather than written down, so a hit is a statement about the
@@ -854,6 +1046,29 @@ const spot = w => {
     offsetY: BOX / 2 - Math.sin(L.ang[i]) * geo.r,
   };
 };
+
+/* The bundle's square, put back on that ring. RING is the fraction of the
+   square the ring sits at and the blit inverts it, so a factor wrong in either
+   draws the whole picture at the wrong scale — which no count of strokes or
+   blits would notice. */
+const blit = shadow.querySelector(".base").images[0];
+check(blit?.length === 4, `the bundle was blitted with ${blit?.length ?? 0} placing arguments`);
+check(
+  Math.abs(blit[2] * RING - geo.r) < 0.01 && Math.abs(blit[3] * RING - geo.r) < 0.01,
+  `the blitted square holds a ring of ${(blit[2] * RING).toFixed(1)} against the disc's ${geo.r.toFixed(1)}`,
+);
+check(
+  Math.abs(blit[0] + blit[2] / 2 - BOX / 2) < 0.01 &&
+    Math.abs(blit[1] + blit[3] / 2 - BOX / 2) < 0.01,
+  "the bundle was blitted off the centre the dots are placed around",
+);
+/* And drawn at the resolution it is shown at, since a square short of the ring
+   is blitted up and reads as a blurred picture that nothing else would catch.
+   DPR is 2 here, so the ring wants twice its radius in the square. */
+check(
+  disc.stats.bundlePx * RING >= geo.r * 2,
+  `the bundle is held at ${disc.stats.bundlePx} square for a ring wanting ${(geo.r * 2) / RING}`,
+);
 // A browser sends the move before the click, and the readout follows the
 // pointer, so a click with no move under it would be testing a state no user
 // can reach.
@@ -1002,9 +1217,9 @@ disc.play(1);
 check(gloss.innerHTML.includes("every A word is used"), `a spent wedge read as ${gloss.innerHTML}`);
 check(!disc.play(0), "a word already used was played once its wedge ran dry");
 
-/* limit 0 is every word rather than none, and past the bundle's ceiling the
-   fan is what is left to read. The browser calls this on its own; here it is
-   called by hand, which is the same entry point. */
+/* limit 0 is every word rather than none, and a category that large keeps its
+   bundle now that the bundle is built off the frame's size. The browser calls
+   this on its own; here it is called by hand, which is the same entry point. */
 disc.clear();
 // Spread over the alphabet at both ends, since 900 words that all start with
 // W and end with X have no chords between them at all and would leave the
@@ -1055,16 +1270,68 @@ check(
 disc.setAttribute("limit", "0");
 disc.attributeChangedCallback("limit", null, "0");
 check(disc.stats.words === CROWD.length, `limit 0 drew ${disc.stats.words} of ${CROWD.length}`);
+/* The ceiling that used to sit at 24,000 and cost the seven largest categories
+   their picture. animal holds 96,470 chords at no limit and the crowd below
+   holds more than 24,000, so this is the case that lost the bundle before. */
 check(
-  disc.stats.chords > 24000 && !disc.stats.bundle,
+  disc.stats.chords > 24000 && disc.stats.bundle,
   `900 words hold ${disc.stats.chords} chords and the bundle is ${disc.stats.bundle}`,
 );
 check(disc.stats.labelPx === 0, `900 words in a ${BOX}px square kept their labels`);
+
+/* A resize does not rebuild it. The bundle is held in a square of its own, so
+   a new radius inside the same size step is a scaled blit and nothing else,
+   which is the whole reason the ceiling could be lifted. A few pixels of stage
+   cannot cross a step, since one is 256 device pixels of square. The element
+   is resized through its own observer rather than a private method, and the
+   wait is what the trailing timer holds a drag back by. */
+await new Promise(r => setTimeout(r, 80));
+drew.curve = 0;
+drew.image = 0;
+shadow.querySelector(".stage")._rect = { width: BOX - 4, height: BOX - 4 };
+for (const fn of OBSERVERS) fn();
+check(drew.curve === 0, `a resize restroked ${drew.curve} chords`);
+check(drew.image > 0, "the bundle was not blitted after a resize");
+check(disc.stats.bundle, "the bundle went out over a resize");
+
 disc.setAttribute("limit", "40");
 disc.attributeChangedCallback("limit", "0", "40");
 check(disc.stats.words === 40, `limit 40 drew ${disc.stats.words}`);
 check(disc.stats.bundle && disc.stats.labelPx > 0, "40 words lost the bundle or the labels");
 disc.repaint();
+
+/* embed.html is the one page `make web-dist` stages, and it names its modules,
+   its elements and its data files by hand where the target finds the modules by
+   glob. So the glob's own guarantee stops at the directory's edge: a module
+   renamed here would be copied under its new name and left unreferenced by the
+   page, with nothing to say so. This is what says so. Only the names are
+   checked — nothing here renders the markup. */
+const { existsSync, readFileSync } = await import("node:fs");
+const page = readFileSync(new URL("../web/embed.html", import.meta.url), "utf8");
+for (const [, src] of page.matchAll(/(?:src|names-src|glosses-src)="([^"]+)"/g)) {
+  if (src.endsWith(".js"))
+    check(
+      existsSync(new URL(`../web/${src}`, import.meta.url)),
+      `embed.html names a missing ${src}`,
+    );
+  else
+    check(
+      /^(wordnet-(tree\.json|names\.txt|glosses\.txt)|words-[a-z-]+\.json)$/.test(src),
+      `embed.html asks for ${src}, which web-dist does not stage flat beside it`,
+    );
+}
+/* Each element stands alone on that page, so a host can lift one section and
+   drop it anywhere without bringing the other. What can be checked here is that
+   each is there and carries its own script: a section whose module is loaded
+   somewhere else on the page cannot be lifted out on its own, and that is the
+   one way the two could quietly become a pair again. */
+for (const tag of ["hypernym-disc", "word-disc"]) {
+  check(page.includes(`<${tag}`), `embed.html carries no <${tag}>`);
+  check(
+    page.includes(`src="${tag}.js"`),
+    `embed.html does not load ${tag}.js, so its section cannot be lifted out alone`,
+  );
+}
 
 if (problems.length) {
   for (const said of problems) console.error(`web: ${said}`);

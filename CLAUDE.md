@@ -425,13 +425,39 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - `make web-dist` stages everything a page needs to run `<hypernym-disc>` flat
   in one directory, `out/web-dist` unless `DIST=` names another, which `make
   clean` removes with the rest of `out/`. Its contents are every `web/*.js`
-  module, nine today, the three exported data files and the 38 word files. The
+  module, eleven today, `web/embed.html`, the three exported data files and the
+  38 word files, 53 in all. The
   module list is a glob rather than names written out, which is the whole point
   of the target: a consuming site copies the directory instead of keeping its
-  own list of filenames in step with this one, where a tenth module added here
-  leaves that site running nine of ten and nothing says so. The two `.html`
-  files are left out, since they are the local harnesses and a host page
-  carries its own markup. The
+  own list of filenames in step with this one, where a twelfth module added here
+  leaves that site running eleven of twelve and nothing says so. `index.html`
+  and `words.html` are left out, since they are the local harnesses and a host
+  page carries its own markup, and `embed.html` is the exception because it is
+  written for this directory: it asks for `wordnet-tree.json` and
+  `words-animal.json` beside itself rather than at `/out/…` the way the two
+  harnesses do, because the directory is flat and a host copies it whole and
+  serves it from wherever it likes. So it is both a page a host can serve as it
+  stands and the markup a host reads to write its own. It is not a layout. The
+  two elements sit in ordinary document flow, one `<section>` after the other
+  down a single column, and each section carries its own
+  `<script type="module">`, its own data attributes, its own height and its own
+  custom properties, so either can be lifted out and dropped anywhere on a host
+  page without bringing the other and neither element needs the other to exist.
+  Nothing there positions one relative to the other, since a page that did would
+  be the one thing a host embedding a single disc cannot use. The height is
+  given on the element, because `fit` makes an element fill the box it is handed
+  and a page that guesses at its own chrome guesses wrong, so that number is the
+  host's; the page says in a line that dropping `fit` instead makes the element
+  a square of its own width, which is what to do where the height cannot be
+  named. Its word disc is animal at no limit, all 1,582 words and 96,470 chords,
+  which is the case the bundle work was for, and a page carrying both elements
+  is where two threads with a worker apiece are exercised — which is also why
+  embedding one does not depend on embedding the other. `tools/serve.py`'s
+  `translate_path` looks a top-level name that is not in `web/` up in `out/`
+  before giving up, which is what lets that one page run unchanged under `make
+  serve` as well as out of the dist directory rather than carrying two sets of
+  paths. The Makefile names the page in `EMBED`
+  beside `MODULES`, so `$(DIST)` takes it as a prerequisite and copies it. The
   directory is emptied and refilled rather than copied into, and `web/.` is a
   prerequisite alongside the modules, because a directory's timestamp moves
   when a file enters or leaves it and that is the only thing that catches a
@@ -456,12 +482,12 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   whatever frame the host gave it and drops the labels instead. A count is a
   thing to ask for on a disc that cannot grow. Measured uncapped in a 720 px
   frame, 19 of the 37 categories keep their labels, down to building at 207
-  words and 5.6 px, and 30 keep the resting bundle. The 7 that lose it are drug,
-  body-part, city, plant, job, food and animal, from 750 words and 24,898 chords
-  up to 1,582 and 96,470, past `MAX_BUNDLE`, where the bundle reads as fog
-  rather than as a picture. Where the labels go, the hub names what the pointer
-  is on and the search box reaches a word by name, so the disc is still played
-  the same way.
+  words and 5.6 px, and all 37 keep the resting bundle, animal's 96,470 chords
+  included. The 7 that drop their labels are drug, body-part, city, plant, job,
+  food and animal, from 750 words and 24,898 chords up to 1,582 and 96,470,
+  which used to be past `MAX_BUNDLE` too. Where the labels go, the hub names
+  what the pointer is on and the search box reaches a word by name, so the disc
+  is still played the same way.
 - Every word that could be played next is listed in the column beside the disc,
   under the search box, where nothing was drawn before. The suggestions only
   take that room while the box has something in it, and that is the rule between
@@ -562,13 +588,123 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   discs read the same letter wheel and `<word-disc>` needs none of the rest of
   that 405-line Painter. `disc-paint.js` re-exports `TAU`, so its import sites
   and `hypernym-disc.js`'s are unchanged.
-- The resting bundle is every chord the SVG draws, cached to an offscreen canvas
-  once per size and blitted per frame, dimmed to 0.22 once a chain is being
-  built. It is a stroke per chord rather than one path per letter, because the
-  alpha has to accumulate where curves overlap the way it does in the figure;
-  batched into one path a bundle composites once and reads flat. Past 24,000
-  chords it is skipped — animal at `limit 0` holds 96,470, which is fog rather
-  than a picture and would cost a stroke each on every frame of a resize.
+- The resting bundle is every chord the SVG draws, held in a square of its own
+  rather than in the frame's canvas and blitted per frame, dimmed to 0.22 once a
+  chain is being built. It is a stroke per chord rather than one path per
+  letter, because the alpha has to accumulate where curves overlap the way it
+  does in the figure; batched into one path a bundle composites once and reads
+  flat. `web/word-bundle.js` holds the three parts with no DOM in them: `curve`,
+  the chord cubic, `bundle`, the picture stroke by stroke, and `square`, the
+  sizing. The ring sits at `RING` of that square, 0.496, and the element inverts
+  that to blit — `side = r / RING`, centred on the disc — so a resize is a
+  scaled `drawImage` rather than a rebuild. The square is `(r * dpr) / RING`
+  rounded up to `STEP`, 256 device pixels, and capped at `MAX_PX`, 2,048, which
+  is 16.8 MB of bitmap; a disc larger than that is blitted up. The step is what
+  makes a drag cross a size boundary a few times rather than rebuild on every
+  frame. `curve` is shared: the element draws its fan and its chain through the
+  same function the bundle strokes with, so the resting picture and the live one
+  cannot be drawn to different shapes.
+- The bundle is drawn band by band rather than letter by letter. Alphabetically,
+  every chord leaving Z composited over every chord leaving A and the fringe
+  read as the back of the alphabet. `bundle` cuts each letter into `BANDS`
+  slices, 64, each sized to that letter's own share of its chords, so a wedge of
+  12 chords is spread through the stack as widely as one of 10,000 and every
+  letter reaches both ends of it. Spreading alone was not enough: drawn in the
+  same order within every band, a letter still sits under its neighbour at every
+  crossing, and rotating the order per band keeps that cycle and only moves
+  where it starts, so A still went down before B in 25 bands of 26. The bands
+  run alternately forwards and backwards, which puts every pair one way in the
+  even bands and the other way in the odd ones, and joins each band to the next
+  on the same letter, 1,600 colour changes rather than 1,663 over a
+  10,400-chord test set. Nothing is shuffled and no seed is drawn: the order is
+  fixed by the word set alone, so two builds of the same disc composite
+  identically and neither a resize nor a theme change can make the picture
+  shimmer, which a random permutation would, since the bundle is rebuilt
+  whenever the square or the colours move. 64 is where the two costs meet. The
+  colour is what canvas has to parse, and a letter drawn in one run sets it 26
+  times where a per-chord shuffle would set it once per stroke, 96,470 times on
+  animal; band by band the ceiling is 26 × 64 = 1,664 whatever the category, a
+  rounding error against animal's strokes, and a category small enough for that
+  ceiling to be a large share of its own strokes has nothing expensive to share.
+  It is fine enough to matter as well, cutting animal's busiest wedge into
+  slices 8 chords deep. The chords are still never listed out. A cursor per
+  letter carries `at` and `to` across the bands so each one resumes where the
+  last stopped, since materialising animal's 96,470 edges is what `graph.py`
+  exists to avoid.
+- The alpha is thinned by the chord count. It accumulates where curves overlap,
+  which is what gives the bundle its shape, so a category with eight times the
+  chords lays eight times the ink into the same disc and the middle, where every
+  long chord is bowed through, floods: at the 0.11 the dense categories are drawn
+  in, a pixel crossed by 26 chords is 95% opaque. That 0.11 was tuned against
+  bundles that were never dense, since the old ceiling stopped anything past
+  24,000 chords being drawn at all and the densest ever actually drawn was
+  language's 11,249. So `thin(alpha, chords)` returns the alpha unchanged at or
+  below `KNEE`, 12,000 and just above that figure, and `alpha * (KNEE / chords)
+  ** FALL` above it, with `FALL` at 0.7; `word-disc.js` calls it on the tuned
+  value it already computed. Over the 37 categories 30 come out exactly
+  unchanged, the knee not having moved, and the seven the ceiling used to refuse
+  are thinned, animal 0.110 to 0.026, food to 0.037, job to 0.040, plant to
+  0.042, city to 0.050, body-part to 0.051 and drug to 0.066. 0.7 is the
+  compromise between two wrong answers, the square root having been the first
+  guess and still reading thick at the top of the range. Holding the ink per
+  pixel level wants the alpha to fall as 1/chords,
+  which takes animal to 0.013 and rubs the picture out, and leaving it flat is
+  what floods. `FALL` is the knob if the fringe still reads thick, and it is an
+  exponent rather than a second constant because the knee is where the falloff
+  has to start whatever its steepness. It lives in `word-bundle.js` rather than
+  in the element for the reason `solve` and `square` do: an alpha that comes back
+  at zero draws nothing and one above the tuned value draws more ink than that
+  value was tuned at, and the element could notice neither. `check_web.mjs`
+  asserts the shape rather than the numbers — unchanged at the knee, unchanged
+  for a sparse category, animal thinner than drug, and animal still above a
+  hundredth, since a half-pixel stroke is already partially covered and an alpha
+  below that is a bundle that is drawn and cannot be seen.
+- The build being once per word set rather than once per size, and off the main
+  thread, is why `MAX_BUNDLE` stands at 200,000 rather than 24,000. The old
+  ceiling cost the seven largest categories their picture at `limit 0`: animal
+  holds 96,470 chords, food 57,320, job 50,275, plant 48,033, city 36,693,
+  body-part 35,732 and drug 24,898. Chords go as the square of the words, so
+  200,000 draws every category the tool ships at no limit and refuses a list
+  half again as large. It is a guard against a word list nothing here has rather
+  than a judgement about when a bundle stops reading as a picture.
+- `word-bundle-worker.js` is its own worker rather than `disc-worker.js`, for
+  two reasons. That one is handed the nested disc's canvas through
+  `transferControlToOffscreen` and holds it for the life of the page, so it can
+  serve one element and no other; and the two jobs are the wrong pair to queue
+  behind each other, since the nested disc paints per frame where a bundle is up
+  to 96,470 strokes in one go. A page carrying both elements gets two threads,
+  which is the count it wants. This one owns nothing between messages — it makes
+  its own `OffscreenCanvas` and transfers an `ImageBitmap` back rather than being
+  handed a canvas — so it is terminated when the element disconnects, where
+  `disc-worker.js` must not be, and there is nothing that can only be given away
+  once. A page holding several word discs could share one instance; they get one
+  apiece instead, so two discs build in parallel rather than in turn. It is
+  opened when a bundle is first wanted rather than when the element connects,
+  since its module fetch would otherwise race the word file's for a picture that
+  cannot be drawn until that file lands. The `ready` handshake and the 400 ms
+  `WORKER_FLOOR`, timed from the first bundle actually wanted rather than from
+  the worker's construction, are the nested disc's and are kept for the same
+  reasons.
+- The held bitmap goes on being blitted, stretched to the new radius, until a
+  newer one lands, so a rebuild has no blank in it. A word-set change is the
+  exception and drops it, since those words are no longer on the disc. A theme
+  change keeps it: the letter wheel comes off two custom properties, and a
+  moment of the old colours reads better than the picture going out and coming
+  back. The cache is keyed on a generation counter, bumped by a word set or a
+  theme, and on the size step. `stats`, and so the `word-render` event, carries
+  `bundlePx`, the square the bundle is held at, and `thread`, "worker" or
+  "main".
+- `check_web.mjs` covers all of it. `square` is asserted directly, because a
+  square short of the ring it holds draws a blurred bundle and nothing
+  downstream can tell — the same argument `solve` is held to in
+  `word-layout.js`. The blit's inversion of `RING` is asserted against the
+  geometry the click test already computes, since a factor wrong in either draws
+  the whole picture at the wrong scale and no count of strokes or blits would
+  notice; reversing it fails the check. A four-pixel resize restrokes nothing
+  where a two-hundred-pixel one restrokes 31,084, which is what says a resize is
+  a blit. The 900-word crowd keeps the bundle it used to lose. The
+  `ResizeObserver` stub keeps its callbacks, so a resize is driven the way a
+  browser drives it rather than through a private method.
 - The label size is solved rather than set, the same equation as `_wanted_inches`
   and `_disc_limit` turned round: there the canvas grows until adjacent labels
   clear each other, here the canvas is whatever the host gave, so the type takes
@@ -594,10 +730,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   at the worst and 183 of 449 in animal, and 100 to 156 of them come within 0.15
   of the ring's radius of dead centre. So the text carries its own ground
   instead. It is stroked under the fill in `--disc-ground`, at a line width of
-  the type size times 0.16 and never under 3 px, with a round join so the halo
+  the type size times 0.16 and never under 2 px, with a round join so the halo
   follows the letterforms rather than throwing spikes off their corners. The
   only thing it hides is the shape of its own letters. At 0.3 the stroke was 10
-  px on a 33 px name, which merged the letters into one slab and read as a shape
+  px on a 33 px name, the size the ladder used to top out at, which merged the
+  letters into one slab and read as a shape
   behind the word rather than as ground around it; 0.16 leaves 2.6 px clear of a
   glyph at that size, against chords half a pixel wide. A stroke is centred on
   the glyph outline, so the halo cannot sit off to one side of the letter it
@@ -605,14 +742,26 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   the em square: `textBaseline: "middle"` centres a box whose descender space is
   empty for most words, so the type sat a pixel or two low — invisible at 12 px
   on a panel, and a halo hanging off the bottom of the name at 33 px over the
-  bundle. The hub now places its baselines by hand from
-  `actualBoundingBoxAscent` and `actualBoundingBoxDescent`, so what is centred
-  is the ink, and a context reporting neither falls back to the proportions of a
-  Latin line. With no outline drawn, the "↑ back" hint and the pointer cursor
-  are what mark the hub as clickable; its radius is unchanged.
+  bundle. `textBaseline` is alphabetic and the hub places its baselines by hand
+  for that reason. What they are centred on is a band measured off the face
+  rather than off the word: centring each line on its own
+  `actualBoundingBoxAscent` and `actualBoundingBoxDescent` gave every word its
+  own baseline, so "iris" stopped at the dot and sat lower where "guppy" ran
+  below the baseline and sat higher, and the name moved up and down as the
+  pointer crossed the disc. The band is `HUB_REF`, the string "Hd", a capital and
+  an ascender, which between them reach the top of anything a name can hold, and
+  no descender, since what sits below the baseline should hang below the centre
+  rather than move it. It is measured once per font and cached in `#bands` beside
+  `#fits`, cleared with it on a resize or a restyle, either of which can change
+  the face. `HUB_RISE` and `HUB_DROP`, 0.72 and 0.2, are the proportions of a
+  Latin line, used where a context reports no ink metrics and to leave the "↑
+  back" hint its room under a name that may or may not end in a descender, which
+  is what used to put the hint lower under those. With no outline drawn, that
+  hint and the pointer cursor are what mark the hub as clickable; its radius is
+  unchanged.
 - `disc-label.js`'s `fit` takes an optional size ladder and weight and defaults
   to what it had, so `<hypernym-disc>` is untouched at 12 down to 8 px and weight
-  500, and `<word-disc>` asks for 33 down to 12 at 700. Its hub is the larger of
+  500, and `<word-disc>` asks for 16 down to 8 at 700. Its hub is the larger of
   the two and the name is the only thing in it, where the nested disc's hub
   shares the middle with a ring of its own children. A larger ladder on its own
   made the long-word categories *worse*: with the back hint showing, disease
@@ -626,10 +775,17 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   name went, which was free, since the space is empty now and the name carries
   its own ground. `HUB_MAX` still caps it, and the dots are hit-tested from 0.62
   of the ring outwards, so there is a band between the hub and the innermost
-  word where a click means neither. Measured over all 37 categories at the
-  default limit in a 720 px frame, with the back hint showing,
-  the mean type in the middle is 1.50 times what it was at worst and 1.64 at
-  best, and animal and element take the full 33 px on every word. The "↑ back"
+  word where a click means neither. `HUB_SIZES` topped out at 33 when the panel
+  went and the room it had been taking came free, and taking that room was the
+  mistake: set that large the name is the figure rather than a label on it, and
+  the figure is the disc, whose long chords cross in the middle the name sits
+  over. It runs 16 down to 8 now, and it is the weight rather than the size that
+  sets the name apart, since `disc-label.js`'s own ladder tops out at 12 and this
+  one at 16. Legibility over the bundle is the halo's work rather than the size's.
+  `HALO_MIN` went from 3 px to 2 as a consequence: against a ladder topping out at
+  16 a 3 px floor would bind at every rung and `HALO` would never be read, where
+  at 2 the fraction rules the three rungs a real disc uses and the floor rules the
+  two degraded ones. The "↑ back"
   hint stays at 11 px, so the hierarchy under the name is unchanged, and the
   ladder keeps the two low rungs the shorter one ended on, which no disc of a
   usable size reaches: they are there so a frame too small for the hub to mean
@@ -685,8 +841,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
     web/word-disc.js               the word chain element
     web/word-layout.js             its wedge placement and sizing, no DOM
     web/word-chain.js              the chain and the repeat rule, no DOM
+    web/word-bundle.js             the resting bundle and its square, no DOM
+    web/word-bundle-worker.js      builds it off the main thread
     web/disc-colour.js             TAU and hsv, read by both discs
     web/words.html                 the word disc's harness, with a picker
+    web/embed.html                 a section per disc, the one page web-dist ships
     tools/export_tree.py           writes the tree, its names and its glosses
     tools/export_words.py          writes a file per category and the index
     tools/serve.py                 serves web/ and reloads it on save
@@ -720,6 +879,11 @@ than `--target` words relaxes from `--min-zipf` down its own frequency order to
 WordNet is a lexical database, not a game word list, so residue survives the
 filters in `lexicon.py` ("entire" and "royal" are genuine WordNet animal terms).
 Tighten via `--min-dominance` / `--max-rank`, not by adding a stop-list.
+
+The resting bundle's alpha is thinned above 12,000 chords by the count raised to
+0.7, which takes animal from 0.110 to 0.026. Whether that exponent is the right
+one has not been looked at, since there is no browser here to look in; `make
+serve` is where to find out, and `FALL` in `word-bundle.js` is the knob.
 
 ## Checks
 
@@ -788,11 +952,43 @@ draw and measures text off the font size it was set, both templates clone the
 same markup so one fragment serves either element, and the points a click is
 fired at are computed from `word-layout.js`, which makes a hit a statement about
 the element agreeing with the layout. The stub's `measureText` reports ink
-metrics as well as a width, so the check can assert that every haloed line is
-stroked and filled at one point — which is what says the halo sits on its own
-letters — and that the name's ink is centred on the hub rather than its em box.
+metrics as well as a width, and reports them off the letters — a taller ascent
+for a capital, an ascender or a dotted i, a descent only for a descender —
+because reported flat it could not tell the fix from the bug. So the check
+asserts that every haloed line is stroked and filled at one point, which is what
+says the halo sits on its own letters, that the reference band is centred on the
+hub, and that "iris", "guppy", "cow" and "test" all come back on one baseline.
 The assertions were mutation-tested: reversing the fan sort, dropping the hit
-test's upper neighbour, and removing the label floor each fail it.
+test's upper neighbour, and removing the label floor each fail it, and restoring
+the per-word measurement fails the baseline one with iris and test 1.6 px below
+guppy and cow, the reported symptom exactly.
+
+The bundle's z-order is asserted over a synthetic set of 520 words and 10,400
+chords, read off a stub that records the colour each stroke went down in, which
+is the only way to make a claim about z-order without rasterising. Every letter
+holding at least `BANDS` chords starts in the first tenth of the stack and ends
+in the last tenth, which is what says its chords are not a contiguous run; some
+pair of letters is drawn in both orders, which is what the alternation buys and
+what rotating the order per band would not give; and the colour changes stay
+under 26 × `BANDS` and under a quarter of the strokes, so the batching survived
+the interleave. All three were mutation-tested too: collapsing `BANDS` to 1
+reproduces the original bug exactly, running letter A from stroke 0 to stroke
+399 of 10,400, and turning the alternation off fails the second.
+
+A last block reads `web/embed.html` and holds it to the directory it ships in,
+since `web-dist` finds its modules by glob where that page names its modules,
+its two elements and its data files by hand, so the glob's guarantee stops at
+the directory's edge: a module renamed here would be copied under its new name
+and left unreferenced by the page, with nothing to say so. It asserts that every
+`.js` the page names exists in `web/`, that every data file it asks for is one
+`web-dist` actually stages flat beside it — `wordnet-tree.json`,
+`wordnet-names.txt`, `wordnet-glosses.txt` and `words-<category>.json` — that
+both `<hypernym-disc>` and `<word-disc>` are on the page, and that each one's
+own script is named there, since a section whose module is loaded elsewhere
+could not be lifted out on its own and that is the one way the two could quietly
+become a pair again. Only the names are checked, since nothing renders the
+markup, which is the limit this section already states about the CSS; renaming
+`word-disc.js` in the page fails it.
 
 Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
 `src/` on the path, and the tree is clean under it; the pyright CLI is not in

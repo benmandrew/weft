@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>wordchain — embedding either disc</title>
+<!--
+  What `make web-dist` stages beside the modules and the data. Not a layout: the
+  two elements sit in ordinary document flow, one after the other, each styled
+  and sized on its own, so either <section> below can be lifted out and dropped
+  anywhere on a host page without bringing the other with it. Nothing here
+  positions one relative to the other, and neither needs the other to exist.
+
+  It asks for its data beside itself rather than at /out/, because the dist
+  directory is flat and a host copies it whole and serves it from wherever it
+  likes. tools/serve.py falls back to out/ for exactly these names, so the page
+  runs unchanged under `make serve` too.
+
+  The two discs paint on two threads, one worker apiece. The nested disc is
+  handed its own canvas and keeps it for the life of the page; the word disc's
+  worker owns nothing and answers with a bitmap, so neither waits on the other
+  and embedding one does not depend on embedding the other.
+-->
+<style>
+/* The page's own furniture. Nothing below this block is needed by either
+   element — the tokens each one reads are set on the element itself. */
+:root{
+  --ground:#0c1112; --ink:#e7eded; --muted:#90a1a1;
+  --rule:rgba(231,237,237,.11);
+  --display:"Iowan Old Style",Palatino,Georgia,serif;
+  --body:"Avenir Next",Avenir,"Helvetica Neue",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:light){:root{
+  --ground:#eef1f0; --ink:#131a1b; --muted:#5d6d6e;
+  --rule:rgba(19,26,27,.10);
+}}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);margin:0;
+     font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+/* Wide enough that the word disc is 218 px wider than tall, which is where it
+   moves its search box and its list of moves into a column beside the disc.
+   Narrower and it stacks them instead, which is correct but shows less of what
+   the element does. A host picks its own width; this one picks the telling one. */
+.wrap{max-width:1100px;margin:0 auto;padding:20px}
+h1{font-family:var(--display);font-size:17px;font-weight:600;margin:0 0 4px}
+.note{color:var(--muted);font-size:12.5px;margin:0 0 24px}
+section{border-top:1px solid var(--rule);padding-top:14px;margin-top:28px}
+h2{font-family:var(--body);font-size:12px;font-weight:600;margin:0 0 10px;
+   color:var(--muted);letter-spacing:.04em}
+
+/* Each element carries its own tokens and its own height, so a host lifting one
+   section takes everything that section needs. `fit` makes an element fill the
+   box it is given, which is why each one is given a definite height here: a
+   page that guesses at its own chrome guesses wrong, so the number is the
+   host's to set. Drop `fit` instead and the element is a square of its own
+   width, which is what to do where the height cannot be named. */
+hypernym-disc{
+  display:block; width:100%; height:min(72vh,640px);
+  --disc-ground:#0c1112; --disc-panel:#141b1c; --disc-ink:#e7eded;
+  --disc-muted:#90a1a1; --disc-accent:#59b491;
+  --disc-sat:.55; --disc-val:.88;
+  --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
+  --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
+}
+word-disc{
+  display:block; width:100%; height:min(72vh,640px);
+  --disc-ground:#0c1112; --disc-panel:#141b1c; --disc-ink:#e7eded;
+  --disc-muted:#90a1a1; --disc-accent:#59b491; --disc-warn:#e8705f;
+  --disc-sat:.55; --disc-val:.88;
+  --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
+  --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
+}
+/* Written out once per element rather than as one selector naming both, so a
+   host lifting a section takes rules that mention only what it lifted. */
+@media (prefers-color-scheme:light){
+  hypernym-disc{
+    --disc-ground:#eef1f0; --disc-panel:#fbfcfc; --disc-ink:#131a1b;
+    --disc-muted:#5d6d6e; --disc-accent:#2c7359;
+    --disc-sat:.62; --disc-val:.60;
+  }
+  word-disc{
+    --disc-ground:#eef1f0; --disc-panel:#fbfcfc; --disc-ink:#131a1b;
+    --disc-muted:#5d6d6e; --disc-accent:#2c7359; --disc-warn:#b8342a;
+    --disc-sat:.62; --disc-val:.60;
+  }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>wordchain</h1>
+  <p class="note">Each disc below stands on its own. Copy either section into a
+  page of your own, together with the rule that gives that element its height
+  and its colours, and it needs nothing from the other.</p>
+
+  <!-- WordNet by hypernym. Its own script, its own data, its own worker. -->
+  <section>
+    <h2>hypernym-disc</h2>
+    <script type="module" src="hypernym-disc.js"></script>
+    <hypernym-disc fit
+                   src="wordnet-tree.json"
+                   names-src="wordnet-names.txt"
+                   glosses-src="wordnet-glosses.txt"></hypernym-disc>
+  </section>
+
+  <!-- The word chain. animal with no limit, so all 1,582 words and 96,470
+       chords are drawn: the bundle this page is here to show being built on a
+       thread of its own. Name a `limit` to draw fewer. -->
+  <section>
+    <h2>word-disc</h2>
+    <script type="module" src="word-disc.js"></script>
+    <word-disc fit src="words-animal.json"></word-disc>
+  </section>
+</div>
+</body>
+</html>

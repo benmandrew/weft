@@ -113,7 +113,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         parts = [part for part in clean.split("/") if part and part not in (".", "..")]
         if parts and parts[0] == "out":
             return str(OUT.joinpath(*parts[1:]))
-        return str(WEB.joinpath(*parts))
+        target = WEB.joinpath(*parts)
+        # `make web-dist` stages the modules and the exported data flat in one
+        # directory, so a page written for that layout asks for
+        # `wordnet-tree.json` beside its script rather than `/out/…`. Falling
+        # back to out/ is what lets embed.html be served here as it ships.
+        if parts and not target.exists():
+            flat = OUT.joinpath(*parts)
+            if flat.is_file():
+                return str(flat)
+        return str(target)
 
     def do_GET(self) -> None:
         if urllib.parse.urlparse(self.path).path == "/__reload":

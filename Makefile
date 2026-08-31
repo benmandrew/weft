@@ -34,10 +34,16 @@ DATA := $(addprefix $(OUT)/,wordnet-tree.json wordnet-names.txt wordnet-glosses.
 # page changing that attribute refetches nothing.
 WORDS := $(patsubst %,$(OUT)/words-%.json,$(CATEGORIES)) $(OUT)/words-index.json
 
-# Every module in web/, found by glob rather than named one by one, so a sixth
-# module reaches a consuming site by existing. index.html is the local harness
-# and stays out of the glob: a host page carries its own markup.
+# Every module in web/, found by glob rather than named one by one, so a
+# twelfth module reaches a consuming site by existing. index.html is the local
+# harness and stays out of the glob: a host page carries its own markup.
 MODULES := $(wildcard web/*.js)
+
+# The one page web-dist ships. index.html and words.html stay behind as the
+# local harnesses, which ask for their data at /out/ and are one element each;
+# embed.html carries both elements and asks for its data beside itself, which
+# is the layout the dist directory has.
+EMBED := web/embed.html
 
 # The directory web-dist stages the modules and the data into. DIST= moves it.
 DIST ?= $(OUT)/web-dist
@@ -96,10 +102,11 @@ words: $(WORDS)
 serve: $(DATA) $(WORDS)
 	@python tools/serve.py $(ARGS)
 
-# Everything a page needs to run the element, flat in one directory: the
-# modules and the data they fetch. A site copies the directory rather than a
-# list of filenames it keeps in step with this one by hand, so adding a module
-# here cannot leave that site running five of six.
+# Everything a page needs to run either element, flat in one directory: the
+# modules, the data they fetch, and embed.html, which carries both discs and is
+# what a host copies or reads to write its own markup. A site copies the
+# directory rather than a list of filenames it keeps in step with this one by
+# hand, so adding a module here cannot leave that site running five of six.
 web-dist: $(DIST)
 
 # The directory is the target and its timestamp is what make compares, so it is
@@ -108,10 +115,10 @@ web-dist: $(DIST)
 # themselves because a directory's timestamp moves when a file enters or leaves
 # it, which is the only thing that catches a deletion. It is spelt with the dot
 # so make reads it as that directory rather than as the phony web above.
-$(DIST): $(MODULES) $(DATA) $(WORDS) web/.
+$(DIST): $(MODULES) $(EMBED) $(DATA) $(WORDS) web/.
 	@rm -rf $@
 	@mkdir -p $@
-	@cp $(MODULES) $(DATA) $(WORDS) $@
+	@cp $(MODULES) $(EMBED) $(DATA) $(WORDS) $@
 
 list:
 	@printf '%s\n' $(CATEGORIES)
