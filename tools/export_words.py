@@ -31,8 +31,8 @@ import json
 import sys
 from pathlib import Path
 
-from wordchain.config import ConfigError, as_members, resolve
-from wordchain.lexicon import CATEGORIES, Word, catalogue, members
+from weft.config import ConfigError, as_members, resolve
+from weft.lexicon import CATEGORIES, Word, catalogue, members
 
 
 def _ranked(words: list[Word]) -> list[Word]:

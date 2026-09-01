@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/benmandrew/wordchain/main/schemas/wordchain.schema.json",
-  "title": "wordchain",
-  "description": "Everything wordchain.toml may say about the disc: the ground it draws on, the eight distances that place things, the wheel that maps 26 letters to 26 hues, and which words it draws. Every key is optional and anything left out keeps its default. Kept in step with src/wordchain/config.py by tools/check_schema.py.",
+  "$id": "https://raw.githubusercontent.com/benmandrew/weft/main/schemas/weft.schema.json",
+  "title": "weft",
+  "description": "Everything weft.toml may say about the disc: the ground it draws on, the eight distances that place things, the wheel that maps 26 letters to 26 hues, and which words it draws. Every key is optional and anything left out keeps its default. Kept in step with src/weft/config.py by tools/check_schema.py.",
   "type": "object",
   "additionalProperties": false,
   "properties": {

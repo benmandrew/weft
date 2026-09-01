@@ -111,7 +111,7 @@ class Config:
 
 
 # The file a `build` picks up on its own, from the directory it runs in.
-FILENAME = "wordchain.toml"
+FILENAME = "weft.toml"
 
 _GEOMETRY = "geometry"
 _PALETTE = "palette"

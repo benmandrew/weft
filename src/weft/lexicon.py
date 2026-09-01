@@ -234,7 +234,7 @@ def _fingerprint() -> str:
 def _cache_file(category: str, params: dict[str, Any]) -> Path:
     key = json.dumps([_CACHE_FORMAT, category, params, _fingerprint()], sort_keys=True)
     digest = hashlib.sha256(key.encode()).hexdigest()[:16]
-    root = Path(os.environ.get("WORDCHAIN_CACHE", ".cache/wordchain"))
+    root = Path(os.environ.get("WEFT_CACHE", ".cache/weft"))
     return root / f"{category}-{digest}.json"
 
 

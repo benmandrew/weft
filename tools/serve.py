@@ -20,7 +20,7 @@ served brotli'd, rather than five times more.
 
     python tools/serve.py                  # http://127.0.0.1:8000
     python tools/serve.py --port 9000 --open
-    python tools/serve.py --watch src/wordchain
+    python tools/serve.py --watch src/weft
 """
 
 from __future__ import annotations

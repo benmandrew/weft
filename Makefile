@@ -9,17 +9,17 @@ OUT ?= out
 
 # The config file build reads; CONFIG= names another. It is both the --config
 # argument and a prerequisite, so editing the file redraws.
-CONFIG ?= $(wildcard wordchain.toml)
-BUILD ?= python -m wordchain build $(if $(CONFIG),--config $(CONFIG))
+CONFIG ?= $(wildcard weft.toml)
+BUILD ?= python -m weft build $(if $(CONFIG),--config $(CONFIG))
 
 # `categories` resolves every word list to count them, and runs on every make
 # invocation, `make clean` included, because the target list comes from it.
-CATEGORIES := $(shell python -m wordchain categories | awk '{print $$1}')
+CATEGORIES := $(shell python -m weft categories | awk '{print $$1}')
 SVGS := $(patsubst %,$(OUT)/%.svg,$(CATEGORIES))
 
 # Anything that changes what a disc looks like. With no config in play CONFIG
 # is empty and the dependency simply is not there.
-SOURCES := $(wildcard src/wordchain/*.py) $(CONFIG)
+SOURCES := $(wildcard src/weft/*.py) $(CONFIG)
 
 # The three files <hypernym-disc> reads. Nothing in `all` depends on any of it.
 DATA := $(addprefix $(OUT)/,wordnet-tree.json wordnet-names.txt wordnet-glosses.txt)
@@ -47,7 +47,7 @@ all: $(SVGS)
 $(OUT)/%.svg: $(SOURCES)
 	$(BUILD) $* --out $(OUT)
 
-# Everything that has to pass before a commit. taplo validates wordchain.toml
+# Everything that has to pass before a commit. taplo validates weft.toml
 # against the schema as an editor would, and check_schema.py reads that schema
 # back against config.py.
 #
@@ -79,7 +79,7 @@ types:
 # A prerequisite rather than a recipe line, so the corpus walk reruns when
 # lexicon.py or the exporter moves and not on every serve. Grouped, because one
 # run writes all three files where three rules would walk the corpus thrice.
-$(DATA) &: tools/export_tree.py src/wordchain/lexicon.py
+$(DATA) &: tools/export_tree.py src/weft/lexicon.py
 	@python tools/export_tree.py --out $(OUT)
 
 tree: $(DATA)

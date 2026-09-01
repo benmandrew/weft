@@ -1,6 +1,8 @@
-# wordchain
+# weft
 
-`wordchain` visualises the connection graph of the word chain game. Players take turns naming words from a category, and each word must start with the letter the previous word ended on: *cat*, *tiger*, *rat*, *toad*. The tool pulls a category word list out of WordNet, builds the graph of legal moves, and renders it.
+`weft` draws WordNet as circular diagrams. Three of them sit on the one corpus. The first is the *hypernym* taxonomy, every synset nested inside the synset it is a kind of, 82,115 of them as nested arcs. The second is the word chain game on a category's word list, where each word starts with the letter the previous one ended on: *cat*, *tiger*, *rat*, *toad*. The third is the 26-letter graph under that same category, drawn as a chord diagram.
+
+The word chain disc is the one the command line renders, to `out/<category>.svg`, and all three are drawn in the browser. The name is the *weft*, the thread a weaver crosses through the warp, which is what a disc full of chords looks like.
 
 A word runs from its first letter to its last, so every word is an edge between two of 26 letters and the whole game lives on a 26-node graph however large the vocabulary gets. The word-level graph is the *line graph* of that small one, its nodes the edges of the letter graph, joined wherever one word's last letter is another's first.
 
@@ -10,17 +12,17 @@ A spring layout is useless here. Every word ending in A links to every word star
 
 The project uses a Nix flake. `direnv allow` activates it on entering the directory, and `nix develop` gives the same shell by hand. Python and its packages (nltk, networkx, matplotlib, numpy, pyvis, wordfreq) come from nixpkgs, so there is no virtualenv, no pip, and no lockfile beyond `flake.lock`.
 
-The shellHook puts `src/` on `PYTHONPATH` and symlinks the WordNet corpus out of the nix store, so `python -m wordchain` works from the project root and nothing is fetched over the network at runtime.
+The shellHook puts `src/` on `PYTHONPATH` and symlinks the WordNet corpus out of the nix store, so `python -m weft` works from the project root and nothing is fetched over the network at runtime.
 
-`make check` runs everything that has to pass: ruff, mypy in strict mode over `src/wordchain` and `tools`, the two checks that hold the config file and its schema together, Biome linting and formatting the browser modules and the node tools, a `nodejs` pass that loads the browser modules as a browser would and draws a synthetic tree with them, and TypeScript reading the JSDoc types the browser modules carry, which compiles nothing and emits nothing.
+`make check` runs everything that has to pass: ruff, mypy in strict mode over `src/weft` and `tools`, the two checks that hold the config file and its schema together, Biome linting and formatting the browser modules and the node tools, a `nodejs` pass that loads the browser modules as a browser would and draws a synthetic tree with them, and TypeScript reading the JSDoc types the browser modules carry, which compiles nothing and emits nothing.
 
 ## Commands
 
 ```
-python -m wordchain categories       # the 37 categories, with word counts
-python -m wordchain stats animal     # the letter analysis
-python -m wordchain words animal     # the word list with Zipf frequencies
-python -m wordchain build animal     # render the word graph
+python -m weft categories       # the 37 categories, with word counts
+python -m weft stats animal     # the letter analysis
+python -m weft words animal     # the word list with Zipf frequencies
+python -m weft build animal     # render the word graph
 ```
 
 `build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark`, which overrides the config file's `theme` and stands at dark with neither, and `--limit N`, the words in the disc, 110 unless the config file moves it, or 0 for every word the category has. The label size is solved rather than set: the canvas grows until adjacent labels clear each other, and past the 30 inches it is capped at the type shrinks instead.
@@ -61,12 +63,12 @@ It reads the same category file `<word-disc>` reads, so a page carrying both fet
 
 ## Configuration
 
-Every command loads `./wordchain.toml` when that file exists and uses the built-in defaults otherwise, and `--config FILE` names another, which has to exist. The file is Tom's Obvious Minimal Language (TOML), with a bare `theme` key and three tables: `[geometry]` for the disc's measurements, `[palette]` for the letter colours and `[selection]` for the eight settings that decide which words a category yields and how many of them the disc draws. Every key is optional, anything absent keeps its default, and a flag beats the file for one run. Each setting is documented in `schemas/wordchain.schema.json`, which the file names on its first line, so an editor explains and completes the settings as they are typed. Validation refuses rather than ignores: an unknown key or an out-of-range value stops the build, answered with the closest name from `difflib`.
+Every command loads `./weft.toml` when that file exists and uses the built-in defaults otherwise, and `--config FILE` names another, which has to exist. The file is Tom's Obvious Minimal Language (TOML), with a bare `theme` key and three tables: `[geometry]` for the disc's measurements, `[palette]` for the letter colours and `[selection]` for the eight settings that decide which words a category yields and how many of them the disc draws. Every key is optional, anything absent keeps its default, and a flag beats the file for one run. Each setting is documented in `schemas/weft.schema.json`, which the file names on its first line, so an editor explains and completes the settings as they are typed. Validation refuses rather than ignores: an unknown key or an out-of-range value stops the build, answered with the closest name from `difflib`.
 
 ## Categories
 
 animal, bird, body-part, building, city, clothing, colour, country, disease, dog, drink, drug, element, fabric, fish, flower, food, fruit, furniture, game, insect, instrument, job, language, mammal, metal, mineral, plant, reptile, river, sport, tool, toy, tree, vegetable, vehicle, weapon.
 
-A category can be topped up by hand. `EXTRA_WORDS` in `src/wordchain/lexicon.py` maps a category to words added on top of the WordNet closure, for the ones a lexical database misses: *grey* is a lemma of no colour synset, so the colour category offers *gray* alone until somebody writes the other spelling down. The table ships empty. Such a word bypasses the filters, having been chosen rather than survived them, and it carries its real wordfreq frequency, so a rare addition sorts to the tail of the list and needs a larger `--limit` to be drawn.
+A category can be topped up by hand. `EXTRA_WORDS` in `src/weft/lexicon.py` maps a category to words added on top of the WordNet closure, for the ones a lexical database misses: *grey* is a lemma of no colour synset, so the colour category offers *gray* alone until somebody writes the other spelling down. The table ships empty. Such a word bypasses the filters, having been chosen rather than survived them, and it carries its real wordfreq frequency, so a rare addition sorts to the tail of the list and needs a larger `--limit` to be drawn.
 
 The 26-node graph was fixed before any word list existed, and a category only decides which of its edges are populated and how heavily. Everything the tool draws is a way of asking which letters are worth steering an opponent towards.

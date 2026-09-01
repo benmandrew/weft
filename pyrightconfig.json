@@ -1,6 +1,6 @@
 {
   "include": [
-    "src/wordchain"
+    "src/weft"
   ],
   "extraPaths": [
     "src"

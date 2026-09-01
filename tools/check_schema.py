@@ -1,6 +1,6 @@
-"""Check that `schemas/wordchain.schema.json` still says what `config.py` does.
+"""Check that `schemas/weft.schema.json` still says what `config.py` does.
 
-The schema exists so an editor can validate `wordchain.toml` and complete its
+The schema exists so an editor can validate `weft.toml` and complete its
 settings, which means it repeats every field name, default, bound and preset
 name that `config.py` and `palette.py` already own. A repeated fact drifts, and
 a schema that has drifted is worse than none: it accepts a key the tool refuses,
@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Any
 
 # The private names are the point: the schema repeats what they hold.
-from wordchain.cli import _DRAWN, _SELECTION_HELP
-from wordchain.config import (
+from weft.cli import _DRAWN, _SELECTION_HELP
+from weft.config import (
     _FLAG,
     _MEMBERS_RENAME,
     _SELECTION_BOUNDS,
@@ -30,10 +30,10 @@ from wordchain.config import (
     Geometry,
     Selection,
 )
-from wordchain.lexicon import members
-from wordchain.palette import DARK, PRESETS, THEMES, Arc
+from weft.lexicon import members
+from weft.palette import DARK, PRESETS, THEMES, Arc
 
-SCHEMA = Path(__file__).resolve().parent.parent / "schemas" / "wordchain.schema.json"
+SCHEMA = Path(__file__).resolve().parent.parent / "schemas" / "weft.schema.json"
 
 Table = dict[str, Any]
 

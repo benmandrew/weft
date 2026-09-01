@@ -1,5 +1,5 @@
 {
-  description = "chain — connection graphs for the word chain game";
+  description = "WordNet as circular diagrams: the hypernym taxonomy, the word chain game and the letter graph under it";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -32,13 +32,13 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          name = "wordchain";
+          name = "weft";
 
           packages = [
             (pythonEnv pkgs)
             pkgs.nixfmt
             pkgs.ruff
-            # `taplo check` validates wordchain.toml against the schema that
+            # `taplo check` validates weft.toml against the schema that
             # taplo.toml names, which is the same check an editor runs.
             pkgs.taplo
             # `biome lint` and `biome format` over web/ and tools/. It is one

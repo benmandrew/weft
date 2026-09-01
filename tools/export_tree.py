@@ -28,7 +28,7 @@ from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 
-from wordchain.lexicon import Synset, _wordnet
+from weft.lexicon import Synset, _wordnet
 
 Key = tuple[int, int, str]
 

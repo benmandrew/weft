@@ -1,4 +1,4 @@
-# Points taplo at the schema, so an editor validates wordchain.toml as it is
+# Points taplo at the schema, so an editor validates weft.toml as it is
 # typed and offers the settings, the theme names and the preset names as
 # completions. Taplo is what the Even Better TOML extension runs, and the CLI
 # reads this file too, which is what `make check` calls.
@@ -9,8 +9,8 @@ include = ["**/*.toml"]
 exclude = ["**/.direnv/**", "**/.claude/**"]
 
 [[rule]]
-name = "wordchain"
-include = ["**/wordchain.toml"]
+name = "weft"
+include = ["**/weft.toml"]
 
 [rule.schema]
-path = "schemas/wordchain.schema.json"
+path = "schemas/weft.schema.json"

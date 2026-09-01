@@ -1,4 +1,4 @@
-#:schema ./schemas/wordchain.schema.json
+#:schema ./schemas/weft.schema.json
 
 # Every setting the disc has, at the value it defaults to. Every command reads
 # this file without a flag, so editing a number here changes the next render,

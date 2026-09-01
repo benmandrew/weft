@@ -1,7 +1,7 @@
-# wordchain
+# weft
 
-Connection graphs for the word chain game: words from a category, each starting
-with the letter the previous one ended on. See @README.md for usage.
+WordNet as circular diagrams: the hypernym taxonomy, the word chain game on a
+category, and the 26-letter graph under it. See @README.md for usage.
 
 `graph.py` holds the structural claim the whole project rests on: a word is an
 edge from its first letter to its last, so the game lives on 26 nodes and the
@@ -12,7 +12,7 @@ word graph is the line graph of that one. Keep analysis there rather than in
 
 `direnv allow`, or `nix develop` by hand. Python comes from nixpkgs — no venv,
 no pip, no uv. Add a dependency to the `pythonEnv` list in `flake.nix`. `src/`
-is on `PYTHONPATH` via the shellHook, so `python -m wordchain` runs from the
+is on `PYTHONPATH` via the shellHook, so `python -m weft` runs from the
 project root with no install step.
 
 Anything the shell needs at load time goes in `shellHook`, which `.envrc` runs
@@ -33,7 +33,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   of use, never at module load: a top-of-file import costs 100-300 ms on every
   invocation that does not need it. A cache hit must not import the first three,
   and `stats`, `words` and `categories` must not import matplotlib.
-- `.cache/wordchain` keys resolved word lists on the category, the filter
+- `.cache/weft` keys resolved word lists on the category, the filter
   arguments and the corpus store path. Bump `lexicon._CACHE_FORMAT` when the
   stored shape changes, so stale files miss rather than mislead.
 - `lexicon.EXTRA_WORDS` tops a category up by hand, for the words a lexical
@@ -50,7 +50,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - Geometry lives on `config.Geometry`, the word filters on `config.Selection`,
   and the letter colours on a `palette.Wheel` of `Arc`s carried by the `Theme`.
   A figure takes each as an argument, never as a module constant. The file is
-  `./wordchain.toml` or the file `--config` names, which must exist. `theme` is
+  `./weft.toml` or the file `--config` names, which must exist. `theme` is
   a bare key rather than a fourth table, and `--theme` overrides it.
 - `[selection]` holds the eight selection settings, and all four commands read
   it, which is why `--config` sits on all four: `categories` prints a count,
@@ -76,14 +76,14 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   a preset name and an arc's numbers are mutually exclusive, because a preset
   may hold two arcs; `palette.with_wheel` shifts presets to the light ground by
   `LIGHT_SHIFT`, so the built-in wheels come out unchanged.
-- `schemas/wordchain.schema.json` mirrors `config.py` and `palette.py` by hand,
+- `schemas/weft.schema.json` mirrors `config.py` and `palette.py` by hand,
   and `tools/check_schema.py` is what stops the two drifting. The schema owns
   the per-key descriptions, so a new setting is documented there and nowhere
   else. The check has three jobs: holding the schema to `_SELECTION_BOUNDS`,
   holding `lexicon.members`'s keyword defaults to `Selection`'s through
   `config._MEMBERS_RENAME` and `_MEMBERS_SKIP`, and holding `_SELECTION_HELP` to
   `Selection`'s fields, since a setting with no line there gets no flag at all.
-  `taplo.toml` and the `#:schema` line in `wordchain.toml` point editors at it.
+  `taplo.toml` and the `#:schema` line in `weft.toml` point editors at it.
 
 ## Rendering
 
@@ -341,7 +341,7 @@ Shared rules first, then what is particular to each.
 
 - The Makefile's `all` renders one SVG per category and takes its parallelism
   from make's own `-j`, never from a `MAKEFLAGS` line. Its target list comes
-  from `wordchain categories` at parse time, so every invocation pays for that,
+  from `weft categories` at parse time, so every invocation pays for that,
   `make clean` included. A config file reaches it through `CONFIG=`, which is
   both the argument and the prerequisite.
 - The three tree exports are one grouped target (`&:`) and the 38 word files
@@ -376,7 +376,7 @@ Shared rules first, then what is particular to each.
 
 ## Shape
 
-    src/wordchain/
+    src/weft/
       lexicon.py   WordNet closure, the three polysemy filters, the Word type
       graph.py     letter matrix, letter graph, word graph, trap analysis
       render.py    matplotlib figures
@@ -385,8 +385,8 @@ Shared rules first, then what is particular to each.
       config.py    Geometry, the TOML file, its validation
       cli.py       argparse entry point, the text report
 
-    wordchain.toml                 the live config, at the defaults
-    schemas/wordchain.schema.json  the same settings for an editor
+    weft.toml                 the live config, at the defaults
+    schemas/weft.schema.json  the same settings for an editor
     taplo.toml                     points taplo at the schema
     tools/check_schema.py          holds the schema to config.py
     biome.jsonc                    lints and formats the JavaScript

@@ -253,9 +253,9 @@ def _cmd_build(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        prog="wordchain",
-        description="Connection graphs for the word chain game, where each word "
-        "must start with the letter the last one ended on.",
+        prog="weft",
+        description="Circular diagrams of WordNet: the category word lists, their "
+        "letter analysis, and the word chain disc.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
