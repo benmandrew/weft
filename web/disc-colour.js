@@ -12,6 +12,10 @@ export const TAU = Math.PI * 2;
    not start a subpath at every crossing, and word-bundle.js's `curve` is this
    with the `moveTo` added. Four control points and no sampling, the same curve
    render.py's `_curve` writes into the SVG. */
+/** @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D} g
+   @param {number} cx @param {number} cy
+   @param {number} x0 @param {number} y0 @param {number} x1 @param {number} y1
+   @param {number} pull */
 export function bow(g, cx, cy, x0, y0, x1, y1, pull) {
   g.bezierCurveTo(
     cx + (x0 - cx) * pull,
@@ -23,6 +27,7 @@ export function bow(g, cx, cy, x0, y0, x1, y1, pull) {
   );
 }
 
+/** @type {(h: number, s: number, v: number) => string} */
 export const hsv = (h, s, v) => {
   const i = Math.floor(h * 6) % 6,
     f = h * 6 - Math.floor(h * 6),

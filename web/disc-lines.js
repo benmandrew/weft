@@ -8,12 +8,15 @@
  * tools/check_web.mjs can say so where a browser cannot.
  */
 export class Lines {
+  /** @type {string} */
   #t = "";
+  /** @type {Int32Array} */
   #off = new Int32Array(1);
 
-  /* From the text, or from anything else a host hands the element, which is
+  /** From the text, or from anything else a host hands the element, which is
      joined back up rather than kept as an array, so there is one shape
-     downstream. */
+     downstream.
+     @param {string | Iterable<string>} v */
   constructor(v = "") {
     this.#t = typeof v === "string" ? v : Array.from(v).join("\n");
     // One pass, and one entry past the end, so a line is off[i] to off[i + 1]
@@ -28,8 +31,10 @@ export class Lines {
     this.length = this.#t ? n : 0;
   }
 
-  /* The line, or "" for an index the file does not reach, which is what the
-     readout prints while the glosses are still on their way. */
+  /** The line, or "" for an index the file does not reach, which is what the
+     readout prints while the glosses are still on their way.
+     @param {number} i
+     @returns {string} */
   at(i) {
     if (!(i >= 0) || i >= this.length) return "";
     return this.#t.slice(this.#off[i], this.#off[i + 1] - 1);

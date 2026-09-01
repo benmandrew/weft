@@ -40,8 +40,13 @@ const LOW_A = 97,
   SPACE_BIT = 26,
   OTHER_BIT = 27;
 
-/* The characters `s` holds, as bits. A name can match a query only if its mask
-   holds every bit the query's does, whichever band would score it. */
+/** One hit: the name's index, the name itself and the band it scored in.
+   @typedef {{i: number, name: string, score: number}} Hit */
+
+/** The characters `s` holds, as bits. A name can match a query only if its mask
+   holds every bit the query's does, whichever band would score it.
+   @param {string} s
+   @returns {number} */
 function mask(s) {
   let m = 0;
   for (let i = 0; i < s.length; i++) {
@@ -51,8 +56,11 @@ function mask(s) {
   return m;
 }
 
-/* 0 for no match. Every branch stays under its band: the length penalty caps at
-   500 and the position penalty at 400, so the two together cannot reach 1,000. */
+/** 0 for no match. Every branch stays under its band: the length penalty caps at
+   500 and the position penalty at 400, so the two together cannot reach 1,000.
+   @param {string} s a lowercased name
+   @param {string} q the lowercased query
+   @returns {number} */
 function score(s, q) {
   const n = q.length;
   if (s.length < n) return 0;
@@ -78,8 +86,11 @@ function score(s, q) {
   return ORDER - Math.min(j - from - n, 500) - Math.min(s.length, 400);
 }
 
-/* Best-first, at most `limit`, by insertion: the list is short enough that
-   walking it beats sorting the whole run of hits at the end. */
+/** Best-first, at most `limit`, by insertion: the list is short enough that
+   walking it beats sorting the whole run of hits at the end.
+   @param {Hit[]} out
+   @param {Hit} hit
+   @param {number} limit */
 function place(out, hit, limit) {
   let k = out.length;
   while (k > 0 && out[k - 1].score < hit.score) k--;
@@ -89,14 +100,19 @@ function place(out, hit, limit) {
 }
 
 export class Search {
+  /** @type {string[]} */
   #names = [];
+  /** @type {string[]} */
   #lower = [];
+  /** @type {Int32Array} */
   #mask = new Int32Array(0);
 
+  /** @param {Iterable<string>} names */
   constructor(names) {
     this.index(names);
   }
 
+  /** @param {Iterable<string>} names */
   index(names) {
     this.#names = Array.from(names);
     this.#lower = this.#names.map(s => s.toLowerCase());
@@ -106,10 +122,14 @@ export class Search {
     for (let i = 0; i < this.#lower.length; i++) this.#mask[i] = mask(this.#lower[i]);
   }
 
-  /* [{i, name, score}], best first. An empty or all-space query matches
-     nothing, since every name would score and the order would mean nothing. */
+  /** Best first. An empty or all-space query matches nothing, since every name
+     would score and the order would mean nothing.
+     @param {string} text
+     @param {number} limit
+     @returns {Hit[]} */
   query(text, limit = 12) {
     const q = text.trim().toLowerCase();
+    /** @type {Hit[]} */
     const out = [];
     if (!q || limit < 1) return out;
     const low = this.#lower,

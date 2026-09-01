@@ -20,13 +20,26 @@ export const LETTERS = 26;
    them would say two different counts at its ends. */
 export const GAP = (1.2 * Math.PI) / 180;
 
-/* An arc's width: drawn linearly the single-word arcs disappear beside the
-   trunks. log1p rather than log because log(1) is 0. */
+/** An arc's width: drawn linearly the single-word arcs disappear beside the
+   trunks. log1p rather than log because log(1) is 0.
+   @type {(n: number) => number} */
 export const weight = n => Math.log1p(n);
 
-/* The 26 by 26 count, and the two margins of it. Indexed [head * 26 + tail],
+/** `count` is 26 by 26, indexed [head * 26 + tail]; `n` is the words counted,
+   `pairs` the populated cells and `loops` those on the diagonal.
+   @typedef {object} Matrix
+   @property {number} n
+   @property {Int32Array} count
+   @property {Int32Array} starts
+   @property {Int32Array} ends
+   @property {number} pairs
+   @property {number} loops */
+
+/** The 26 by 26 count, and the two margins of it. Indexed [head * 26 + tail],
    which is letter_matrix in graph.py written a second time. `starts[L]` is the
-   words leaving L and `ends[L]` the words arriving at it. */
+   words leaving L and `ends[L]` the words arriving at it.
+   @param {Iterable<string>} words
+   @returns {Matrix} */
 export function matrix(words) {
   const count = new Int32Array(LETTERS * LETTERS);
   const starts = new Int32Array(LETTERS),
@@ -59,11 +72,66 @@ export function matrix(words) {
 /* How far round the alphabet one letter reaches to another, counted backwards
    from its own — word-layout.js's `_fan_key`. Ordering a letter's arcs by
    destination alone starts every one at A and sends the fan across itself. */
+/** @param {number} from @param {number} to @returns {number} */
 export function fanKey(from, to) {
   return (from - to - 1 + LETTERS) % LETTERS;
 }
 
-/* The whole layout in one pass over the matrix. A letter's arc is the sum of
+/** One arc, from letter `from` to letter `to`, carrying `n` words at log
+   weight `w`. [a0, a1] is its slot in the source's leaving half and [b0, b1]
+   its slot in the target's arriving half; [t0, t1] is the wedge it is confined
+   to, which `near` prunes on, and `wide` marks the arcs that wedge says nothing
+   about.
+   @typedef {object} Edge
+   @property {number} from
+   @property {number} to
+   @property {number} n
+   @property {number} w
+   @property {number} a0
+   @property {number} a1
+   @property {number} b0
+   @property {number} b1
+   @property {number} t0
+   @property {number} t1
+   @property {boolean} wide
+   @property {boolean} loop */
+
+/** One letter's band of the ring. `split` is where the leaving half ends and
+   the arriving half begins.
+   @typedef {object} Arc
+   @property {number} letter
+   @property {number} from
+   @property {number} to
+   @property {number} mid
+   @property {number} split
+   @property {number} span */
+
+/** `arcOf[L]` indexes `arcs`, or -1 for a letter no word touches. `out[L]` and
+   `into[L]` index `edges`, in the order the ends are laid out; `order` is the
+   draw order, lightest first. `turn`, `upto` and `slotEdge` are every end in
+   one increasing sequence of turns clockwise from the top, which is what `at`
+   searches.
+   @typedef {object} Graph
+   @property {number[]} live
+   @property {Arc[]} arcs
+   @property {Int32Array} arcOf
+   @property {Edge[]} edges
+   @property {number[]} order
+   @property {number[][]} byLetter
+   @property {number[][]} out
+   @property {number[][]} into
+   @property {Float64Array} outW
+   @property {Float64Array} inW
+   @property {Int32Array} starts
+   @property {Int32Array} ends
+   @property {Float64Array} turn
+   @property {Float64Array} upto
+   @property {Int32Array} slotEdge
+   @property {number} pairs
+   @property {number} loops
+   @property {number} words */
+
+/** The whole layout in one pass over the matrix. A letter's arc is the sum of
  * the log weights of every arc touching it, so a unit of weight is the same
  * number of degrees at both ends of a ribbon. Each arc is then split, the
  * leaving half first as the ring is read clockwise, so direction is geometry
@@ -72,12 +140,17 @@ export function fanKey(from, to) {
  * Angles are anticlockwise from +x, running down from the top; a caller makes
  * a point with `Math.cos(ang)` and, canvas y growing downward, `-Math.sin(ang)`.
  * Every slot is [hi, lo] with hi above lo, which lets `ribbon` walk a boundary
- * in one direction. */
+ * in one direction.
+ *
+ * @param {Matrix} m
+ * @returns {Graph}
+ */
 export function layout(m) {
   const { count, starts, ends } = m;
   // The weight each letter carries, out and in, which is what sizes its arc.
   const outW = new Float64Array(LETTERS),
     inW = new Float64Array(LETTERS);
+  /** @type {Edge[]} */
   const edges = [];
   for (let h = 0; h < LETTERS; h++) {
     for (let t = 0; t < LETTERS; t++) {
@@ -104,6 +177,7 @@ export function layout(m) {
     }
   }
 
+  /** @type {number[]} */
   const live = [];
   for (let L = 0; L < LETTERS; L++) if (outW[L] + inW[L] > 0) live.push(L);
 
@@ -112,8 +186,10 @@ export function layout(m) {
      lays nothing out rather than dividing by zero. */
   const room = TAU - GAP * live.length;
   const total = live.reduce((s, L) => s + outW[L] + inW[L], 0);
+  /** @type {(L: number) => number} */
   const width = L => (total > 0 ? (room * (outW[L] + inW[L])) / total : 0);
 
+  /** @type {Arc[]} */
   const arcs = [];
   const arcOf = new Int32Array(LETTERS).fill(-1);
   let a = Math.PI / 2;
@@ -133,8 +209,11 @@ export function layout(m) {
      the letter at the other end. The leaving ends run one way round the
      alphabet and the arriving ends the other, so a pair of letters trading
      arcs both ways puts the ribbons side by side rather than crossing. */
+  /** @type {number[][]} */
   const byLetter = Array.from({ length: LETTERS }, () => []);
+  /** @type {number[][]} */
   const out = Array.from({ length: LETTERS }, () => []);
+  /** @type {number[][]} */
   const into = Array.from({ length: LETTERS }, () => []);
   for (const [k, e] of edges.entries()) {
     out[e.from].push(k);
@@ -198,6 +277,7 @@ export function layout(m) {
   /* Every end, in one increasing sequence of turns clockwise from the top,
      which lets `at` be a binary search. Slots tile each half of each arc
      exactly, so the taper the ribbon is drawn with leaves no dead ground. */
+  /** @type {{hi: number, lo: number, edge: number}[]} */
   const slots = [];
   for (const L of live) {
     for (const k of out[L]) slots.push({ hi: edges[k].a0, lo: edges[k].a1, edge: k });
@@ -252,9 +332,15 @@ export const HUB_SHARE = 0.45,
   HUB_MIN = 66,
   HUB_MAX = 0.55;
 
-/* Everything the disc measures, off the square the host left it. What it owes
+/** `labelPx` is 0 when the frame is too small for the letters outside the
+   ring, and `outer` lands on the square's half-width either way.
+   @typedef {{r: number, band: number, labelPx: number, hub: number, outer: number}} Fit */
+
+/** Everything the disc measures, off the square the host left it. What it owes
    is a disc that stays inside its own square and comes back positive at any
-   size, which is the part nothing downstream tests for. */
+   size, which is the part nothing downstream tests for.
+   @param {number} size
+   @returns {Fit} */
 export function solve(size) {
   const half = Math.max(size / 2 - PAD, 1);
   const want = Math.min(Math.max(half * 0.05, MIN_LABEL_PX), MAX_LABEL_PX);
@@ -298,13 +384,16 @@ export const ALPHA = 0.5,
   ALPHA_KNEE = 120,
   ALPHA_FALL = 0.5;
 
+/** @param {number} alpha @param {number} pairs @returns {number} */
 export function fade(alpha, pairs) {
   if (pairs <= ALPHA_KNEE) return alpha;
   return alpha * (ALPHA_KNEE / pairs) ** ALPHA_FALL;
 }
 
-/* The pull for an arc covering `d` radians of the ring, which is what makes a
-   loop a loop rather than a spike. */
+/** The pull for an arc covering `d` radians of the ring, which is what makes a
+   loop a loop rather than a spike.
+   @param {number} d
+   @returns {number} */
 export function pull(d) {
   const k = Math.min(Math.abs(d), Math.PI) / Math.PI;
   return PULL_NEAR + (PULL_FAR - PULL_NEAR) * k;
@@ -316,12 +405,15 @@ export function pull(d) {
    keeps the boundary from folding over itself at any pair of slots. Canvas
    angles run clockwise from +x with y growing down, so a maths angle t is
    canvas angle -t and a run from hi down to lo is -hi increasing to -lo. */
+/** @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D} g
+   @param {number} cx @param {number} cy @param {number} r @param {Edge} e */
 export function ribbon(g, cx, cy, r, e) {
   const bm = (e.b0 + e.b1) / 2,
     bh = ((e.b0 - e.b1) / 2) * TAPER;
   const t0 = bm + bh,
     t1 = bm - bh;
   const p = pull(e.a1 - t0);
+  /** @type {(ang: number, at?: number) => [number, number]} */
   const pt = (ang, at = r) => [cx + Math.cos(ang) * at, cy - Math.sin(ang) * at];
   const [x0, y0] = pt(e.a0);
   const [x1, y1] = pt(e.a1);
@@ -336,9 +428,12 @@ export function ribbon(g, cx, cy, r, e) {
   g.closePath();
 }
 
-/* The arc whose end `t` turns clockwise from the top lands on, and -1 for the
+/** The arc whose end `t` turns clockwise from the top lands on, and -1 for the
    gaps between letters, which belong to nobody. The slots are strictly
-   increasing by construction, so this is one binary search. */
+   increasing by construction, so this is one binary search.
+   @param {Graph} L
+   @param {number} t
+   @returns {number} an index into `L.slotEdge`, not into `L.edges` */
 export function at(L, t) {
   const { turn, upto } = L;
   let lo = 0,
@@ -359,13 +454,17 @@ export function at(L, t) {
  * before a path is built. It is a prune rather than an answer, and it owes
  * never refusing a point that is on the arc — what tools/check_web.mjs holds
  * it to by walking each ribbon's own boundary. */
+/** @param {Edge} e @param {number} t @returns {boolean} */
 export function near(e, t) {
   if (e.wide) return true;
   return e.t0 <= e.t1 ? t >= e.t0 && t <= e.t1 : t >= e.t0 || t <= e.t1;
 }
 
-/* The letter whose arc `t` falls in, for the band outside the ring. Linear
-   over 26, which is cheaper than a search. */
+/** The letter whose arc `t` falls in, for the band outside the ring. Linear
+   over 26, which is cheaper than a search.
+   @param {Graph} L
+   @param {number} t
+   @returns {number} */
 export function letterAt(L, t) {
   for (const arc of L.arcs) {
     const from = Math.PI / 2 - arc.from,

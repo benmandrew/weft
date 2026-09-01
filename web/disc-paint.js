@@ -22,22 +22,82 @@ export const MERGE_PX = 1;
 const RAMP_STEPS = 24;
 const RAMP_FLOOR = 0.62;
 
+/** The tree, flat. Every parent's index is below all of its children's, which
+   is what lets `#retint` and `#remerge` be forward loops rather than
+   traversals. `byDepth[d]` is that ring sorted by start angle.
+   @typedef {object} Tree
+   @property {Int32Array} par
+   @property {Int16Array} depth
+   @property {Float64Array} a0
+   @property {Float64Array} a1
+   @property {Int32Array[]} byDepth
+   @property {number} maxDepth */
+
+/** One frame's worth of geometry and tokens. `sat`, `val` and `panel` arrive as
+   the CSS custom properties they were read from, so the numbers are parsed
+   here. `rings` left out means every depth below the root.
+   @typedef {object} View
+   @property {number} root
+   @property {number} w
+   @property {number} h
+   @property {number} cx
+   @property {number} cy
+   @property {number} r0
+   @property {number} rmax
+   @property {number} rw
+   @property {number} dpr
+   @property {string} mode
+   @property {string} sat
+   @property {string} val
+   @property {string} panel
+   @property {number} [rings] */
+
+/** What the frame cost, which the element reports and check_web.mjs asserts on.
+   @typedef {object} Stats
+   @property {number} drawn
+   @property {number} drawMs
+   @property {number} prepMs
+   @property {number} segments
+   @property {number} colours
+   @property {string} mode */
+
+/** The merged runs, one entry per piece drawn: [s0, s1] its angles, `d` its
+   ring, `f` its colour and `w` whether it earns a hairline.
+   @typedef {object} Segments
+   @property {Float64Array} s0
+   @property {Float64Array} s1
+   @property {Int16Array} d
+   @property {Int32Array} f
+   @property {Uint8Array} w */
+
 export class Painter {
+  /** @type {Int32Array} */
   #par;
+  /** @type {Int16Array} */
   #depth;
+  /** @type {Float64Array} */
   #a0;
+  /** @type {Float64Array} */
   #a1;
+  /** @type {Int32Array[]} */
   #byDepth = [];
   #maxDepth = 0;
   #n = 0;
   #hd = 2;
+  /** @type {Float64Array} */
   #tint;
+  /** @type {Float64Array} */
   #tcos;
+  /** @type {Float64Array} */
   #tsin;
   #tintKey = 0;
+  /** @type {string[]} */
   #palette = [];
+  /** @type {Map<string, number>} */
   #paletteKey = new Map();
-  #fillId = null;
+  /** @type {Int32Array} */
+  #fillId;
+  /** @type {Segments | null} */
   #seg = null;
   #prepKey = "";
   #prepMs = 0;
@@ -51,6 +111,7 @@ export class Painter {
   #rings = 1;
   #mode = "density";
 
+  /** @param {Tree} l @param {number} hd */
   layout(l, hd = this.#hd) {
     this.#par = l.par;
     this.#depth = l.depth;
@@ -62,6 +123,7 @@ export class Painter {
     this.#hd = hd;
     this.#retint();
   }
+  /** @param {number} hd */
   hueDepth(hd) {
     if (hd !== this.#hd) {
       this.#hd = hd;
@@ -98,10 +160,12 @@ export class Painter {
      and interned. That is the same threshold that decides two wedges cannot be
      told apart: neighbouring slices differ by 0.16°, and a wedge wide enough to
      read as its own arc cannot collide with its neighbour at that step. */
+  /** @param {number} h @returns {number} */
   #quant(h) {
     const w = ((h % 1) + 1) % 1;
     return Math.round(w * this.#hueQ) / this.#hueQ;
   }
+  /** @param {number} i @returns {number} */
   #hue(i) {
     return this.#quant(this.#tint[i]);
   }
@@ -109,6 +173,8 @@ export class Painter {
   /* A colour is a string the canvas has to parse, so they are interned rather
      than rebuilt per piece per frame. `step` is the density rung, RAMP_STEPS
      meaning fully covered. */
+  /** @param {number} tint @param {number} rel @param {number} step
+     @returns {number} an index into `#palette` */
   #colourId(tint, rel, step) {
     const key = tint + "|" + rel + "|" + step;
     let id = this.#paletteKey.get(key);
@@ -163,9 +229,11 @@ export class Painter {
       const arr = this.#byDepth[d];
       const rel = d - base;
       const r1 = this.#r0 + (rel + 1) * this.#rw;
+      /** @type {(k: number) => boolean} */
       const thin = k => (this.#a1[k] - this.#a0[k]) * sc * r1 < MERGE_PX;
       // Hue wraps, so the mean of 0.99 and 0.01 has to come out at 0 rather
       // than 0.5, which is why the members are summed as vectors.
+      /** @type {(lo: number, hi: number) => number} */
       const blend = (lo, hi) => {
         if (lo === hi) return this.#hue(arr[lo]);
         let cx = 0,
@@ -254,6 +322,7 @@ export class Painter {
 
   /* Palette and runs survive anything that leaves angles, depths, colours and
      radius alone, so a repeated repaint pays for neither. */
+  /** @param {View} v */
   #prepare(v) {
     const key = [
       this.#root,
@@ -272,6 +341,7 @@ export class Painter {
     this.#prepMs = performance.now() - t0;
   }
 
+  /** @param {number} i @returns {boolean} */
   #inView(i) {
     const rel = this.#depth[i] - this.#depth[this.#root];
     return (
@@ -283,6 +353,8 @@ export class Painter {
   }
   /* Zooming is a change of angular scale, not a re-layout: node k's span is
      stretched to a full turn and its depth becomes ring zero. */
+  /** @param {number} i @returns {[number, number, number, number]} start and
+     end angles, then the inner and outer radius */
   #geom(i) {
     const sc = TAU / (this.#a1[this.#root] - this.#a0[this.#root]);
     const s = (this.#a0[i] - this.#a0[this.#root]) * sc - Math.PI / 2;
@@ -291,6 +363,9 @@ export class Painter {
     return [s, e, this.#r0 + d * this.#rw, this.#r0 + (d + 1) * this.#rw];
   }
 
+  /** @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D} g
+     @param {View} v
+     @returns {Stats | null} null before a layout has been handed in */
   paint(g, v) {
     if (!this.#n) return null;
     // Resizing a canvas clears it, so the size is only written when it moved.
@@ -317,6 +392,7 @@ export class Painter {
     const half = Math.PI / 2;
     let cur = -1;
 
+    /** @type {(s: number, e: number, r0: number, r1: number) => void} */
     const wedge = (s, e, r0, r1) => {
       g.beginPath();
       g.arc(v.cx, v.cy, r1, s, e);
