@@ -349,11 +349,15 @@ class WordDisc extends HTMLElement {
   #chordCount = 0;
   #drawMs = 0;
 
-  // Where the bundle is built: undefined until wanted, "wait" while the worker
-  // is answering, then "worker" or "main" for the rest of the element's life.
+  // Where the bundle is built: undefined until the element connects, "wait"
+  // while the worker is answering, then "worker" or "main" for the rest of the
+  // element's life.
   #route = undefined;
   #worker = null;
+  // The worker before it has answered, and the deadline it is answering
+  // against, which #armFloor starts only once a bundle is wanted.
   #pending = null;
+  #settle = null;
   #floor = 0;
 
   // Set while the disc is more than a screen away and its canvases have been
@@ -479,6 +483,10 @@ class WordDisc extends HTMLElement {
     document.fonts?.ready?.then(() => {
       if (this.#box) this.#resize();
     });
+    // Before the fetch, not after the first draw asks for a bundle, so the
+    // worker's module fetch runs alongside the word file's. The deadline is
+    // #armFloor's and is not started here.
+    if (this.#route === undefined) this.#openBundler();
     if (!this.#ready) this.#load();
     this.#loadIndex();
     this.#idle = watch(this, this.#sleep, this.#wake);
@@ -498,6 +506,7 @@ class WordDisc extends HTMLElement {
     this.#worker?.terminate();
     this.#pending = this.#worker = null;
     this.#route = undefined;
+    this.#settle = null;
     this.#queued = null;
     this.#asked = this.#cacheKey;
   }
@@ -854,9 +863,12 @@ class WordDisc extends HTMLElement {
       // which is the weight the figure was tuned at.
       lineWidth: (0.5 * px * RING) / this.#r,
     };
+    // Opened at connect, so this is only the path a disconnect left behind.
     if (this.#route === undefined) this.#openBundler();
-    if (this.#route === "wait") this.#queued = spec;
-    else if (this.#route === "worker") this.#worker.postMessage(spec);
+    if (this.#route === "wait") {
+      this.#queued = spec;
+      this.#armFloor();
+    } else if (this.#route === "worker") this.#worker.postMessage(spec);
     else this.#here(spec);
   }
 
@@ -892,12 +904,12 @@ class WordDisc extends HTMLElement {
 
   /* Where the bundle gets built. Nothing is handed over, unlike the nested
      disc — the worker makes its own canvas and transfers a bitmap back — so
-     there is no canvas that can only be given away once. Opened when a bundle
-     is first wanted rather than when the element connects, since its module
-     fetch would otherwise race the word file's. */
+     there is no canvas that can only be given away once. Opened when the
+     element connects rather than when a bundle is first wanted, so its module
+     fetch runs alongside the word file's rather than after it. */
   #openBundler() {
     this.#route = "wait";
-    const settle = here => {
+    this.#settle = here => {
       if (this.#route !== "wait") return;
       clearTimeout(this.#floor);
       this.#floor = 0;
@@ -910,17 +922,17 @@ class WordDisc extends HTMLElement {
       else this.#worker.postMessage(spec);
     };
     if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined")
-      return settle(true);
+      return this.#settle(true);
     let w;
     try {
       w = new Worker(new URL("./word-bundle-worker.js", import.meta.url), { type: "module" });
     } catch {
-      return settle(true);
+      return this.#settle(true);
     }
     this.#pending = w;
     w.onerror = () => {
       w.terminate();
-      if (this.#route === "wait") return settle(true);
+      if (this.#route === "wait") return this.#settle(true);
       // One that answered and then threw: back to this thread, with the bundle
       // that was in flight asked for again.
       this.#route = "main";
@@ -931,14 +943,18 @@ class WordDisc extends HTMLElement {
     w.onmessage = ev => {
       if (!ev.data.ready) return this.#gotBundle(ev.data);
       this.#worker = w;
-      settle(false);
+      this.#settle(false);
     };
-    /* Started with the first bundle actually wanted rather than with the
-       worker's construction, which would spend the budget on the network and
-       read a slow link as a device with no worker. */
+  }
+
+  /* Started with the first bundle actually wanted rather than with the
+     worker's construction, which would spend the budget on the network and
+     read a slow link as a device with no worker. */
+  #armFloor() {
+    if (this.#route !== "wait" || this.#floor) return;
     this.#floor = setTimeout(() => {
       this.#pending?.terminate();
-      settle(true);
+      this.#settle(true);
     }, WORKER_FLOOR);
   }
 

@@ -14,7 +14,9 @@ already speak it.
 
 HTML is the one thing not served straight off disk: the reload client is
 injected on the way out, so no page has to carry a script that only exists
-during development.
+during development. Everything else textual is gzipped on the way out, so that
+what a disc waits on here is roughly what it waits on where the same files are
+served brotli'd, rather than five times more.
 
     python tools/serve.py                  # http://127.0.0.1:8000
     python tools/serve.py --port 9000 --open
@@ -24,7 +26,10 @@ during development.
 from __future__ import annotations
 
 import argparse
+import datetime
+import email.utils
 import functools
+import gzip
 import http.server
 import posixpath
 import sys
@@ -34,11 +39,33 @@ import urllib.parse
 import webbrowser
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "web"
 OUT = ROOT / "out"
+
+# What gets compressed on the way out. A deployed copy is served brotli'd, so a
+# server that sends the exports raw is not the thing being developed against:
+# wordnet-tree.json is 479 KB here and 42 KB there, and the disc shows nothing
+# until it lands. Content types rather than suffixes, since `guess_type` is
+# already the thing that decides, and the set is only what the pages ask for.
+GZIP_TYPES = frozenset(
+    {
+        "application/json",
+        "application/javascript",
+        "text/javascript",
+        "text/plain",
+        "text/css",
+        "image/svg+xml",
+    }
+)
+# Below this a response is one packet either way, and gzip's own header is
+# most of what would be saved.
+GZIP_MIN = 1024
+# Level 6 is the default and roughly where the exports stop getting smaller;
+# the cost is paid once per file, since the result is held against its mtime.
+GZIP_LEVEL = 6
 
 # Injected into every HTML response. The indicator is optional: a page without
 # an element called `live` still reloads, it just says nothing about it.
@@ -106,6 +133,59 @@ class Watcher:
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     watcher: Watcher
+    # Compressed bodies, keyed on the file and the stat it was compressed from,
+    # so the 5.7 MB of glosses are gzipped once rather than once per reload. A
+    # save moves the mtime and the entry is replaced, which is the whole of the
+    # invalidation. Shared across threads: dict assignment is atomic, and two
+    # threads compressing the same file at once agree on the answer.
+    _gzipped: ClassVar[dict[str, tuple[tuple[float, int], bytes]]] = {}
+
+    def _fresh(self, mtime: float) -> bool:
+        """Whether the browser's copy is still the file on disk.
+
+        `SimpleHTTPRequestHandler.send_head` does this itself, but it does it
+        on the way to sending an uncompressed body, and there is no way in to
+        the one without the other. Same comparison, to the second, and ignoring
+        an ill-formed date the same way it does.
+        """
+        if "If-Modified-Since" not in self.headers or "If-None-Match" in self.headers:
+            return False
+        try:
+            since = email.utils.parsedate_to_datetime(self.headers["If-Modified-Since"])
+        except (TypeError, IndexError, OverflowError, ValueError):
+            return False
+        if since.tzinfo is None:  # the obsolete format, which means UTC
+            since = since.replace(tzinfo=datetime.timezone.utc)
+        last = datetime.datetime.fromtimestamp(mtime, datetime.timezone.utc)
+        return last.replace(microsecond=0) <= since
+
+    def _body(self, target: Path, stat: tuple[float, int]) -> bytes:
+        held = self._gzipped.get(str(target))
+        if held is not None and held[0] == stat:
+            return held[1]
+        blob = gzip.compress(target.read_bytes(), GZIP_LEVEL)
+        self._gzipped[str(target)] = (stat, blob)
+        return blob
+
+    def _static(self, target: Path, ctype: str) -> None:
+        """One file, gzipped, or a 304 saying the browser already has it."""
+        try:
+            st = target.stat()
+        except OSError:
+            self.send_error(404, "File not found")
+            return
+        if self._fresh(st.st_mtime):
+            self.send_response(304)
+            self.end_headers()
+            return
+        body = self._body(target, (st.st_mtime, st.st_size))
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Last-Modified", self.date_time_string(int(st.st_mtime)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def translate_path(self, path: str) -> str:
         clean = posixpath.normpath(urllib.parse.unquote(urllib.parse.urlparse(path).path))
@@ -132,6 +212,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             target = target / "index.html"
         if target.suffix == ".html" and target.is_file():
             self._html(target)
+            return
+        ctype = self.guess_type(str(target))
+        if (
+            "gzip" in self.headers.get("Accept-Encoding", "")
+            and ctype.split(";")[0] in GZIP_TYPES
+            and target.is_file()
+            and target.stat().st_size >= GZIP_MIN
+        ):
+            self._static(target, ctype)
             return
         super().do_GET()
 

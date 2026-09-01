@@ -267,8 +267,11 @@ Shared rules first, then what is particular to each.
 - `MAX_BUNDLE` is 200,000, a guard against a word list nothing here has.
 - `word-bundle-worker.js` is its own worker, since `disc-worker.js` holds the
   nested disc's canvas for the life of the page. This one owns nothing between
-  messages, so it is terminated on disconnect, and it is opened when a bundle is
-  first wanted so its module fetch does not race the word file's.
+  messages, so it is terminated on disconnect, and it is opened at connect so
+  its module fetch runs alongside the word file's rather than after it. The
+  `WORKER_FLOOR` deadline is `#armFloor`'s and starts with the first bundle
+  wanted, since timing it from the worker's construction spends it on the
+  network and reads a slow link as a device with no worker.
 - `release(pic)` closes an `ImageBitmap`, whose pixels sit outside the JS heap
   and read to the collector as a small object under no pressure. A bundle is
   12.3 MB at a typical disc size. `word-disc.js` calls it at three sites: a
@@ -357,6 +360,11 @@ Shared rules first, then what is particular to each.
   Nothing positions one relative to another. It asks for its data beside itself
   where the three harnesses ask for `/out/…`, which is why `tools/serve.py`'s
   `translate_path` falls back to `out/` for a top-level name not in `web/`.
+- `tools/serve.py` gzips the textual types in `GZIP_TYPES` above `GZIP_MIN`,
+  holding each body against its mtime, since a deployed copy is served brotli'd
+  and a dev server sending 7.1 MB of exports raw is not the thing being
+  developed against. It does its own `If-Modified-Since` check, `send_head`
+  having no way in to the 304 without the uncompressed body.
 - `tools/serve.py`'s `Server` returns from `handle_error` for `BrokenPipeError`
   and `ConnectionResetError`, since a reload abandons open sockets and the reset
   surfaces outside any handler, writing a traceback into the terminal the
