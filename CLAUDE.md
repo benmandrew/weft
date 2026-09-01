@@ -146,9 +146,9 @@ Shared rules first, then what is particular to each.
   has to give it one; without it the stage is a square of the element's width.
   Blocks under the disc are held to a fixed height, so a longer definition never
   resizes the disc under the pointer.
-- Both elements refit text when `document.fonts.ready` settles, since canvas
-  text is measured rather than laid out and a cached fit would replay in the
-  wrong face. `<hypernym-disc>` calls `repaint()`; `<word-disc>` calls
+- All three refit text when `document.fonts.ready` settles, since canvas text is
+  measured rather than laid out and a cached fit would replay in the wrong face.
+  `<hypernym-disc>` and `<letter-disc>` call `repaint()`; `<word-disc>` calls
   `#resize`, which also drops `#widest`.
 - `disc-label.js` holds the hub's text (`fit`, `band`, `baseline`, `halo`),
   `disc-colour.js` holds `TAU`, `hsv` and the chord cubic `bow`, and
