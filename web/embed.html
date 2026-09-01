@@ -6,22 +6,15 @@
 <title>wordchain — embedding either disc</title>
 <!--
   What `make web-dist` stages beside the modules and the data. Not a layout: the
-  two elements sit in ordinary document flow, one after the other, each styled
-  and sized on its own, so either <section> below can be lifted out and dropped
-  anywhere on a host page without bringing the other with it. Nothing here
-  positions one relative to the other, and neither needs the other to exist.
+  three elements sit in ordinary document flow, one after the other, each styled
+  and sized on its own, so any <section> below can be lifted out and dropped
+  anywhere on a host page without bringing the others with it. Nothing here
+  positions one relative to another, and none needs another to exist.
 
   It asks for its data beside itself rather than at /out/, because the dist
   directory is flat and a host copies it whole and serves it from wherever it
   likes. tools/serve.py falls back to out/ for exactly these names, so the page
   runs unchanged under `make serve` too.
-
-  The nested disc and the word disc paint on two threads, one worker apiece.
-  The nested disc is handed its own canvas and keeps it for the life of the
-  page; the word disc's worker owns nothing and answers with a bitmap, so
-  neither waits on the other and embedding one does not depend on embedding the
-  other. The letter disc needs no worker: it draws at most 344 arcs, which is a
-  frame's work rather than a thread's.
 -->
 <style>
 /* The page's own furniture. Nothing below this block is needed by either

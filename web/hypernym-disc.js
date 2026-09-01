@@ -1,8 +1,8 @@
 /* <hypernym-disc> — a zoomable nested-arc view of any rooted tree.
  *
  * Data is {names: "a\nb\n…", par: [-1, 0, 0, …]} where par[i] is the index of
- * i's parent and every parent precedes its children, so each pass below is a
- * single loop rather than a traversal.
+ * i's parent and every parent precedes its children. That ordering is the
+ * contract: it lets each pass below be a single loop rather than a traversal.
  *
  *   <hypernym-disc src="wordnet-tree.json"
  *                   names-src="wordnet-names.txt"></hypernym-disc>
@@ -11,35 +11,18 @@
  *
  * The disc lays out and paints without a single name, so `src` carries the
  * structure alone and `names-src` is fetched after the first paint. Until it
- * lands, a node answers to `#index`. `glosses-src` trails the names, being much
- * the largest of the three and read by one line of text: the definition of
- * whatever the hub names, the node under the pointer or the current root.
+ * lands, a node answers to `#index`. `glosses-src` trails the names.
  *
  * The paint runs off this thread. disc-paint.js is the pipeline, disc-worker.js
  * hosts it against an OffscreenCanvas, and the element calls the same class
  * here where a worker cannot be had. The element keeps the layout either way,
  * because hit testing and the crumbs both answer without a round trip.
  *
- * Only `rings` depths below the root are drawn. A deep tree's last rings hold
- * almost nothing — WordNet is 20 deep and its depth 19 is a single node — so
- * dividing the radius by every depth spends a quarter of it on a fringe too
- * sparse to see. Capping it fills the frame, and what falls off the edge is one
+ * Only `rings` depths below the root are drawn; what falls off the edge is one
  * zoom away, since zooming makes the node the new root and re-counts from it.
  *
- * Beside the disc, where the frame is wide enough for a column, every node
- * one ring out from the current root is listed under the search box: what a
- * click on the disc would open, read as a list rather than picked out of a
- * fringe of wedges. It is in the order the disc draws them, and a node with
- * children of its own reads apart from a leaf, since only the one is a way
- * further in. Such a node prints what it weighs against the column's right
- * edge: the leaves under it over every leaf in the ring, which is the same
- * fraction as the share of the turn its wedge takes.
- *
- * The search box takes the same two steps as the pointer. Picking a suggestion
- * previews it, which is the hover path and nothing else, and Enter is the
- * click: it zooms. A leaf has nothing to zoom into, so Enter on one goes to its
- * parent and leaves the cursor on the leaf, which is where clicking cannot take
- * you and is the whole reason to search for a word.
+ * Enter on a leaf goes to its parent and leaves the cursor on the leaf, which
+ * is where clicking cannot take you and is the whole reason to search.
  *
  * Attributes: src, names-src, glosses-src, readout="off", search="off", fit,
  *             hue-depth (default 8), rings (default 14), start,
@@ -71,16 +54,12 @@ const HINT_PX = 9,
 const ASIDE_MIN = 200,
   ASIDE_GAP = 18;
 // How many rows of the ring below go into the DOM at a time, and how near the
-// foot of the list a scroll has to come before the next lot follow. The same
-// two counts <word-disc> lists its moves by, and for the same reason: the work
-// per zoom is a page rather than a ring. WordNet's widest node holds 661
-// children and 16 hold more than a page, so paging is a real path here rather
-// than one that never runs.
+// foot of the list a scroll has to come before the next lot follow, so the work
+// per zoom is a page rather than a ring.
 const KIDS_PAGE = 200,
   KIDS_NEAR = 240;
-// How long a resize is held open. A drag fires the observer every frame and
-// each frame costs the painter a whole remerge, since the merge is measured in
-// pixels and the radius moved.
+// How long a resize is held open: a drag fires the observer every frame and
+// each frame costs the painter a whole remerge.
 const RESIZE_HOLD = 60;
 // What the worker gets to answer in, timed from the first paint the element
 // actually wants rather than from the worker's construction.
@@ -104,33 +83,22 @@ TPL.innerHTML = `
       --_accent:var(--disc-accent,#2c7359);
       --_sat:var(--disc-sat,.62); --_val:var(--disc-val,.60)}}
   .frame{display:block}
-  /* Under the fit attribute the element fills the box it is given and the
-     stage takes whatever height the search box and crumbs leave, so the disc
-     is as large as both dimensions allow rather than as large as a page's
-     guess at the chrome. Off by default, since a host that gives the element
-     no height would collapse the stage to nothing. */
+  /* Off by default: a host that gives the element no height would collapse the
+     stage to nothing. */
   :host([fit]){height:100%}
   :host([fit]) .frame{display:flex;flex-direction:column;height:100%}
   :host([fit]) .stage{flex:1;min-height:0;width:auto;max-width:100%;align-self:center}
-  /* Side by side once the frame is wider than a square disc needs. The
-     suggestions then sit beside the disc rather than over it, and the disc gets
-     back the height the search box was taking. Under fit only: without a height
-     there is no landscape to find. The class is set from the resize observer,
-     since the test is the frame's own shape and a container cannot query
-     itself. */
+  /* Side by side once the frame is wider than a square disc needs. Under fit
+     only: without a height there is no landscape to find. The class is set from
+     the resize observer, since the test is the frame's own shape and a
+     container cannot query itself. */
   :host([fit]) .frame.wide{display:grid;column-gap:18px;
     grid-template-columns:minmax(200px,280px) minmax(0,1fr);
     grid-template-rows:minmax(0,1fr) auto auto}
-  /* One box around the column, so it reads as a thing beside the disc rather
-     than as loose text next to it. It is the frame's own ::before placed as a
-     grid item rather than an element wrapping the column, because the search
-     box and the definition are two separate grid items and the stacked layout
-     puts the definition under the disc rather than in a column, so there is no
-     element that wraps them to put a border on. Generated first and placed
-     explicitly, so it is painted behind what sits in it, and the two carry the
-     padding that keeps their text off it — which is why the definition's top
-     margin goes, the search box's bottom padding being the gap between the two
-     now. */
+  /* One box around the column, as the frame's own ::before rather than an
+     element wrapping it: the search box and the definition are separate grid
+     items, so nothing wraps them to put a border on. The items carry the
+     padding that keeps their text off it. */
   :host([fit]) .frame.wide::before{content:"";grid-area:1/1/3/2;
     border:1px solid var(--_edge);border-radius:3px;pointer-events:none}
   :host([fit]) .frame.wide .find{grid-area:1/1;margin-bottom:0;padding:10px;
@@ -142,11 +110,8 @@ TPL.innerHTML = `
   :host([fit]) .frame.wide .hits .p{display:block;margin-left:0}
   :host([fit]) .frame.wide .stage{grid-area:1/2/3/3;height:100%;min-height:0;
     justify-self:center}
-  /* The definition moves to the foot of the search column, so the only thing
-     under the disc is the crumb line and the disc keeps the 41 px the two
-     lines were taking. The stage spans both rows, so a longer definition
-     costs the suggestions their room rather than the disc its height, and it
-     is free to run past two lines here. */
+  /* The stage spans both rows, so a longer definition costs the suggestions
+     their room rather than the disc its height. */
   :host([fit]) .frame.wide .gloss{grid-area:2/1;height:auto;-webkit-line-clamp:5;
     margin-top:0;padding:0 10px 10px}
   :host([fit]) .frame.wide .crumb{grid-area:3/1/4/-1;margin-top:7px}
@@ -170,16 +135,10 @@ TPL.innerHTML = `
   .hits .n b{font-weight:600;color:var(--_accent)}
   .hits .p{margin-left:auto;font-family:var(--_mono);font-size:10.5px;
     color:var(--_muted);overflow:hidden;text-overflow:ellipsis}
-  /* Every node one ring out from the current root, in the column the
-     suggestions otherwise leave empty. The two share that room on the rule
-     <word-disc> already sets: suggestions while the box has something in it,
-     the ring below otherwise.
-
-     One per line, where <word-disc> lists its moves two up. A 240 px column
-     has no room for two of "domestic dog", which is the same measurement that
-     already drops a suggestion's parent onto a second line here. Landscape
-     only: the stacked layout has no column, and nothing is built in that
-     shape rather than several hundred rows sitting behind display:none. */
+  /* Every node one ring out from the current root, sharing the column with the
+     suggestions: suggestions while the box has something in it, the ring below
+     otherwise. Landscape only, and nothing is built in the stacked shape rather
+     than several hundred rows sitting behind display:none. */
   .kids{display:none}
   :host([fit]) .frame.wide .kids{display:flex;flex-direction:column;
     flex:1 1 auto;min-height:0;margin-top:9px}
@@ -187,34 +146,23 @@ TPL.innerHTML = `
   .kids .why{font-family:var(--_mono);font-size:10.5px;color:var(--_muted);
     flex:none;padding-bottom:5px}
   .kids .why b{color:var(--_accent);font-weight:600}
-  /* The list carries a box of its own, drawn like the suggestions it shares
-     the room with, and it takes whatever height the column has left, so the
-     box runs down to the definition at the foot of the column however few
-     nodes are in the ring. */
+  /* The list takes whatever height the column has left, so its box runs down
+     to the definition however few nodes are in the ring. */
   .kids .list{margin:0;padding:3px;list-style:none;flex:1 1 auto;min-height:0;
     overflow-y:auto;scrollbar-width:thin;background:var(--_panel);
     border:1px solid var(--_edge);border-radius:2px}
-  /* Colour and leading are set on the row rather than inherited, the rule
-     <word-disc>'s list is built to: a list that draws no text should depend on
-     as little from outside it as it can.
-
-     A name and, on a branch, what it weighs, laid out the way a suggestion
-     lays out its name and its parent. The weight is four to six characters
-     rather than a name, so the two stay on one line where a suggestion has to
-     break. */
+  /* Colour and leading are set on the row rather than inherited: a list that
+     draws no text should depend on as little from outside it as it can. */
   .kids li{box-sizing:border-box;display:flex;gap:8px;align-items:baseline;
     color:var(--_ink);font-size:12.5px;line-height:1.5;padding:2px 5px;
     border-radius:2px;cursor:pointer}
   .kids li .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* Right-aligned against the column's edge rather than the longest name, so
-     the figures read down as a column of their own. Muted and monospaced, as
-     every other number this element prints is. */
+     the figures read down as a column of their own. */
   .kids li .w{margin-left:auto;flex:none;font-family:var(--_mono);
     font-size:10.5px;color:var(--_muted)}
-  /* A leaf is not a way in. Clicking one holds the highlight on it where a
-     branch opens a disc of its own, so it reads muted and the cursor stays an
-     arrow over it — the same three-ways-before-the-click rule <word-disc>
-     refuses a used word by. */
+  /* A leaf is not a way in, so it reads muted and the cursor stays an arrow
+     over it. */
   .kids li.leaf{color:var(--_muted);cursor:default}
   .kids li:hover{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
   .stage{position:relative;width:100%;aspect-ratio:1}
@@ -222,12 +170,9 @@ TPL.innerHTML = `
   canvas.over{cursor:pointer;touch-action:none}
   :host([readout="off"]) .gloss,:host([readout="off"]) .crumb{display:none}
   /* The gloss and the crumb are children of the frame rather than a block of
-     their own, since grid placement is what moves the gloss into the search
-     column and it can only place a child of the grid.
-
-     Stacked under the disc it is two lines, always, so zooming to a longer
-     definition never resizes the disc under the pointer. Nothing is reserved
-     before the file lands. */
+     their own, since grid placement moves the gloss into the search column and
+     can only place a child of the grid. Stacked, it is a fixed two lines, so
+     zooming to a longer definition never resizes the disc under the pointer. */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
     margin-top:7px;overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
@@ -298,22 +243,17 @@ class HypernymDisc extends HTMLElement {
   #pick = -1;
   #names = [];
   /* The definitions, held as the file and an offset per line rather than as
-     82,115 strings: a substring keeps the whole text alive whatever shape it
-     is in, so splitting bought 3.1 MB of headers for a readout that shows one
-     line at a time. disc-lines.js is the shape. */
+     one string per line: a substring keeps the whole text alive whatever shape
+     it is in. disc-lines.js is the shape. */
   #glosses = new Lines();
   #par = [];
   // Where i's children start in the flat child list: #kidOff[i + 1] -
-  // #kidOff[i] is the child count and the leaf test both. The 82,115 separate
-  // arrays this pair replaces held 4.8 MB, two thirds of them the empty one a
-  // leaf never reads, against 657 KB for the two Int32Arrays here.
+  // #kidOff[i] is the child count and the leaf test both. Two Int32Arrays
+  // rather than an array per node.
   #kidOff;
   /* Which children, in the order the disc draws them. #build lays a parent's
      angles out in one pass over this slice, so it is wedge order already and
-     the column below the search box needs no sort. Held on the element rather
-     than left in #build now that something outside it walks children; that is
-     328,456 bytes against #kidOff's 328,464, and the 657 KB above is the two
-     of them, so it was never the saving. */
+     the column below the search box needs no sort. */
   #kidIdx;
   #depth;
   #leaves;
@@ -327,9 +267,7 @@ class HypernymDisc extends HTMLElement {
   // The crumb path in two written parts: the head is the way out and moves
   // only on a zoom, the tail follows the pointer, and each has an element of
   // its own so writing one does not re-parse the other. #crumbSel is the
-  // tail's node, so the pointer crossing a wedge writes to the DOM once rather
-  // than per pixel, and #failed holds a load error in the crumb until a zoom,
-  // as it did when the line was written whole.
+  // tail's node; #failed holds a load error in the crumb until a zoom.
   #headEl;
   #tailEl;
   #crumbSel = -2;
@@ -426,13 +364,10 @@ class HypernymDisc extends HTMLElement {
     // its wedge, and clicking one is clicking it. Delegated, since the rows
     // are rebuilt on every zoom.
     this.#listEl.addEventListener("pointermove", e => {
-      /* A pointer between two rows is over the list and over no row, and
-         clearing the preview there is what made the highlight blink off and
-         on again as it travelled down the column. Every seam does it: the
-         list's own padding, the slack at the end of a line, a hairline
-         between two rows that abut at a fractional width. So a move that
-         lands on no row holds what the last one set, and leaving the list is
-         the only thing that clears it, which is what pointerleave is for. */
+      /* A move landing on no row holds what the last one set: clearing the
+         preview at every seam — the list's padding, a hairline between two rows
+         — makes the highlight blink. Leaving the list is the only thing that
+         clears it, which is what pointerleave is for. */
       const li = e.target.closest("li[data-i]");
       if (!li) return;
       const i = +li.dataset.i;
@@ -448,33 +383,22 @@ class HypernymDisc extends HTMLElement {
       if (el.scrollTop + el.clientHeight > el.scrollHeight - KIDS_NEAR) this.#page();
     });
     this.#ro = new ResizeObserver(() => this.#fit());
-    /* The stage, whose box is what the canvases are sized from, and the frame,
-       whose shape is what decides the layout — because the two do not move
-       together. Stacked, the stage is a square of whatever height the flex
-       column leaves it, so its height comes off the frame's height and a frame
-       dragged wider leaves its box exactly where it was. Observing the stage
-       alone, the element drops to the stacked layout when the page narrows and
-       then never hears another thing: no callback is raised however wide the
-       page is dragged afterwards, and it stays stacked for good. */
+    /* Both boxes: the stage is what the canvases are sized from and the
+       frame's shape is what decides the layout, and the two do not move
+       together. Stacked, a frame dragged wider leaves the stage's box exactly
+       where it was, so watching the stage alone strands the element in the
+       stacked layout for good. */
     this.#ro.observe(this.#sr.querySelector(".stage"));
     this.#ro.observe(this.#frame);
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#repaint);
     this.#onRatio();
     // Canvas text is measured rather than laid out, so a face landing after the
-    // first frame repaints nothing on its own: the DOM reflows on a font swap
-    // and a drawn pixel cannot. The fit is cached on radius and text, carrying
-    // the font string it settled on, so the name is drawn in the face that
-    // arrived at a size and a line break solved against the fallback, and a
-    // narrower fallback then runs the fitted line past the hub radius. A host
-    // serving its monospace unpreloaded under `font-display: swap` paints
-    // exactly that. repaint() drops #fits and #toks and draws again, which is
-    // the whole of the fix here.
+    // first frame repaints nothing on its own, and the cached fit was solved
+    // against the fallback. repaint() drops #fits and #toks and draws again.
     document.fonts?.ready?.then(() => this.repaint());
-    // Before the fetch, not after the first draw asks for it. The worker's own
-    // module fetch then runs alongside the tree's, so a slow link no longer
-    // spends the whole deadline on the network and reads as a device with no
-    // worker at all.
+    // Before the fetch, not after the first draw asks for it, so the worker's
+    // module fetch runs alongside the tree's rather than inside the deadline.
     if (this.#route === undefined) this.#openPainter();
     if (!this.#ready) this.#load();
     this.#idle = watch(this, this.#sleep, this.#wake);
@@ -585,7 +509,7 @@ class HypernymDisc extends HTMLElement {
     return this.#root;
   }
   /* What the last build and the last repaint cost, and how many arcs that
-     repaint actually put on the canvas. Zooming in draws far fewer. */
+     repaint put on the canvas. */
   get stats() {
     return {
       nodes: this.#par.length,
@@ -617,8 +541,8 @@ class HypernymDisc extends HTMLElement {
     this.#overlay();
     this.#emit("disc-names", { count: this.#names.length, ms: this.#namesMs });
   }
-  /* The file's lines, `length` and `at(i)`, rather than an array: see
-     disc-lines.js for why the definitions are not 82,115 strings. */
+  /* The file's lines, `length` and `at(i)`, rather than an array of strings;
+     see disc-lines.js. */
   get glosses() {
     return this.#glosses;
   }
@@ -655,19 +579,10 @@ class HypernymDisc extends HTMLElement {
     this.#showKids();
   }
 
-  /* The ring below the current root: every node a click on the disc would open,
-     and the leaves that end there.
-
-     In the order the disc draws them, which costs no sort. #build lays a
-     parent's angles out in one pass over its children as they sit in #kidIdx,
-     so a slice of that array is already wedge order; sorting the names
-     alphabetically here, as <word-disc> sorts its moves, would put the list
-     and the disc in different orders and there is no reading the one against
-     the other after that.
-
-     Landscape only, like the suggestions it shares the column with, and built
-     on the way in rather than kept behind display:none: WordNet's widest node
-     holds 661 children. */
+  /* The ring below the current root, in the order the disc draws them: a slice
+     of #kidIdx is already wedge order, and sorting it would put the list and
+     the disc in different orders. Landscape only, built on the way in rather
+     than kept behind display:none. */
   #showKids() {
     if (!this.#ready) return;
     if (!this.#frame.classList.contains("wide")) {
@@ -699,20 +614,9 @@ class HypernymDisc extends HTMLElement {
     this.#page();
   }
 
-  /* What a branch weighs: the leaves under it against every leaf in the ring.
-
-     Those two are one division rather than a sum over the row's siblings,
-     because a node's leaf count is its children's added up, so the ring's own
-     total is #leaves at the root. It is also exactly the share of the turn the
-     wedge takes — #build divides a parent's span by its leaf count and gives
-     each child its own count of them — so the figure printed here is the width
-     of the arc it names and can be read against the disc rather than only
-     against the other rows.
-
-     Three digits at most, since a ring of 661 nodes has shares in the
-     hundredths and a column has no room to say so: rounded whole above 9.95%,
-     one decimal down to 0.095%, and everything below that reads <0.1%. The
-     first two thresholds are the rounding boundaries rather than 10 and 0.1,
+  /* What a branch weighs: the leaves under it against every leaf in the ring,
+     which is also exactly the share of the turn its wedge takes. Three digits
+     at most. The thresholds are the rounding boundaries rather than 10 and 0.1,
      so 9.96% prints as 10% rather than 10.0%. */
   #weight(i, total) {
     const pct = (100 * this.#leaves[i]) / total;
@@ -721,10 +625,8 @@ class HypernymDisc extends HTMLElement {
     return "<0.1%";
   }
 
-  /* The next page of rows, appended. Nothing already placed is thrown away as
-     it scrolls out of view, which is what makes this an append rather than a
-     windowing scheme: scrolling back is free and no scroll position has to be
-     guessed at. */
+  /* The next page of rows, appended. Nothing already placed is thrown away, so
+     scrolling back is free and no scroll position has to be guessed at. */
   #page() {
     const to = Math.min(this.#below.length, this.#listed + KIDS_PAGE);
     if (to === this.#listed) return;
@@ -738,10 +640,8 @@ class HypernymDisc extends HTMLElement {
       name.className = "n";
       name.textContent = this.#label(i);
       li.append(name);
-      // A leaf weighs one leaf, which is the ring's floor rather than anything
-      // about the node, and it is the row that has nothing below it. So the
-      // figure is a branch's alone, and its absence is the third thing saying
-      // which rows are a way further in.
+      // A leaf weighs one leaf, the ring's floor rather than anything about
+      // the node, so the figure is a branch's alone.
       if (this.#isLeaf(i)) li.className = "leaf";
       else {
         const w = document.createElement("span");
@@ -802,7 +702,7 @@ class HypernymDisc extends HTMLElement {
     for (let i = 0; i < N; i++) rings[this.#depth[i]].push(i);
     for (const arr of rings) arr.sort((x, y) => this.#a0[x] - this.#a0[y]);
     // Typed, because these cross to the worker whole and a nested plain array
-    // of 82,115 numbers is the slowest thing structured clone can be handed.
+    // of numbers is the slowest thing structured clone can be handed.
     this.#byDepth = rings.map(arr => Int32Array.from(arr));
     this.#layoutKey++;
     this.#buildMs = performance.now() - t0;
@@ -815,8 +715,8 @@ class HypernymDisc extends HTMLElement {
     const m = this.getAttribute("merge");
     return m === "off" || m === "on" ? m : "density";
   }
-  /* 14 by default, which is where WordNet's rings stop covering enough of the
-     turn to read: depth 13 spans 4.5% of it and depth 19 is one node. */
+  /* 14 by default, past which a deep tree's rings cover too little of the turn
+     to read. */
   #rings() {
     const want = Math.max(1, Math.round(+(this.getAttribute("rings") ?? 14)) || 14);
     return Math.min(want, this.#maxDepth - this.#depth[this.#root] + 1);
@@ -838,13 +738,10 @@ class HypernymDisc extends HTMLElement {
     return true;
   }
 
-  /* Browser zoom multiplies devicePixelRatio and leaves the CSS box alone, so
-     an element a host sized in pixels sees no observation and goes on painting
-     at the resolution before the zoom, which is a disc that blurs on cmd+ and
-     never recovers. A media query naming the current ratio fires when it
-     moves, and has to be re-armed each time, since a query can only report
-     leaving the one value it names. Arming it is a fit as well: the first call
-     runs before anything is drawn and #fit answers for that. */
+  /* Browser zoom moves devicePixelRatio and leaves the CSS box alone, so an
+     element a host sized in pixels sees no resize observation. A media query
+     naming the current ratio fires when it moves, and has to be re-armed each
+     time, since a query can only report leaving the one value it names. */
   #onRatio = () => {
     this.#dq?.removeEventListener("change", this.#onRatio);
     this.#dq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
@@ -880,15 +777,11 @@ class HypernymDisc extends HTMLElement {
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
   }
 
-  /* A disc more than a screen away gives its pixels back. The overlay is the
-     element's own; the base may belong to the worker by now, where setting a
-     dimension throws, so the painter is asked to empty it and sizes it again
-     on the next view it is sent. #asleep is what stops #fit taking them
-     straight back under the resize observer, which goes on firing at an
-     element nobody can see, and what stops the draws.
-
-     Nothing is dropped before the first fit: a disc that starts below the fold
-     never allocates rather than allocating and giving back. */
+  /* A disc more than a screen away gives its pixels back. The base may belong
+     to the worker, where setting a dimension throws, so the painter is asked to
+     empty it. #asleep is what stops #fit taking them straight back under the
+     resize observer, which goes on firing at an element nobody can see.
+     Nothing is dropped before the first fit. */
   #sleep = () => {
     if (this.#asleep) return;
     this.#asleep = true;
@@ -939,11 +832,10 @@ class HypernymDisc extends HTMLElement {
     this.#overlay();
   };
 
-  /* Read once and held. getComputedStyle flushes pending style, and the
-     overlay wants three of these on every pointer move, which is what turned a
-     hover into a style recalculation per event. The cache is dropped wherever
-     the ground under it could have moved: a resize, the colour-scheme query,
-     and the repaint() a host calls after restyling by any other means. */
+  /* Read once and held: getComputedStyle flushes pending style and the overlay
+     wants three of these on every pointer move. Dropped wherever the ground
+     under them could have moved — a resize, the colour-scheme query, and the
+     repaint() a host calls after restyling by any other means. */
   #tok(n, f) {
     let v = this.#toks.get(n);
     if (v === undefined) {
@@ -1020,13 +912,10 @@ class HypernymDisc extends HTMLElement {
   }
 
   /* A canvas can be handed to a worker only once, and only before anything has
-     taken a context on it, so the choice cannot be made by painting here and
-     handing over afterwards: the element waits for the worker to answer, and a
-     worker that errors or never answers leaves the draw on this thread.
-
-     Opened when the element connects rather than when the first draw wants a
-     painter, so fetching and evaluating the worker's two modules runs
-     alongside the fetch of the tree instead of after it. */
+     taken a context on it, so the element cannot paint here and hand over
+     afterwards: it waits for the worker to answer, and a worker that errors or
+     never answers leaves the draw on this thread. Opened on connect so the
+     worker's module fetch runs alongside the tree's. */
   #openPainter() {
     this.#route = "wait";
     this.#settle = here => {
@@ -1069,11 +958,10 @@ class HypernymDisc extends HTMLElement {
     if (this.#ready) this.#armFloor();
   }
 
-  /* The deadline, started the first time a paint is actually wanted. Timing it
-     from the worker's construction spent it on the network, so a slow link
-     read as a device with no worker and painted here for the rest of the
-     element's life. What it guards now is a worker that loads and never
-     answers, and what it costs is a blank disc for that long. */
+  /* The deadline, started the first time a paint is wanted rather than at
+     construction, so a slow link does not spend it all on the network. It
+     guards a worker that loads and never answers, at the cost of a blank disc
+     for that long. */
   #armFloor() {
     if (this.#route !== "wait" || this.#floor) return;
     this.#floor = setTimeout(() => {
@@ -1132,23 +1020,10 @@ class HypernymDisc extends HTMLElement {
     }
   }
 
-  /* The hub names the node under the pointer, or the one the search left the
-     cursor on, and falls back to the root: what you are looking at, at every
-     level rather than only at the top. Muted when it is the fallback, so the
-     name of the view never reads as a selection. Drawing it on the overlay is
-     what makes it free to follow the pointer, since the base holds every arc
-     and the overlay only the path being highlighted.
-
-     Under the name sits the way out, in the accent the crumb buttons use, and
-     only when there is one: at the root a click on the hub does nothing, and
-     with the pointer on a wedge the hub is naming that instead and the room is
-     wanted for the name. The name is fitted to a radius short of the hint so
-     the two cannot collide however long the name runs. */
-  /* Fitting a name costs 9.5 measureText calls at the median and 539 for the
-     longest in WordNet, and the pointer crossing wedges asks for the same few
-     names over and over. The radius is in the key because the hint under the
-     name takes room from it; the face is not, since the map is dropped when
-     the tokens are. */
+  /* Fitting a name costs several measureText calls, and the pointer crossing
+     wedges asks for the same few names over and over. The radius is in the key
+     because the hint under the name takes room from it; the face is not, since
+     the map is dropped when the tokens are. */
   #fitted(g, text, r) {
     const key = `${r}|${text}`;
     const had = this.#fits.get(key);
@@ -1164,6 +1039,12 @@ class HypernymDisc extends HTMLElement {
     return got;
   }
 
+  /* The hub names the node under the pointer, or the one the search left the
+     cursor on, and falls back to the root, muted, so the name of the view never
+     reads as a selection. Under the name sits the way out, and only where there
+     is one: never at the root, and never with the pointer on a wedge, where the
+     room is wanted for that wedge's name. The name is fitted to a radius short
+     of the hint, so the two cannot collide however long it runs. */
   #hub(g) {
     const sel = this.#focus();
     const named = sel >= 0;
@@ -1214,10 +1095,8 @@ class HypernymDisc extends HTMLElement {
     return best >= 0 && this.#a1[best] >= A && this.#inView(best) ? best : -1;
   }
 
-  /* The canvas has no border and no padding, so offsetX and offsetY are the
-     rect arithmetic they replace. Reading a rect here forced a layout on every
-     pointer move, and the crumb line's write on the move before had just
-     dirtied one. */
+  /* The canvas has no border and no padding, so offsetX and offsetY are exact,
+     and reading a rect here would force a layout on every pointer move. */
   #at(ev) {
     return [ev.offsetX, ev.offsetY];
   }
@@ -1248,11 +1127,8 @@ class HypernymDisc extends HTMLElement {
     if (h >= 0 && !this.#isLeaf(h)) this.zoomTo(h);
   };
 
-  /* Straight through, not deferred to a frame. The scan is 1.2 ms at worst over
-     82,115 names, and 0.2 for most queries, so coalescing keystrokes through
-     requestAnimationFrame would save a fraction of one frame and buy a stall
-     everywhere that callback is throttled, which is where a hidden or
-     background tab leaves it. Nobody types faster than a frame in any case. */
+  /* Straight through, not deferred to a frame: the scan is a fraction of one,
+     and requestAnimationFrame is throttled in a background tab. */
   #onQuery = () => {
     if (!this.#ready || !this.#names.length) return;
     this.#search ??= new Search(this.#names);
@@ -1397,16 +1273,10 @@ class HypernymDisc extends HTMLElement {
   #emit(name, detail) {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
-  /* The definition of whatever the hub names: the node under the pointer, or
-     what the search left the cursor on, and the current root when the pointer
-     is off the disc, which is what the crumb path ends at.
-
-     WordNet writes its glosses lowercase, so the first letter is raised, on
-     75,110 of the 82,115. Two kinds are left as they are: the 2,959 that open
-     on a parenthetical label such as "(mathematics)", where the first character
-     is not a letter and the label is conventionally lowercase, and the 4 whose
-     second letter is a capital, which is what stops "cDNA copy of the RNA
-     genome" becoming "CDNA". The other 4,042 already start on a proper noun. */
+  /* The definition of whatever the hub names. The first letter is raised,
+     except where the gloss opens on a parenthetical label such as
+     "(mathematics)", which is conventionally lowercase, and where the second
+     letter is a capital, which stops "cDNA copy…" becoming "CDNA". */
   #showGloss() {
     const sel = this.#focus();
     const g = this.#glosses.at(sel >= 0 ? sel : this.#root);
@@ -1431,11 +1301,9 @@ class HypernymDisc extends HTMLElement {
     this.#showTail();
   }
 
-  /* The chain of whatever the hub is naming, carried on past the root the way
-     clicking it would leave the path. It is muted where the path to the root
-     is not, so what you are looking at still reads as the view and the rest as
-     a pointer passing over. #focus is what answers, so the name in the hub,
-     the definition and this can never be of different nodes. */
+  /* The chain of whatever the hub is naming, carried on past the root, muted
+     where the path to the root is not. #focus is what answers, so the hub's
+     name, the definition and this can never be of different nodes. */
   #showTail() {
     if (this.#failed) return;
     const sel = this.#focus();

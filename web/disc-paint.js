@@ -1,34 +1,24 @@
 /* The draw pipeline for <hypernym-disc>, with no DOM in it.
  *
  * The same class runs on the main thread and inside disc-worker.js against an
- * OffscreenCanvas, so the element has one implementation to keep correct and a
- * fallback that cannot drift from the fast path.
- *
- * It owns the tint, the palette and the merged runs, because all three are
- * derived from the layout and read only by the draw. The element keeps the
- * layout itself, which hit testing, the crumbs and the keyboard all need
- * synchronously.
+ * OffscreenCanvas, so the fallback cannot drift from the fast path.
  *
  *   const p = new Painter();
  *   p.layout({par, depth, a0, a1, byDepth, maxDepth}, hueDepth);
  *   const stats = p.paint(ctx, {root, w, h, cx, cy, r0, rmax, rw, rings, dpr,
  *                              mode, sat, val, panel});
  *
- * `rings` is how many depths below the root are drawn. The element caps it
- * because a deep tree's last rings hold almost nothing — WordNet's depth 19 is
- * one node — and dividing the radius by every depth spends a quarter of it on
- * a fringe too sparse to see. What is cut off is one zoom away.
+ * `rings` is how many depths below the root are drawn; what is cut off is one
+ * zoom away.
  */
-// TAU and hsv are shared with <word-disc>, which reads the same letter wheel
-// and none of the rest of this. Re-exported so the import sites here and in
-// hypernym-disc.js stay as they were.
+// TAU is re-exported so this module's import sites stay as they were.
 import { hsv, TAU } from "./disc-colour.js";
 export { TAU };
 // Below one pixel at its outer edge a wedge cannot be told from its neighbour.
 export const MERGE_PX = 1;
 // Value steps the density ramp is quantised to, and how far it dips at its
-// sparse end. 24 steps sits below the eye's threshold on this ramp and keeps
-// the interned palette a lookup rather than a string build per piece.
+// sparse end. Quantised so the ramped colours stay interned rather than built
+// per piece.
 const RAMP_STEPS = 24;
 const RAMP_FLOOR = 0.62;
 
@@ -116,9 +106,9 @@ export class Painter {
     return this.#quant(this.#tint[i]);
   }
 
-  /* A colour is a string, and a string is what the canvas has to parse, so
-     they are interned rather than rebuilt per piece per frame. `step` is the
-     density rung, RAMP_STEPS meaning fully covered. */
+  /* A colour is a string the canvas has to parse, so they are interned rather
+     than rebuilt per piece per frame. `step` is the density rung, RAMP_STEPS
+     meaning fully covered. */
   #colourId(tint, rel, step) {
     const key = tint + "|" + rel + "|" + step;
     let id = this.#paletteKey.get(key);
@@ -138,7 +128,7 @@ export class Painter {
     this.#fillId = new Int32Array(this.#n);
     this.#hueQ = Math.max(1, Math.round((TAU * this.#rmax) / MERGE_PX));
     // Only the unmerged draw reads a per-node fill; a merged one colours the
-    // run, so filling this in would be 82,115 lookups nothing goes on to read.
+    // run, so filling this in would be lookups nothing goes on to read.
     if (this.#mode !== "off") return;
     const base = this.#depth[this.#root];
     for (let i = 0; i < this.#n; i++)
@@ -147,13 +137,11 @@ export class Painter {
 
   /* Adjacent wedges thinner than a pixel are one shape to the rasteriser,
      which below about 0.1 px draws them as nothing at all, so they are drawn as
-     one and take the mean of their hues. Blending is what lets a run ignore
-     colour, and matching on it instead left nothing to merge above hue-depth 2,
-     where every node takes its own angle: the draw paid all 82,115 arcs there
-     rather than 7,823. A gap between subtrees breaks every run, which is what
-     keeps the fringe reading as many nodes. In density mode a run is then cut
-     at pixel boundaries and each piece keeps its own count and its own blend,
-     so a flat block becomes a ramp showing where the tree is packed. Runs are
+     one and take the mean of their hues. Blending rather than matching on
+     colour is what lets a run merge above hue-depth 2, where every node takes
+     its own angle. A gap between subtrees breaks every run, which keeps the
+     fringe reading as many nodes. In density mode a run is then cut at pixel
+     boundaries and each piece keeps its own count and its own blend. Runs are
      found off `byDepth`, already sorted by start angle for hit testing. */
   #remerge() {
     if (this.#mode === "off") {

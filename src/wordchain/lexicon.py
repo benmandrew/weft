@@ -71,8 +71,7 @@ def _check_extras() -> None:
     """Refuse a bad EXTRA_WORDS entry at import rather than at render time.
 
     Nothing downstream would notice a typo: an unknown category silently adds
-    nothing, and a word carrying a digit or an apostrophe is one the closure
-    would have dropped, so it would reach the disc looking deliberate.
+    nothing, and an unplayable word would reach the disc looking deliberate.
     """
     for category, words in EXTRA_WORDS.items():
         if category not in CATEGORIES:
@@ -97,18 +96,13 @@ _reader: Any = None
 
 
 def _wordnet() -> Any:
-    """A WordNet reader, built at the point of use and kept for the process.
+    """A WordNet reader, built at the point of use and kept for the process, so
+    a cache hit never parses the database.
 
-    Parsing the database costs over a second, and a cache hit needs none of it,
-    so nothing here runs until something actually asks WordNet a question.
-
-    Two thirds of that cost is avoidable. `WordNetCorpusReader.__init__` ends by
-    calling `map_wn()`, which guards its work with `get_version() == version`
-    against a default of the string "wordnet" — a corpus name, not a version, so
-    the comparison never holds and the mapping always runs. It parses the 7 MB
+    `WordNetCorpusReader.__init__` ends by calling `map_wn()`, whose version
+    guard compares against the string "wordnet" and so never holds. It parses
     index.sense twice to build a sense-key table for the multilingual API, which
-    nothing here calls. Declining to build it takes the load from 1280 ms to
-    512 ms and leaves every word list identical.
+    nothing here calls; declining it leaves every word list identical.
     """
     global _reader
     if _reader is None:
@@ -164,8 +158,7 @@ def _closure(roots: tuple[str, ...], min_depth: int) -> set[Synset]:
     """Every synset below the category roots, by breadth-first hop count.
 
     min_depth drops the shallow layers. At depth zero sit the roots themselves,
-    whose lemmas are the category name: "animal" is not a playable answer in a
-    game of animals, and neither is "vehicle" in a game of vehicles.
+    whose lemmas are the category name, which is not a playable answer.
     """
     wordnet = _wordnet()
     depth: dict[Synset, int] = {}
@@ -199,15 +192,12 @@ def _in_category(
 ) -> bool:
     """Whether the category is what somebody hearing the bare word would think of.
 
-    The closure is generous: `animal.n.01` contains a sense of "world" and a
-    sense of "blue", and taking every lemma at face value fills the graph with
-    words that are animals only under a reading nobody would offer in a game.
-
-    Two signals separate them. WordNet ships sense-tagged counts from a hand
-    annotated corpus, so where a word has been tagged at all, the share of its
-    noun occurrences falling inside the category is the direct measure. Where it
-    has no counts, sense order stands in: WordNet lists senses commonest first,
-    so a category sense buried at position seven is not the everyday meaning.
+    The closure is generous, so taking every lemma at face value fills the graph
+    with words that belong only under a reading nobody would offer in a game.
+    Two signals separate them: where a word carries WordNet's sense-tagged
+    counts, the share of its noun occurrences inside the category is the direct
+    measure; where it has none, sense order stands in, since WordNet lists
+    senses commonest first.
     """
     wordnet = _wordnet()
     senses = wordnet.synsets(text.replace(" ", "_"), pos=wordnet.NOUN)
@@ -231,9 +221,9 @@ def _in_category(
 def _fingerprint() -> str:
     """Something that changes when the WordNet database does, without loading it.
 
-    The dev shell symlinks the corpus at a nix store path, and that path carries
-    the version, so resolving the link is a stat. Asking nltk for its version
-    would parse the database instead — the exact cost the cache exists to avoid.
+    The dev shell symlinks the corpus at a nix store path carrying the version,
+    so resolving the link is a stat. Asking nltk for its version would parse the
+    database instead — the exact cost the cache exists to avoid.
     """
     root = os.environ.get("NLTK_DATA")
     if not root:
@@ -283,16 +273,11 @@ def _resolve(
 ) -> list[Word]:
     """The uncached path: WordNet closure, then the filters.
 
-    One absolute frequency cut suits some categories and guts others. At a Zipf
-    of 3.0 animal keeps 364 words and flower keeps 9, not because English has
-    nine flowers but because flower names sit lower in the frequency table than
-    animal names as a class. The cut is calibrated for the common categories and
-    silently deletes the rest.
-
-    So the cut adapts. Everything above min_zipf is kept; if that leaves fewer
-    than `target` words, the threshold slides down the category's own frequency
-    order until it has that many, and stops at zipf_floor whatever happens.
-    Categories with plenty of common words never notice.
+    One absolute frequency cut suits some categories and guts others, since a
+    class of names can sit lower in the frequency table as a whole, so the cut
+    adapts: everything above min_zipf is kept, and if that leaves fewer than
+    `target` words the threshold slides down the category's own frequency order
+    until it has that many, stopping at zipf_floor whatever happens.
     """
     from wordfreq import zipf_frequency
 
@@ -305,11 +290,9 @@ def _resolve(
         if " " in text and not allow_multiword:
             continue
         zipf = zipf_frequency(text, "en")
-        # A Zipf of exactly zero means wordfreq has never seen the word in any
-        # of its corpora. That is where WordNet stops listing words and starts
-        # listing taxonomy: 879 of animal's 2461 candidates score zero, and they
-        # read aegyptopithecus, acanthocephalan, abrocome. Structural, so it
-        # holds however low the threshold below is set.
+        # A Zipf of exactly zero, meaning wordfreq has never seen the word, is
+        # where WordNet stops listing words and starts listing taxonomy.
+        # Structural, so it holds however low the threshold below is set.
         if zipf <= 0.0:
             continue
         if zipf < floor:
@@ -327,15 +310,9 @@ def _resolve(
 def _with_extras(words: list[Word], category: str, allow_multiword: bool) -> list[Word]:
     """The resolved words with the category's hand-added ones merged in.
 
-    They join after the frequency cut rather than before it, so an added word
-    neither counts towards `target` nor displaces one the closure earned. The
-    multiword flag still governs them, since it decides whether the whole graph
-    chains on outer letters.
-
-    An added word carries wordfreq's Zipf rather than a stand-in, so `words`
-    prints the truth about it. The list is ordered by frequency and `build
-    --limit` keeps the head, so a word wordfreq has never seen scores zero,
-    sorts last, and needs a larger limit to be drawn.
+    They join after the frequency cut, so an added word neither counts towards
+    `target` nor displaces one the closure earned, and they carry wordfreq's own
+    Zipf, so one it has never seen scores zero and sorts last.
     """
     extra = EXTRA_WORDS.get(category, ())
     if not extra:
@@ -368,21 +345,14 @@ def members(
     """The words of a category, commonest first.
 
     min_zipf is on wordfreq's Zipf scale, where 2.0 is about one occurrence per
-    ten million words. It stands at zero, which keeps every word wordfreq knows
-    at all, since the list is already ordered by frequency and `build` draws the
-    commonest `limit` of them: the order is a better instrument than a cut.
-    Words wordfreq scores at exactly zero are dropped outright, whatever the
+    ten million words; the order rather than a cut is what `build --limit` uses,
+    so it stands at zero. A Zipf of exactly zero is dropped whatever the
     threshold: that is the line between WordNet's vocabulary and its taxonomy.
-    min_dominance and max_rank control
-    the polysemy filter described on _in_category, min_depth the shallow-layer
-    cut described on _closure, and target with zipf_floor the sliding cut
-    described on _resolve. EXTRA_WORDS then adds the category's hand-picked
-    words, which no filter above can drop.
+    The other filters are described on _in_category, _closure and _resolve, and
+    EXTRA_WORDS then adds words no filter above can drop.
 
     The result is cached on disk against the category, every argument above, the
-    category's EXTRA_WORDS entry, and the WordNet build it came from. A hit skips
-    the 1.3 s the database takes to parse, which is the single largest cost in
-    the whole tool.
+    category's EXTRA_WORDS entry, and the WordNet build it came from.
     """
     if category not in CATEGORIES:
         raise UnknownCategory(category)

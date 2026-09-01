@@ -84,7 +84,7 @@
       "additionalProperties": false,
       "properties": {
         "min_zipf": {
-          "description": "Words rarer than this on wordfreq's Zipf scale are dropped, where 2.0 is about one occurrence per ten million words. Zero, the default, keeps every word wordfreq knows at all: the list is already ordered by frequency and the disc draws the commonest `limit` of them, so the order is a better instrument than a cut. A word wordfreq scores at exactly zero is dropped whatever this says, as the line between WordNet's vocabulary and its taxonomy. `build --min-zipf` overrides this.",
+          "description": "Words rarer than this on wordfreq's Zipf scale are dropped, where 2.0 is about one occurrence per ten million words. Zero, the default, keeps every word wordfreq knows at all. A word wordfreq scores at exactly zero is dropped whatever this says, as the line between WordNet's vocabulary and its taxonomy. `build --min-zipf` overrides this.",
           "type": "number",
           "default": 0.0,
           "minimum": 0,
@@ -141,7 +141,7 @@
       "additionalProperties": false,
       "properties": {
         "preset": {
-          "description": "A named wheel, and the shorter of the two ways to set one: naming a preset is one string edit where the arc below is five. spectrum is what the theme brings on its own, so naming it changes nothing. Every preset is tuned against the dark ground; on the light one the same wheel is drawn with saturation up 0.07 and value down 0.28.",
+          "description": "A named wheel, the shorter of the two ways to set one. spectrum is what the theme brings on its own, so naming it changes nothing. Every preset is tuned against the dark ground; on the light one the same wheel is drawn with saturation up 0.07 and value down 0.28.",
           "type": "string",
           "enum": [
             "duotone",
@@ -170,7 +170,7 @@
           "maximum": 1
         },
         "hue_span": {
-          "description": "How much of the circle the letters cover. A span of exactly 1 closes it, which puts A and Z one step apart and makes them read as the same hue; a little under 1 separates them. A quarter turn gives up telling adjacent letters apart and buys a disc that reads as one object.",
+          "description": "How much of the circle the letters cover. A span of exactly 1 closes it, which puts A and Z one step apart and makes them read as the same hue; a little under 1 separates them.",
           "type": "number",
           "default": 1.0,
           "exclusiveMinimum": 0,
@@ -191,7 +191,7 @@
           "maximum": 1
         },
         "equalise": {
-          "description": "How far each letter's value is pulled towards a common brightness, from 0 for none to 1 for equal. Zero is meaningful here, and means no correction. A fixed-saturation wheel spans about 1.9x in luma, and every bundle is drawn at one alpha, so a yellow overwhelms a blue at equal weight. Correction can only take brightness away, so 1 sends the greens olive and 0.65 is about as far as they stay green.",
+          "description": "How far each letter's value is pulled towards a common brightness, from 0 for none to 1 for equal. Zero is meaningful here, and means no correction. A fixed-saturation wheel spans about 1.9x in luma and every bundle is drawn at one alpha, so a yellow overwhelms a blue at equal weight. Correction only takes brightness away, so 1 sends the greens olive.",
           "type": "number",
           "default": 0.0,
           "minimum": 0,

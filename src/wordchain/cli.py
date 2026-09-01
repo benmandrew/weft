@@ -22,15 +22,11 @@ from .graph import LETTERS, letter_stats, summary
 from .lexicon import CATEGORIES, UnknownCategory, Word, catalogue, members
 from .palette import DARK, THEMES, with_wheel
 
-# What each `[selection]` setting is called on the command line, as the word its
-# help stands in for and the help itself. The flag's own name and its type come
-# off `Selection` and `config._SELECTION_BOUNDS`, so a setting added there
-# reaches the command line by being given a line here rather than an argparse
-# block of its own, and `tools/check_schema.py` refuses a setting with no line.
-#
-# Every one of them says what the file's value is as well as what the flag does,
-# because the flag beats the file for one run and a reader has to be told which
-# number they are moving.
+# Each `[selection]` setting's metavar and its help. The flag's own name and its
+# type come off `Selection` and `config._SELECTION_BOUNDS`, so a setting added
+# there reaches the command line by being given a line here rather than an
+# argparse block of its own, and `tools/check_schema.py` refuses one with no
+# line. See `_selection` for how a flag beats the file.
 _SELECTION_HELP: dict[str, tuple[str | None, str]] = {
     "min_zipf": (
         "Z",
@@ -95,8 +91,7 @@ def _selection_args(
     switches every command takes.
 
     Driven off `Selection` rather than written out, so the flags cannot be a
-    setting short of the table a file can move. `build` is the only command that
-    draws, so it is the only one that takes `--limit`.
+    setting short of the table a file can move.
     """
     if category:
         parser.add_argument("category", help="category name; see the `categories` command")
@@ -106,11 +101,8 @@ def _selection_args(
             continue
         metavar, help_text = _SELECTION_HELP[field.name]
         flag = "--" + field.name.replace("_", "-")
-        # Every one defaults to None rather than to its value, since a `--target
-        # 60` typed out and no `--target` at all have to reach a file that sets
-        # it differently as different things. That is why `--multiword` is a
-        # BooleanOptionalAction: without `--no-multiword` a file that switched it
-        # on could not be switched back off for one run.
+        # Every flag defaults to None; see `_selection`. `--multiword` is a
+        # BooleanOptionalAction so `--no-multiword` can turn a file's own off.
         if field.name == _FLAG:
             parser.add_argument(flag, action=argparse.BooleanOptionalAction, help=help_text)
             continue
@@ -139,9 +131,10 @@ def _selection(args: argparse.Namespace) -> Selection:
     """What a command should select with: the flag, then the file, then the
     built-in default.
 
-    Absent flags are None, so a flag given is the only thing that displaces the
-    file, and `--limit` is missing entirely from the three commands that do not
-    draw.
+    Every selection flag defaults to None rather than to its value, so a
+    `--target 60` typed out and no `--target` at all reach a file that sets it
+    differently as different things; an absent flag is the only one the file
+    fills in.
     """
     config: Config = args.settings
     given: dict[str, Any] = {}
@@ -204,9 +197,8 @@ def _report(category: str, words: list[Word]) -> str:
 
 
 def _cmd_categories(args: argparse.Namespace) -> None:
-    # Counting means resolving every category, so this pays the WordNet load
-    # once and 57 ms per category after it. The filter arguments are the same
-    # ones the other commands take, so the counts match what they would build.
+    # The filter arguments are the ones the other commands take, so the counts
+    # match what they would build.
     rows = [(name, len(_load(args, name)), ", ".join(CATEGORIES[name])) for name in catalogue()]
     name_width = max(len(row[0]) for row in rows)
     count_width = max(len("words"), max(len(str(row[1])) for row in rows))
@@ -228,15 +220,13 @@ def _cmd_words(args: argparse.Namespace) -> None:
 
 
 def _cmd_build(args: argparse.Namespace) -> None:
-    # matplotlib costs about 290 ms to import and only `build` draws anything,
-    # so `stats`, `words` and `categories` should never pay for it.
+    # Only `build` draws, so the other commands never pay matplotlib's import.
     from . import render
 
     config: Config = args.settings
 
     # A [palette] table replaces the wheel the theme brought; without one the
-    # theme's own stands, so a file that only sets geometry changes no colour.
-    # The flag wins over the file, and the dark ground stands with neither.
+    # theme's own stands. The flag wins over the file, dark with neither.
     theme = THEMES[args.theme or config.theme or DARK.name]
     if config.wheel is not None:
         theme = with_wheel(theme, config.wheel)

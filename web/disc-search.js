@@ -101,8 +101,7 @@ export class Search {
     this.#names = Array.from(names);
     this.#lower = this.#names.map(s => s.toLowerCase());
     // A second pass, over strings the first has just left in cache, which is
-    // why it costs nothing measurable: 5.1 ms for both against 5.3 ms for the
-    // lowercased copy alone.
+    // why it costs nothing measurable.
     this.#mask = new Int32Array(this.#lower.length);
     for (let i = 0; i < this.#lower.length; i++) this.#mask[i] = mask(this.#lower[i]);
   }

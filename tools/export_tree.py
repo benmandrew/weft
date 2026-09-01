@@ -1,35 +1,20 @@
 """Write WordNet's noun hierarchy as the flat tree `<hypernym-disc>` reads.
 
-The element nests arcs, and nesting needs a tree, so the hypernym DAG is cut
-down to one: every synset keeps its first hypernym and the other 2,313 edges go.
-All 82,115 nodes survive that cut; only the cross-links do.
+Nesting needs a tree and the hypernyms are a DAG, so every synset keeps its
+first hypernym and the cross-links go. Every node survives that cut.
 
-The output is three files, because the disc lays itself out without reading a
-single name. `wordnet-tree.json` is `{"par": [-1, 0, 0, ...]}` where `par[i]`
-indexes `i`'s parent, `wordnet-names.txt` is the names for those same indices
-one per line, and `wordnet-glosses.txt` the definitions. Structure is 42 KB
-over the wire against 311 KB of names, so splitting them lets the element paint
-from the smaller file and fetch the rest afterwards.
+The output is three files, since the disc lays itself out without reading a
+name: `wordnet-tree.json`, `{"par": [-1, 0, 0, ...]}` where `par[i]` indexes
+`i`'s parent; `wordnet-names.txt`, one name per line; and
+`wordnet-glosses.txt`, one definition per line. All three are positional and
+index-aligned, with no key to catch a mismatch.
 
-The glosses file holds a line per node, index-aligned with the other two. It
-carries every synset rather than only the ones that can be a root, because the
-definition follows the pointer as well as the crumb path, and two thirds of the
-nodes the pointer lands on are leaves.
-
-Nodes come out in preorder over the first-parent tree, which guarantees a
-parent's index is below every one of its children's: that ordering is the whole
-contract, and it lets the element compute depths, leaf counts and angles in flat
-loops instead of walking the tree. Siblings are visited by rank, then by
-descending subtree size, which is the wedge order the disc draws, so every node
-keeps the depth and the angle span it had under the rank-major sort this
-replaced.
-
-Rank is the longest path down from `entity.n.01`, not the shortest, so a synset
-with two parents sits below the deeper of them. Preorder holds the contract up
-now, and rank still earns its keep three times over: it finds a cycle in the
-DAG, it orders the reverse pass that totals subtree sizes, and it leads the
-sibling key, where 379 of the 16,933 sibling groups hold nodes of differing
-rank.
+Nodes come out in preorder over the first-parent tree, which puts every
+parent's index below all of its children's. That ordering is the whole
+contract: it lets the element find depths, leaf counts and angles in flat loops
+rather than by traversal. Siblings are visited by rank, then by descending
+subtree size, which is the wedge order the disc draws; rank is the longest path
+down from `entity.n.01`, so a synset with two parents sits below the deeper.
 
     python tools/export_tree.py            # writes the three files into out/
     python tools/export_tree.py --out DIR
@@ -51,9 +36,8 @@ Key = tuple[int, int, str]
 def _parents(synsets: list[Synset]) -> dict[str, list[str]]:
     """Every synset's hypernyms, classes and instances alike.
 
-    `instance_hypernyms` carries 9.4% of the nouns -- Paris under city, every
-    named river -- and nltk keeps it out of `hypernyms`, so asking for one
-    without the other silently drops them.
+    nltk keeps `instance_hypernyms` -- Paris under city, every named river --
+    out of `hypernyms`, so asking for one without the other drops them.
     """
     return {
         synset.name(): [h.name() for h in synset.hypernyms()]
@@ -116,20 +100,12 @@ def _label(name: str) -> str:
 def _preorder(parents: dict[str, list[str]], key: Callable[[str], Key]) -> list[str]:
     """Depth-first over the first-parent tree, visiting siblings in `key` order.
 
-    Preorder satisfies the contract on its own: a node is emitted before its
-    whole subtree, so every parent's index is below all of its children's
-    without any appeal to rank. It also puts each subtree in a contiguous run of
-    indices, so one wedge's glosses could be served as a byte range rather than
-    82,115 scattered lines. Nothing serves them that way yet.
+    A node is emitted before its whole subtree, which satisfies the export's
+    contract on its own, and each subtree lands in a contiguous run of indices,
+    which is what compresses and what a byte range would need.
 
-    Contiguity pays on its own, taking the glosses from 1,428 KB brotli to
-    1,329 KB, since siblings share their phrasing -- a genus and its species
-    read alike -- and the compressor sees that only where they sit together.
-    `par` is near-monotonic in preorder rather than scattered, which takes the
-    tree file from 129 KB to 42 KB.
-
-    Iterative rather than recursive: the first-parent tree is 19 deep, but a
-    chain that ran the other way would be 82,115 frames.
+    Iterative rather than recursive: the tree is shallow, but a chain running
+    the other way would be one frame per synset.
     """
     children: dict[str, list[str]] = {}
     for name, above in parents.items():
@@ -157,9 +133,7 @@ def build() -> tuple[list[str], list[int], list[str]]:
     rank, order = _ranks(parents)
     size = _sizes(parents, order)
 
-    # Sibling order is wedge order, so the key stays the one the whole file used
-    # to be sorted by: all 82,115 nodes keep their depth and their angle span,
-    # and preorder is a permutation of the indices and nothing else.
+    # Sibling order is wedge order, so changing this key moves the layout.
     laid_out = _preorder(parents, lambda name: (rank[name], -size[name], name))
     index = {name: i for i, name in enumerate(laid_out)}
     gloss = {synset.name(): _gloss(synset) for synset in synsets}

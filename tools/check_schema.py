@@ -167,12 +167,9 @@ def _library(report: Report) -> None:
     """Hold `lexicon.members`'s defaults to the ones the file can move.
 
     `Selection` and `members` state the same numbers, one for the file and one
-    as the library's own signature. `render.words_disc` takes its limit from
-    `Selection` and so copies nothing, and `config.as_members` is what every
-    caller now goes through; `members` itself cannot, since its arguments are
-    its API. A `Selection` that has drifted from the signature it feeds is the
-    same failure the schema check exists for: two copies of a number, one of
-    them stale, and a config file that quietly changes what no flag admits to.
+    as the library's own signature; `members` cannot go through
+    `config.as_members`, since its arguments are its API. Two copies of a
+    number, one of them stale, is the failure this whole file exists for.
     """
     signature = inspect.signature(members)
     for name, default in _defaults(Selection).items():
@@ -189,9 +186,8 @@ def _command_line(report: Report) -> None:
     """Hold the flags to the table a file can move.
 
     `cli._selection_args` builds one flag per `Selection` field and reads its
-    help out of `_SELECTION_HELP`, so a setting with no line there reaches no
-    command line at all — silently, since a missing flag is a KeyError only for
-    the settings that do have one. This is what makes it a failed check instead.
+    help out of `_SELECTION_HELP`, so a setting with no line there silently
+    reaches no command line at all. This is what makes it a failed check.
     """
     wanted = set(_defaults(Selection))
     for name in sorted(wanted - set(_SELECTION_HELP)):

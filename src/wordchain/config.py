@@ -1,18 +1,11 @@
 """The disc's settings, as dataclasses and as a TOML file.
 
-Eight numbers decide where the word disc puts things, and the good value for
-each depends on the category: 895 animals and 60 flowers do not want the same
-label size or the same curve pull. They sat in `render.py` as module constants,
-which meant editing the source to try a different figure, so they moved onto a
-frozen `Geometry` that a figure takes the way it already takes a `Theme`.
-
-The wheel that maps 26 letters to 26 hues went the same way. `[palette]` either
-names one of the presets in `palette.py` or gives the numbers for a single arc.
-
-`[selection]` is the third table, and it holds the command line's own defaults:
-which words a category yields and how many of them the disc draws. A flag beats
-the file for one run, and every command reads the table rather than `build`
-alone, so the count `categories` prints stays the list `stats` analyses.
+`[geometry]` holds the distances a figure draws with, carried on a frozen
+`Geometry` a figure takes the way it takes a `Theme`; `[palette]` names a
+preset wheel or gives one arc's numbers; `[selection]` holds the command line's
+own defaults for which words a category yields. A flag beats the file for one
+run, and every command reads `[selection]` rather than `build` alone, so the
+count `categories` prints stays the list `stats` analyses.
 """
 
 from __future__ import annotations
@@ -31,19 +24,16 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class Geometry:
-    """Every distance and size the disc figures need.
-
-    The defaults are the values the figures were tuned at, so a `Geometry()`
-    with no file behind it draws what the tool drew before the file existed.
-    """
+    """Every distance and size the disc figures need. The defaults are the
+    values the figures were tuned at."""
 
     # How far a chord's control points sit toward the centre, as a fraction of
     # the radius. Curves leave each node heading inwards, so a chord reads as
     # the pair of letters it joins rather than as a line across the disc.
     pull: float = 0.32
 
-    # The same for the word disc once it passes 150 words. Tighter than `pull`
-    # because 4856 curves through a wide middle read as fog.
+    # The same for the word disc once it passes 150 words. Tighter than `pull`,
+    # because thousands of curves through a wide middle read as fog.
     pull_dense: float = 0.20
 
     # Where the word labels start, as a fraction of the dot ring.
@@ -75,10 +65,7 @@ DEFAULT = Geometry()
 class Selection:
     """Which words a category yields, and how many of them the disc draws.
 
-    These are the command line's own defaults, held here so a file can move
-    them. Every command reads them, not just `build`: `categories` prints the
-    count `stats` analyses and `build` draws from, and a table only `build`
-    honoured would put the three out of step.
+    The command line's own defaults, held here so a file can move them.
     """
 
     # Words rarer than this on wordfreq's Zipf scale are dropped. Zero keeps
@@ -139,16 +126,12 @@ _TOP = (_THEME, *_TABLES)
 # correction, so unlike every other setting these two mean something at zero.
 _ZERO_OK = frozenset({"hue_start", "equalise"})
 
-# Every numeric `[selection]` setting, as the JSON type it takes, the lowest
-# value it allows and the highest if it has one. The validator below reads this
-# and so does `tools/check_schema.py`, which is what stops the schema's bounds
-# drifting from the ones actually enforced. Unlike `[geometry]`, each of these
-# allows its own minimum: a `min_zipf` of 0 is the whole vocabulary, a
-# `min_dominance` of 0 asks nothing of a word's senses, a `target` of 0 relaxes
-# nothing, and a `limit` of 0 is no limit rather than a blank disc: a count is
-# the thing being lifted, so zero reads as "all of them" the way it does in a
-# head or a tail. The Zipf ceiling is 8 because the scale runs out there —
-# "the" scores 7.7 — so anything above it empties every category.
+# Every numeric `[selection]` setting: the JSON type it takes, its lowest value
+# and its highest if it has one. The validator below and `tools/check_schema.py`
+# both read this, so the schema cannot drift from what is enforced. Unlike
+# `[geometry]`, each allows its own minimum, since zero is the whole vocabulary,
+# no demand on a word's senses, or no limit rather than a blank disc. The Zipf
+# ceiling is 8, where the scale runs out; above it every category empties.
 _SELECTION_BOUNDS: dict[str, tuple[str, float, float | None]] = {
     "min_zipf": ("number", 0.0, 8.0),
     "min_dominance": ("number", 0.0, 1.0),
@@ -164,21 +147,16 @@ _FLAG = "multiword"
 
 # `Selection` names these settings as the file spells them and `lexicon.members`
 # names them as its own API, where `multiword` answers to `allow_multiword` and
-# `limit` has no counterpart at all, since only `build` draws. The map sits here
-# rather than at either call site, so the commands and the word exporter that
-# all feed `members` a `Selection` cannot disagree about it, and
-# `tools/check_schema.py` reads it to hold that signature to these defaults.
+# `limit` has no counterpart, since only `build` draws. `tools/check_schema.py`
+# reads the two to hold that signature to these defaults.
 _MEMBERS_RENAME = {"multiword": "allow_multiword"}
 _MEMBERS_SKIP = frozenset({"limit"})
 
 
 def as_members(selection: Selection) -> dict[str, Any]:
-    """`selection` as the keyword arguments `lexicon.members` takes.
-
-    Spelling the eight out at a call site is what put four copies of them in the
-    tree, one of which had already drifted; a caller that wants a different
-    setting builds a different `Selection`.
-    """
+    """`selection` as the keyword arguments `lexicon.members` takes. Every caller
+    goes through this, since spelling them out per call site drifted; a caller
+    wanting different settings builds a different `Selection`."""
     return {
         _MEMBERS_RENAME.get(field.name, field.name): getattr(selection, field.name)
         for field in fields(selection)
@@ -373,10 +351,6 @@ def resolve(explicit: str | None, root: Path | None = None) -> Config:
     A named file has to exist, because a `--config` that silently falls back to
     the defaults is a typo that costs a render to notice. The one found by
     looking does not, since a checkout without one still has to draw.
-
-    Every command calls this, not just `build`, since `[selection]` decides the
-    word list that `categories` counts and `stats` analyses as much as the one
-    `build` draws.
     """
     if explicit is not None:
         return load(Path(explicit))

@@ -7,41 +7,22 @@
  *   <word-disc> wrapping an application/json script child holding {…}
  *   document.querySelector("word-disc").data = {category, words, zipf};
  *
- * Pick a word and the disc lights every word that can follow it — which is one
- * whole wedge less what is used, because the successors of a word are exactly
- * the words starting with the letter it ends on. Pick one of those and the
- * chain carries on, and the line under the disc is the chain so far: its steps
- * wind play back to themselves and its root, the category, clears it, which is
- * the way to open on a different word.
+ * Pick a word and the disc lights every word that can follow it — one whole
+ * wedge less what is used, since the successors of a word are exactly the words
+ * starting with the letter it ends on. The line under the disc is the chain so
+ * far: its steps wind play back to themselves and its root, the category,
+ * clears it.
  *
- * A word already played is not a move. It keeps a warning colour wherever it
- * appears, the readout names it as used, and the cursor drops back to an arrow
- * over it, so the refusal is legible three ways before the click rather than
- * being a click that does nothing.
+ * Every chord the SVG draws is cached to a bitmap and blitted per frame, so a
+ * move blits the bundle and draws only the fan on top of it.
  *
- * The static figure is still underneath. Every chord the SVG draws is cached
- * to a bitmap and blitted per frame, so a click blits the bundle and draws
- * only the fan on top of it, which is what keeps a move a single frame at any
- * word count. That bitmap is held in a square of its own rather than the
- * frame's and is built on a worker, so a resize scales the blit instead of
- * paying a stroke for each of up to 96,470 chords on this thread.
+ * word-layout.js is the placement, word-chain.js the rule and word-bundle.js
+ * the resting picture; none of the three touches the DOM, so
+ * tools/check_web.mjs runs them without a browser.
  *
- * word-layout.js is the placement, word-chain.js the rule, word-bundle.js the
- * resting picture, and none of the three touches the DOM, so
- * tools/check_web.mjs runs all of them without a browser. disc-idle.js is the
- * one thing here that does: it says when the disc is far enough from the
- * screen to give its pixels back, which both elements answer the same way.
- *
- * Beside the disc, where the frame is wide enough for a column, every word
- * that could be played next is listed under the search box. It is where the
- * moves can be read rather than found among the dots, which is what the larger
- * categories need now that they are drawn unlabelled.
- *
- * A host naming an index-src gets a picker above the search box and the
- * element changes its own category: the word files sit beside the index, so
- * choosing one swaps `src` and play starts again on the new list. Without the
- * attribute the element is one category and one file, which is all a page
- * embedding a single disc needs, and the picker is not built at all.
+ * A host naming an index-src gets a picker above the search box and the element
+ * changes its own category, the word files sitting beside the index. Without
+ * the attribute the picker is not built at all.
  *
  * Attributes: src, index-src (words-index.json, which turns the picker on),
  *             limit (0, every word the category has; a count caps it),
@@ -77,47 +58,26 @@ import {
 // The hub's "back" hint: its size, and the room it takes from the name above.
 const HINT_PX = 11,
   HINT_H = 15;
-// The sizes the hub's name steps down through, and its weight. It is the
-// weight rather than the size that sets the name apart now: disc-label.js's
-// own ladder tops out at 12 px and this one at 16, where it used to reach 33.
-//
-// 33 came in when the panel behind the name went and the room it had been
-// taking came free, and taking the room was the mistake. Set that large the
-// name is the figure rather than a label on it, and the figure is the disc:
-// the long chords cross in the middle, which is the part worth seeing and the
-// part the name sits over. 16 leaves it legible over the bundle — the halo
-// does that work, not the size — and gives the chords the middle back. The
-// bottom two rungs are where the shorter ladder ends, and no disc of a usable
-// size reaches them: they are there so a frame too small for the hub to mean
-// anything degrades rather than clips.
+// The sizes the hub's name steps down through, and its weight. The ladder is
+// capped low deliberately: set larger the name reads as the figure rather than
+// as a label on it, over the middle where the long chords cross. It is the
+// weight that sets it apart, and the halo rather than the size that keeps it
+// legible over the bundle.
 const HUB_SIZES = [16, 14, 12, 10, 8],
   HUB_WEIGHT = 700;
-// The halo, the reference band and the baseline arithmetic are disc-label.js's
-// now, since all three discs name something in the middle and both of those
-// have gone wrong here before — a halo that read as a shadow lying off to one
-// side of the word, and a name that moved as the pointer crossed the disc. A
-// second copy could drift back to either, so there is one.
-//
-// What the halo is for here: 100 to 280 of a category's chords pass inside the
-// hub's radius — element is the worst at 279 of 658 — so the name has to clear
-// its own ground, and only its own. A panel wide enough to hold it took the
-// middle of the figure with it, which is the part worth seeing.
+// The halo, the reference band and the baseline arithmetic are disc-label.js's,
+// shared by all three discs. The halo is what lets the name sit over the chords
+// that cross the hub: it clears its own letters and nothing more, where a panel
+// wide enough to hold the name would cover the middle of the figure.
 // The search column beside the disc, and the gutter to it. Same thresholds as
 // <hypernym-disc>, so the two elements break to landscape together.
 const ASIDE_MIN = 200,
   ASIDE_GAP = 18;
 const RESIZE_HOLD = 60;
 // How many rows the column puts in the DOM at a time, and how near the foot of
-// it a scroll has to come before the next lot follow. Nothing is capped:
-// scrolling reaches the end of any list, and the work per move is a page
-// rather than a category.
-//
-// 200 is chosen so no move set is ever paged — the largest over the 37
-// categories is animal's 187, after "mollusc" — which leaves the list before
-// the first move as the only one that pages, and that one is the whole
-// category rather than a set of replies to anything. A page also overfills
-// the column at any size it can be, 100 lines two up against the 15 to 31 a
-// column holds, so the scrollbar says at once that there is more.
+// it a scroll has to come before the next lot follow. Nothing is capped, and
+// the page is large enough that no move set is ever paged and that one page
+// always overfills the column, so the scrollbar says at once there is more.
 const MOVES_PAGE = 200,
   MOVES_NEAR = 240;
 
@@ -134,23 +94,17 @@ const PULL = 0.32,
 // built and the fan on top is the thing to read. palette.Theme's edge_alpha.
 const EDGE_ALPHA = 0.2,
   BUNDLE_DIM = 0.22;
-/* Chords past which no bundle is drawn at all. It used to stand at 24,000,
-   which is where the stroke apiece a resize paid for stopped being worth it,
-   and it cost the seven largest categories their picture: animal holds 96,470
-   chords at no limit, food 57,320, job 50,275, plant 48,033, city 36,693,
-   body-part 35,732 and drug 24,898. The bundle is built off the frame's size
-   and off this thread now, so a resize blits rather than rebuilds and none of
-   those seven pays anything on the main thread for its picture.
-
-   What is left is a guard against a word list nothing here ships. Chords go as
-   the square of the words, so it draws every category the tool has at no limit
-   and refuses a list half again as large. */
+/* Chords past which no bundle is drawn at all. The build is off this thread
+   and once per word set, so this is a guard against a word list nothing here
+   ships rather than a judgement about when a bundle stops reading as a picture:
+   it draws every category the tool has at no limit and refuses a list half
+   again as large. */
 const MAX_BUNDLE = 200000;
 
 // What the worker gets to answer in, timed from the first bundle the element
-// actually wants rather than from the worker's construction. A worker that
-// loads and never answers otherwise leaves the disc without its picture for
-// good, where the cost of finding that out is the picture arriving this late.
+// actually wants rather than from the worker's construction. It guards against
+// a worker that loads and never answers, which would otherwise leave the disc
+// without its picture for good.
 const WORKER_FLOOR = 400;
 
 const TPL = document.createElement("template");
@@ -180,16 +134,12 @@ TPL.innerHTML = `
   :host([fit]) .frame.wide{display:grid;column-gap:18px;
     grid-template-columns:minmax(200px,280px) minmax(0,1fr);
     grid-template-rows:auto minmax(0,1fr) auto auto}
-  /* One box around the column, so it reads as a thing beside the disc rather
-     than as loose text next to it. It is the frame's own ::before placed as a
-     grid item rather than an element wrapping the column, because the picker,
-     the search box and the definition are three separate grid items and the
-     stacked layout puts the definition under the disc rather than in a
-     column, so there is no element that wraps them to put a border on.
-     Generated first and placed explicitly, so it is painted behind what sits
-     in it, and those three carry the padding that keeps their text off it —
-     which is why the definition's top margin goes, the search box's bottom
-     padding being the gap between the two now. */
+  /* One box around the column. The frame's own ::before placed as a grid item
+     rather than an element wrapping the column, since the picker, the search
+     box and the definition are three separate grid items and the stacked
+     layout puts the definition under the disc instead. Generated first, so it
+     paints behind them, and those three carry the padding that keeps their
+     text off it. */
   :host([fit]) .frame.wide::before{content:"";grid-area:1/1/4/2;
     border:1px solid var(--_edge);border-radius:3px;pointer-events:none}
   :host([fit]) .frame.wide .pick{grid-area:1/1;padding:10px 10px 0}
@@ -207,11 +157,8 @@ TPL.innerHTML = `
   :host([fit]) .frame.wide .gloss{grid-area:3/1;height:auto;-webkit-line-clamp:5;
     margin-top:0;padding:0 10px 10px}
   :host([fit]) .frame.wide .crumb{grid-area:4/1/5/-1;margin-top:7px}
-  /* The category picker, on where the host names an index. It is the search
-     box one scale out — that one reaches a word inside a category and this one
-     reaches the category — so it takes the head of the same column. It is not
-     part of that box, though, and search="off" is about finding a word: a host
-     that turns the search off keeps the picker it asked for. The native
+  /* The category picker, on where the host names an index. search="off" is
+     about finding a word, so it keeps the picker a host asked for. The native
      appearance stays, since stripping it takes the arrow with it and the arrow
      is what says the control opens a list. */
   .pick{margin-bottom:8px}
@@ -247,14 +194,8 @@ TPL.innerHTML = `
   .hits li.used .n{color:var(--_warn)}
   /* Every word that could be played next, in the column the search box
      otherwise leaves empty. Landscape only: the stacked layout has no column,
-     and there the suggestions are a dropdown over the disc.
-
-     It earns its room where the disc cannot label itself. Uncapped, the 7
-     largest categories drop their labels, so this is the only place the moves
-     can be read rather than hunted for among the dots — and it is also where
-     it overflows, since animal's median word offers 60 replies and its worst
-     187 against the 15 to 31 rows a column holds one-up. Two up, and read
-     left to right and then down, which is what inline blocks do. */
+     and there the suggestions are a dropdown over the disc. It is the only
+     place the moves can be read where the disc drops its labels. */
   .moves{display:none}
   :host([fit]) .frame.wide .moves{display:flex;flex-direction:column;
     flex:1 1 auto;min-height:0;margin-top:9px}
@@ -262,48 +203,22 @@ TPL.innerHTML = `
   .moves .why{font-family:var(--_mono);font-size:10.5px;color:var(--_muted);
     flex:none;padding-bottom:5px}
   .moves .why b{color:var(--_accent);font-weight:600}
-  /* Two up, by inline blocks of half the width rather than by a grid.
+  /* Two up, by inline blocks of half the width rather than by a grid, which
+     keeps the reading order left to right and then down.
 
-     A grid laid these out and, past the point where the rows overflowed the
-     column, drew every box with nothing written in it — the words were in the
-     DOM and the rows took a hover, so it was the layout and not the list. It
-     was not reproducible here, since make web runs the modules against a
-     stub with no CSS in it at all, so the fix is the construct that cannot
-     fail that way rather than a patch to the one that did: a scrolling block
-     of inline blocks is the oldest layout there is, and it keeps the reading
-     order a ranked list needs, left to right and then down.
-
-     Colour and leading are set on the row rather than inherited, for the same
-     reason: a list that draws no text should depend on as little from outside
-     as it can. A row is 12.5px over 1.5, so a column holds 15 to 31 rows one
-     up and twice that across. The rows are built as elements with nothing
-     between them, so there is no whitespace to collapse between two inline
-     blocks and no font-size:0 on the list to swallow it — which would be a
-     careless thing to add to a list that was drawing nothing. */
-  /* The list carries a box of its own, drawn like the suggestions it shares
-     the room with, and it takes whatever height the column has left, so the
-     box runs down to the definition at the foot of the column however few
-     words are in it. */
-  /* line-height:0 on the list, and every row setting its own: the rows are
-     inline blocks, so each line of them sits in a line box that also holds
-     the inherited strut, and the strut's descent hangs below a row aligned to
-     the top of that box. That gap is a few pixels of the list that is not any
-     row, so a pointer travelling down the column crosses one between every
-     pair and the highlight blinks off and on again. A zeroed strut leaves the
-     line box the height of the row itself and the rows abut. It is not
-     font-size:0, which would be the careless version of this: a row that drew
-     no text would still be a visible box here. */
+     line-height:0 on the list, and every row setting its own: an inline block's
+     line box also holds the inherited strut, whose descent hangs below the rows
+     as a few pixels of list that is no row and makes the hover blink as a
+     pointer crosses it. Not font-size:0, under which a row that drew no text
+     would still be a visible box. */
   .moves .list{margin:0;padding:3px;list-style:none;flex:1 1 auto;min-height:0;
     overflow-y:auto;scrollbar-width:thin;line-height:0;background:var(--_panel);
     border:1px solid var(--_edge);border-radius:2px}
   /* border-box because the page's own box-sizing rule does not cross into a
      shadow root, and content-box would put two halves and their padding past
-     the width and wrap every second word onto a line of its own.
-
-     The 8 px that used to sit between the two rows of a line is gone for the
-     reason the strut is: it was dead ground between two hover targets, and
-     the words are held apart by their own padding without it. The pair still
-     comes to 2 px short of the width, so no rounding can wrap them either. */
+     the width and wrap every second word onto a line of its own. No margin
+     between the pair, which would be dead ground between two hover targets;
+     they come to 2 px short of the width, so no rounding can wrap them. */
   .moves li{box-sizing:border-box;display:inline-block;vertical-align:top;
     width:calc(50% - 1px);
     color:var(--_ink);font-size:12.5px;line-height:1.5;
@@ -317,25 +232,19 @@ TPL.innerHTML = `
      to wind back. A word already used looks like any other to the cursor. */
   canvas.over{cursor:default;touch-action:none}
   :host([readout="off"]) .gloss,:host([readout="off"]) .crumb{display:none}
-  /* Both are held to a height whatever they hold, which is the whole of what
-     stops the disc moving under the pointer: with the fit attribute set the
-     frame is a flex column and the stage takes what these two leave, so a
-     block below the disc that grows by a line takes a line off the disc's
-     height and, the stage being square, as much off its width. The crumb is
-     the one that bit. It is empty until the pointer names a word, so crossing
-     onto the disc shrank it, which moved the words out from under the pointer
-     and fired the resize observer, which rebuilt the bundle a stroke at a
-     time. The gloss shows blank rather than hiding while empty for the same
-     reason, so the disc does not jump once when the words land. A host that
-     wants neither block has readout="off". */
+  /* Both are held to a height whatever they hold, which is what stops the disc
+     moving under the pointer: with the fit attribute set the frame is a flex
+     column and the stage takes what these two leave, so a block that grows by
+     a line takes a line off the disc's height and, the stage being square, as
+     much off its width. Both show blank rather than hiding while empty, for
+     the same reason. A host that wants neither has readout="off". */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
     margin-top:7px;overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
   .gloss .warn{color:var(--_warn)}
-  /* The word's own last letter, which is the whole of what decides what can
-     follow it. Marked where it sits rather than named again after it, and by
-     a rule as well as a colour, since colour alone says nothing to a reader
-     who cannot see it. */
+  /* The word's own last letter, which is what decides what can follow it: a
+     rule as well as a colour, since colour alone says nothing to a reader who
+     cannot see it. */
   .gloss .last{color:var(--_accent);text-decoration:underline;
     text-underline-offset:3px;text-decoration-thickness:2px}
   .crumb{font-family:var(--_mono);font-size:11px;color:var(--_muted);line-height:1.6;
@@ -348,12 +257,11 @@ TPL.innerHTML = `
   .crumb em{font-style:normal}
   .crumb i{font-style:normal;color:var(--_muted);opacity:.5;padding:0 4px}
   .crumb b{color:var(--_ink);font-weight:600}
-  /* The category the words came from, which is not one of them. It sits
-     outside the chevrons and takes the body face against their monospace,
-     italic and muted, with a rule rather than a separator between it and the
-     first word — reading as a step in the chain is the one thing it must not
-     do. Kept at the line's own size so its line box cannot be the taller one
-     and give the crumb a height that depends on what is in it. */
+  /* The category the words came from, which is not one of them: outside the
+     chevrons, in the body face against their monospace, with a rule rather
+     than a separator, since reading as a step in the chain is the one thing it
+     must not do. Kept at the line's own size, so its line box cannot be the
+     taller one and give the crumb a height that depends on what is in it. */
   .crumb .root{font-family:var(--_font);font-style:italic;color:var(--_muted);
     border-right:1px solid var(--_edge);padding-right:9px;margin-right:9px}
   /* Muted until pointed at, so it offers itself as a way back without
@@ -427,10 +335,10 @@ class WordDisc extends HTMLElement {
   #loadedSrc = null;
   #indexSrc = null;
 
-  /* The bundle, drawn once per word set and blitted per frame. It is held in
-     its own square rather than the frame's, so a resize scales the blit and
-     only a crossed size step rebuilds; the old bitmap keeps being drawn until
-     the new one lands, which is why a rebuild has no blank in it. */
+  /* The bundle, drawn once per word set and blitted per frame. Held in its own
+     square rather than the frame's, so a resize scales the blit and only a
+     crossed size step rebuilds; the old bitmap goes on being drawn until the
+     new one lands, so a rebuild has no blank in it. */
   #cache = null;
   #cachePx = 0;
   // What the held bitmap is of, and what has been asked for: the word set and
@@ -533,13 +441,12 @@ class WordDisc extends HTMLElement {
     // its dot, and clicking one is clicking it. Delegated, since the list is
     // rebuilt on every move.
     this.#listEl.addEventListener("pointermove", e => {
-      /* A pointer between two rows is over the list and over no row, and
-         clearing the preview there is what made the highlight blink off and
-         on again as it travelled down the column. Every seam does it: the
-         list's own padding, the slack at the end of a line, a hairline
-         between two rows that abut at a fractional width. So a move that
-         lands on no row holds what the last one set, and leaving the list is
-         the only thing that clears it, which is what pointerleave is for. */
+      /* A move landing on no row holds what the last one set rather than
+         clearing the preview: a pointer is over the list and over no row at
+         every seam — the list's padding, the slack at the end of a line, a
+         hairline between two rows abutting at a fractional width — so clearing
+         here makes the highlight blink all the way down the column. Leaving
+         the list is what clears it, which is what pointerleave is for. */
       const li = e.target.closest("li[data-i]");
       if (!li) return;
       const i = +li.dataset.i;
@@ -555,28 +462,20 @@ class WordDisc extends HTMLElement {
       if (el.scrollTop + el.clientHeight > el.scrollHeight - MOVES_NEAR) this.#page();
     });
     this.#ro = new ResizeObserver(() => this.#fit());
-    /* The stage, whose box is what the canvases are sized from, and the frame,
-       whose shape is what decides the layout — because the two do not move
-       together. Stacked, the stage is a square of whatever height the flex
-       column leaves it, so its height comes off the frame's height and a frame
-       dragged wider leaves its box exactly where it was. Observing the stage
-       alone, the element drops to the stacked layout when the page narrows and
-       then never hears another thing: no callback is raised however wide the
-       page is dragged afterwards, and it stays stacked for good. */
+    /* Both boxes, because they do not move together: the stage is what the
+       canvases are sized from and the frame's shape is what decides the
+       layout. Stacked, the stage is a square of the height the flex column
+       leaves it, so a frame dragged wider leaves its box exactly where it was
+       and an element observing the stage alone would stay stacked for good. */
     this.#ro.observe(this.#sr.querySelector(".stage"));
     this.#ro.observe(this.#frame);
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#onScheme);
     this.#onRatio();
-    // The same font swap hypernym-disc guards against, and #resize rather than
-    // repaint() because this element also solves its label size from #widest, a
-    // measureText over every word in the category, which repaint() leaves alone
-    // along with the geometry solved off it. #resize is the path that drops
-    // #widest, #fits, #toks and #bands, measures again and solves again, and
-    // it is idempotent against a box that has not moved. It leaves the bundle
-    // alone, and rightly: that is chords rather than text, so no face it is
-    // drawn beside can change it. #box is null until the first fit, and a face
-    // landing before that needs nothing, since the first fit measures with it.
+    // Canvas text is measured rather than laid out, so a face swapping in has
+    // to be remeasured. #resize rather than repaint(), because the label size
+    // is solved from #widest, which repaint() leaves alone. #box is null until
+    // the first fit, and a face landing before that needs nothing.
     document.fonts?.ready?.then(() => {
       if (this.#box) this.#resize();
     });
@@ -592,8 +491,7 @@ class WordDisc extends HTMLElement {
     this.#dq?.removeEventListener("change", this.#onRatio);
     this.#dq = null;
     // Terminated, where the nested disc's is not: this one holds no canvas of
-    // the element's, so there is nothing that could only be handed over once
-    // and nothing to lose by opening another if the element is put back.
+    // the element's, so there is nothing that could only be handed over once.
     clearTimeout(this.#floor);
     this.#floor = 0;
     this.#pending?.terminate();
@@ -608,8 +506,8 @@ class WordDisc extends HTMLElement {
     if (n === "src") this.#load();
     if (n === "index-src") this.#loadIndex();
     // A different limit is a different word list, so the layout, the chain and
-    // the bundle all go: a chain over words that are no longer drawn has
-    // nothing on the disc to stand on.
+    // the bundle all go: a chain over words no longer drawn has nothing to
+    // stand on.
     if (n === "limit" && this.#ready) this.#build();
   }
   #onScheme = () => this.repaint();
@@ -633,10 +531,9 @@ class WordDisc extends HTMLElement {
     }
   }
 
-  /* The picker, which exists only where the host names an index. It is fetched
-     rather than derived because the element is handed one word file and the
-     names of the other 36 are nowhere in it, and the index is 37 rows against
-     the 197 KB the files come to, which is the reason it is written. */
+  /* The picker, which exists only where the host names an index. Fetched
+     rather than derived, since the element is handed one word file and the
+     names of the others are nowhere in it. */
   async #loadIndex() {
     const src = this.getAttribute("index-src");
     if (!src || src === this.#indexSrc) return;
@@ -659,9 +556,7 @@ class WordDisc extends HTMLElement {
       ...rows.map(row => {
         const o = document.createElement("option");
         o.value = row.name;
-        // The count, which is what tells drug's 750 words from colour's 97
-        // before the choice is made — and so whether the disc that comes back
-        // is labelled or names its words in the hub instead.
+        // The count, so the size of the category is known before the choice.
         o.textContent = catLabel(row);
         return o;
       }),
@@ -669,19 +564,16 @@ class WordDisc extends HTMLElement {
     // One category is not a choice.
     this.#pickEl.hidden = rows.length < 2;
     this.#mark();
-    /* An index is enough to open on. A host that names one and no `src` means
-       the first category rather than a blank disc, and #load has already run
-       and found nothing by the time this resolves, so there is nothing to
-       race: a `src` written down by hand is loading or loaded. */
+    /* An index alone opens on its first category rather than on a blank disc.
+       #load has run and found nothing by the time this resolves, so there is
+       nothing to race: a `src` written by hand is already loading or loaded. */
     if (!this.#ready && !this.getAttribute("src")) {
       this.setAttribute("src", href(this.#indexSrc, rows[0].name));
     }
   }
 
   /* The picker follows the words rather than leading them, so it moves with a
-     `src` a host set by hand as well as with its own change event. A category
-     the index does not hold leaves the select showing nothing, which is what
-     pointing the two attributes at different directories has asked for. */
+     `src` a host set by hand as well as with its own change event. */
   #mark() {
     if (this.#catEl.value !== this.#category) this.#catEl.value = this.#category;
   }
@@ -719,9 +611,7 @@ class WordDisc extends HTMLElement {
       of: this.#all.length,
       chords: this.#chordCount,
       bundle: this.#cache !== null,
-      // The square the bundle is held at and the thread it was drawn on, which
-      // is the only way a host can tell a picture built beside the page from
-      // one built in front of it.
+      // The square the bundle is held at and the thread it was drawn on.
       bundlePx: this.#cachePx,
       thread: this.#route === "worker" ? "worker" : "main",
       labelPx: this.#labelPx,
@@ -731,18 +621,12 @@ class WordDisc extends HTMLElement {
   }
 
   /* Every word the category has, unless the host names a count. Zero is no
-     limit rather than a blank disc, the way it reads in a head or a tail, and
-     it is the default because a category is a word list and cutting one to its
-     commonest 110 is a thing to ask for rather than to have done.
+     limit rather than a blank disc, the way it reads in a head or a tail.
 
-     `build` still draws 110, and the two differ for a reason: the SVG grows
+     `build` draws 110 instead, and the two differ for a reason: the SVG grows
      its canvas until the labels clear each other and shrinks the type when it
      runs out, where the element has whatever frame the host gave it and drops
-     the labels instead. The 18 largest categories therefore come up unlabelled,
-     with the hub naming what the pointer is on and the search box reaching a
-     word by name. They keep their bundle: animal's 96,470 chords are drawn on
-     a worker into a square of their own, so what the seven largest categories
-     used to lose to the ceiling costs this thread nothing. */
+     the labels instead, the hub then naming what the pointer is on. */
   #limit() {
     const want = this.getAttribute("limit");
     if (want === null) return 0;
@@ -761,18 +645,16 @@ class WordDisc extends HTMLElement {
     this.#cursor = -1;
     this.#search = null;
     this.#widest = 0;
-    // A different word set, so the held bundle is of words that are no longer
-    // on the disc and goes rather than being blitted until its replacement
-    // lands. A resize keeps its bundle; this cannot.
+    // A different word set, so the held bundle is of words no longer on the
+    // disc and goes rather than being blitted until a replacement lands. A
+    // resize keeps its bundle; this cannot.
     release(this.#cache);
     this.#cache = null;
     this.#cacheKey = "";
     this.#asked = "";
     this.#gen++;
-    // A different word set makes whatever is in the box a query about words
-    // that are no longer drawn, so it goes with the suggestions rather than
-    // sitting there describing nothing. It shows now that the picker can
-    // change the category under a query typed for the last one.
+    // Whatever is in the box is now a query about words that are no longer
+    // drawn, so it goes with the suggestions.
     this.#q.value = "";
     this.#closeFind();
     this.#q.disabled = this.#words.length === 0;
@@ -795,19 +677,17 @@ class WordDisc extends HTMLElement {
     const want = this.hasAttribute("fit") && f.width - f.height >= ASIDE_MIN + ASIDE_GAP;
     if (want === this.#frame.classList.contains("wide")) return false;
     this.#frame.classList.toggle("wide", want);
-    // Built on the way in and dropped on the way out, since it exists only
-    // here and #showMoves is what decides that.
+    // Built on the way into the wide layout and dropped on the way out, since
+    // the column exists only there.
     if (this.#ready) this.#showMoves();
     return true;
   }
 
-  /* Browser zoom multiplies devicePixelRatio and leaves the CSS box alone, so
-     an element a host sized in pixels sees no observation and goes on painting
-     at the resolution before the zoom, which is a disc that blurs on cmd+ and
-     never recovers. A media query naming the current ratio fires when it
-     moves, and has to be re-armed each time, since a query can only report
-     leaving the one value it names. Arming it is a fit as well: the first call
-     runs before anything is drawn and #fit answers for that. */
+  /* Browser zoom moves devicePixelRatio and leaves the CSS box alone, so an
+     element a host sized in pixels sees no observation and would go on
+     painting at the resolution before the zoom. A query naming the current
+     ratio has to be re-armed on every change, since it can only report leaving
+     the one value it names. */
   #onRatio = () => {
     this.#dq?.removeEventListener("change", this.#onRatio);
     this.#dq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
@@ -829,26 +709,20 @@ class WordDisc extends HTMLElement {
       return;
     }
     this.#box = { w: box.width, h: box.height, dpr, pw, ph };
-    // The bundle no longer costs a drag anything, since it is blitted at the
-    // new radius rather than restroked, but the dots, the labels and the sizing
-    // they are solved against are still a frame's work at 1,582 words. The
-    // first change goes through outright and the rest are coalesced; the
-    // canvases stretch until the drag stops.
+    // The dots, the labels and the sizing solved against them are a frame's
+    // work on a large category, so the first change goes through outright and
+    // the rest are coalesced; the canvases stretch until the drag stops.
     if (performance.now() - this.#resized > RESIZE_HOLD) return this.#resize();
     clearTimeout(this.#fitTimer);
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
   }
 
-  /* A disc more than a screen away gives its pixels back: two canvases at
-     15.9 MB each and the resting bundle at 16.0 MB, on a 16 inch laptop at the
-     height the embedding page hands it. #pw going to 0 is what stops every draw
-     path, since each already refuses an unsized stage, and #asleep is what
-     stops #fit sizing them again under the resize observer, which goes on
-     firing at an element nobody can see.
-
-     Nothing is dropped before the first fit, since there is nothing there yet:
-     a disc that starts below the fold never allocates rather than allocating
-     and giving back. */
+  /* A disc more than a screen away gives its pixels back: two canvases and the
+     resting bundle. #pw going to 0 is what stops every draw path, since each
+     already refuses an unsized stage, and #asleep is what stops #fit sizing
+     them again under the resize observer, which goes on firing at an element
+     nobody can see. Nothing is dropped before the first fit, so a disc that
+     starts below the fold never allocates at all. */
   #sleep = () => {
     if (this.#asleep) return;
     this.#asleep = true;
@@ -894,11 +768,8 @@ class WordDisc extends HTMLElement {
     this.#fits.clear();
     this.#bands.clear();
     this.#widest = 0;
-    // The bundle is not dropped here. It is held in its own square rather than
-    // this one, so the blit scales it to the new radius and only a crossed
-    // size step asks for another — which is what took the build from once per
-    // size to once per word set, and with it the ceiling that lost the seven
-    // largest categories their picture.
+    // The bundle is not dropped here: it is held in its own square, so the
+    // blit scales it and only a crossed size step asks for another.
     this.#measure();
     this.#geometry(Math.min(b.w, b.h));
     this.#draw();
@@ -906,9 +777,8 @@ class WordDisc extends HTMLElement {
   };
 
   /* The widest word, in pixels per pixel of font size. Measured rather than
-     estimated from a character count, since the labels are set in the host's
-     proportional face and "milliampere" is not "wwwwwwwwwww". Once per word
-     set and per face: the sizing solves against it and nothing else does. */
+     estimated from a character count, the labels being set in the host's
+     proportional face. Once per word set and per face. */
   #measure() {
     if (this.#widest || !this.#words.length) return;
     const g = this.#over.getContext("2d");
@@ -920,9 +790,8 @@ class WordDisc extends HTMLElement {
   }
 
   /* Everything the disc measures, off the square the host left it. `solve` is
-     the whole of it and lives in word-layout.js, since a sizing that comes
-     back with a negative radius is exactly the kind of thing nothing
-     downstream tests for and `make check` can. */
+     the whole of it and lives in word-layout.js, since a sizing that comes back
+     with a negative radius is what nothing downstream tests for. */
   #geometry(size) {
     const s = size ?? Math.min(this.#pw, this.#ph) / this.#dpr;
     const got = solve(this.#L.span, this.#widest, s);
@@ -991,10 +860,9 @@ class WordDisc extends HTMLElement {
     else this.#here(spec);
   }
 
-  /* The same module the worker runs, against a canvas of this document's. What
-     a browser without OffscreenCanvas or Worker falls back to, and what
-     tools/check_web.mjs drives, so the fallback cannot drift from the fast
-     path. */
+  /* The same module the worker runs, against a canvas of this document's: the
+     fallback where there is no OffscreenCanvas or Worker, and what
+     tools/check_web.mjs drives, so it cannot drift from the fast path. */
   #here(spec) {
     const c = document.createElement("canvas");
     c.width = spec.px;
@@ -1005,14 +873,10 @@ class WordDisc extends HTMLElement {
     this.#gotBundle({ id: spec.id, px: spec.px, bitmap: c });
   }
 
-  /* A bundle that has landed, from either thread. A stale one is dropped: the
-     word set or the colours may have moved on while it was being drawn, and
-     the key is what says so.
-
-     The redraw is skipped where this thread built it, since the draw that
-     asked for it is still running and will blit it a line further down. From
-     the worker it is a frame of its own, which is what fades the picture in
-     under a disc that is already there. */
+  /* A bundle that has landed, from either thread. A stale one is dropped, the
+     word set or the colours having moved on while it was drawn. The redraw is
+     skipped where this thread built it, since the draw that asked for it is
+     still running and blits it a line further down. */
   #gotBundle(m) {
     if (!m.bitmap) return;
     // One that arrived after the disc moved on. It is nobody's picture now, so
@@ -1028,12 +892,9 @@ class WordDisc extends HTMLElement {
 
   /* Where the bundle gets built. Nothing is handed over, unlike the nested
      disc — the worker makes its own canvas and transfers a bitmap back — so
-     there is no canvas that can only be given away once, and no reason to
-     leave the worker running when the element disconnects.
-
-     Opened when a bundle is first wanted rather than when the element
-     connects, since its module fetch would otherwise race the word file's for
-     a picture that cannot be drawn until that file has landed anyway. */
+     there is no canvas that can only be given away once. Opened when a bundle
+     is first wanted rather than when the element connects, since its module
+     fetch would otherwise race the word file's. */
   #openBundler() {
     this.#route = "wait";
     const settle = here => {
@@ -1072,11 +933,9 @@ class WordDisc extends HTMLElement {
       this.#worker = w;
       settle(false);
     };
-    /* The deadline, started with the first bundle actually wanted rather than
-       with the worker's construction, which would spend it on the network and
-       read a slow link as a device with no worker. What it guards is a worker
-       that loads and never answers, and what it costs is a disc without its
-       picture for that long. */
+    /* Started with the first bundle actually wanted rather than with the
+       worker's construction, which would spend the budget on the network and
+       read a slow link as a device with no worker. */
     this.#floor = setTimeout(() => {
       this.#pending?.terminate();
       settle(true);
@@ -1099,8 +958,7 @@ class WordDisc extends HTMLElement {
     const live = this.#chain.length > 0;
     if (this.#cache) {
       // The square holds its ring at RING of itself, so inverting that puts the
-      // bundle's ring on this one whatever size either was drawn at. That is
-      // the whole of what a resize costs now.
+      // bundle's ring on this one whatever size either was drawn at.
       const side = this.#r / RING;
       g.globalAlpha = live ? BUNDLE_DIM : 1;
       g.drawImage(this.#cache, this.#cx - side / 2, this.#cy - side / 2, side, side);
@@ -1137,9 +995,8 @@ class WordDisc extends HTMLElement {
       g.stroke();
     }
 
-    // The dots. Four states, and the order below is the order they win in: the
-    // word play stands on, a word already used, a move available, everything
-    // else.
+    // Four states, in the order they win: the word play stands on, a word
+    // already used, a move available, everything else.
     for (let i = 0; i < this.#words.length; i++) {
       const played = this.#chain.played(i),
         can = live && this.#chain.legal(i);
@@ -1228,9 +1085,8 @@ class WordDisc extends HTMLElement {
     const sel = this.#focus();
     if (sel >= 0) {
       const to = this.#L.tail[sel];
-      // What that word would open up, previewed the way playing it would draw
-      // it. Only where it is a move: a word the chain cannot reach leads
-      // nowhere from here.
+      // What that word would open up. Only where it is a move: a word the chain
+      // cannot reach leads nowhere from here.
       if (this.#chain.legal(sel)) {
         g.strokeStyle = this.#hue(to);
         g.lineWidth = 1;
@@ -1250,10 +1106,8 @@ class WordDisc extends HTMLElement {
     this.#hub(g);
   }
 
-  /* disc-label.js's reference band, held per font. The measure is the
-     module's and the cache is the element's, since g.font is the one thing
-     that can change the answer and a pointer crossing the disc asks for the
-     same few faces over and over. */
+  /* disc-label.js's reference band, held per font: g.font is the one thing that
+     changes the answer, and a pointer asks for the same few over and over. */
   #band(g) {
     const held = this.#bands.get(g.font);
     if (held !== undefined) return held;
@@ -1279,17 +1133,13 @@ class WordDisc extends HTMLElement {
   }
 
   /* The hub names the word under the pointer, and otherwise where play stands.
-     Before the first move it names the category, muted, since there is nothing
-     selected for it to be the name of. Under the name sits the way back, and
-     only where there is one: never before the first move, and never with the
-     pointer on a word, where the room is wanted for that word's name.
+     Before the first move it names the category, muted. Under the name sits the
+     way back, and only where there is one: never before the first move, and
+     never with the pointer on a word, where the room is wanted for its name.
 
-     Nothing is drawn behind it. A panel disc wide enough to hold the name took
-     the middle of the figure with it, and the middle is where the long chords
-     cross — which is the picture, not something to cover up. So the text
-     carries its own ground instead, laid under the fill as ringed copies of
-     it and scaled to the type: the only thing it hides is the shape of its
-     own letters. */
+     Nothing is drawn behind it. The text carries its own ground instead, ringed
+     copies of the fill laid under it, so the only thing hidden is the shape of
+     its own letters rather than the middle of the figure. */
   #hub(g) {
     const sel = this.#focus();
     const end = this.#chain.end;
@@ -1303,25 +1153,22 @@ class WordDisc extends HTMLElement {
     else if (named !== end && this.#chain.played(named)) ink = this.#tok("--_warn", "#e8705f");
 
     g.textAlign = "center";
-    // Alphabetic and placed by hand, because "middle" centres the em square
-    // and the em square is not what you see: its descender space is empty for
-    // most words, so the type sits a pixel or two low.
+    // Alphabetic and placed by hand: "middle" centres the em square, whose
+    // descender space is empty for most words, so the type sits a little low.
     g.textBaseline = "alphabetic";
 
     /* The band the name is centred on and the baseline that falls out of it,
-       both disc-label.js's. Measured off the face rather than off the word,
-       which is the whole point: the ink of "iris" stops at the dot and the ink
-       of "guppy" runs below the baseline, so centring each word's own ink
-       moved the name up and down as the pointer crossed the disc. */
+       both disc-label.js's. Measured off the face rather than off the word:
+       centring each word's own ink moves the name up and down as the pointer
+       crosses the disc, "iris" stopping at the dot where "guppy" descends. */
     const first = baseline(this.#cy, this.#band(g), lines.length, lh, way ? HINT_H / 2 : 0);
     this.#ground(g, lines, first, lh, Math.max(HALO_MIN, px * HALO));
     g.fillStyle = ink;
     for (const [k, line] of lines.entries()) g.fillText(line, this.#cx, first + k * lh);
 
     if (!way) return;
-    // Off the last baseline and a notional descender, rather than off whatever
-    // the last line's own ink happened to reach, so the hint sits at one
-    // distance under every name and not lower under the ones ending in y.
+    // Off the last baseline and a notional descender rather than off the last
+    // line's own ink, so the hint sits at one distance under every name.
     const y = first + (lines.length - 1) * lh + px * HUB_DROP + HINT_PX;
     g.font = `${HUB_WEIGHT} ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
     this.#ground(g, ["↑ back"], y, 0, Math.max(HALO_MIN, HINT_PX * HALO));
@@ -1340,9 +1187,8 @@ class WordDisc extends HTMLElement {
     return this.#cursor >= 0 && this.#cursor !== this.#chain?.end ? this.#cursor : -1;
   }
 
-  /* Angles run clockwise from the top and never wrap, so a point maps to a
-     word by radius and then one binary search — the same argument the nested
-     disc makes, and the same absence of a spatial index. */
+  /* Angles run clockwise from the top and never wrap, so a point maps to a word
+     by radius and then one binary search, with no spatial index. */
   #hit(px, py) {
     const dx = px - this.#cx,
       dy = py - this.#cy,
@@ -1371,15 +1217,11 @@ class WordDisc extends HTMLElement {
     this.#showCursor();
   };
 
-  /* The cursor says what a click would do, which a word already used needs
-     said: it sits on the ring looking like any other, so without this the
-     arrow is the only thing that never reports the refusal.
-
-     It answers off where the pointer last was rather than off the event, so a
-     move recomputes it too — clicking a word makes that word used, and the
-     pointer is still on it. Written only when it turns over, since a pointer
-     move fires several times a wedge and an inline style set per event is a
-     style invalidation per event. */
+  /* The cursor says what a click would do, which is one of the three ways a
+     word already played reports the refusal. It answers off where the pointer
+     last was rather than off the event, so a move recomputes it too: playing a
+     word makes it used with the pointer still on it. Written only when it turns
+     over, since a pointer move fires several times a wedge. */
   #showCursor() {
     const on = this.#inHub
       ? this.#chain.length > 0
@@ -1440,10 +1282,9 @@ class WordDisc extends HTMLElement {
     }
   };
 
-  /* Enter, for a word reached by name. A legal word is played, which is what
-     clicking it would do. One the chain cannot reach is left highlighted
-     instead, with the line under the disc saying which letter it wanted:
-     refusing silently would read as a broken key. */
+  /* Enter, for a word reached by name. A legal word is played, as a click
+     would. One the chain cannot reach is left highlighted instead, the line
+     under the disc saying why: refusing silently reads as a broken key. */
   #go(i) {
     this.#closeFind();
     if (this.#chain.legal(i)) return this.play(i);
@@ -1472,8 +1313,7 @@ class WordDisc extends HTMLElement {
           b.textContent = hit.name.slice(at, at + q.length);
           name.append(hit.name.slice(0, at), b, hit.name.slice(at + q.length));
         }
-        // The letter it hands over, which is the only thing about a word that
-        // decides what can come next.
+        // The letter it hands over, which is what decides what can come next.
         const to = document.createElement("span");
         to.className = "p";
         to.textContent = `→ ${String.fromCharCode(65 + this.#L.tail[hit.i])}`;
@@ -1541,9 +1381,7 @@ class WordDisc extends HTMLElement {
     this.#fits.clear();
     this.#bands.clear();
     // The letter wheel is read off two custom properties, so a theme is a
-    // different bundle. The old one is kept on screen while the new one is
-    // drawn, since a moment of the wrong colours reads better than the picture
-    // going out and coming back.
+    // different bundle. The old one stays on screen while the new one is drawn.
     this.#gen++;
     this.#draw();
     this.#overlay();
@@ -1587,15 +1425,13 @@ class WordDisc extends HTMLElement {
     const word = this.#words[i];
     const to = this.#L.tail[i];
     const letter = String.fromCharCode(65 + to);
-    // What is left, and what there ever was. The two come apart now that a
-    // word is spent once played: a letter can run out because the category
-    // holds nothing starting with it, or because the chain has been through
-    // all of them, and only the first is a fact about the category.
+    // What is left, and what there ever was: a letter can run out because the
+    // category holds nothing starting with it or because the chain has spent
+    // them all, and only the first is a fact about the category.
     const left = this.#chain.replies(i, this.#L.byHead);
     const ever = this.#L.byHead[to].length - (this.#L.head[i] === to ? 1 : 0);
-    // The letter the next word has to start with is the last one of this word,
-    // so it is marked in place. Naming it again after the word said the same
-    // thing twice and put the count a clause further away than it needed.
+    // The letter the next word must start with is this word's last, so it is
+    // marked in place rather than named again after it.
     const parts = [
       `<b>${word.slice(0, -1)}<span class="last">${word.slice(-1)}</span></b>`,
       left
@@ -1604,8 +1440,7 @@ class WordDisc extends HTMLElement {
           `${ever ? `every ${letter} word is used` : `nothing starts with ${letter}`}</span>`,
     ];
     // Why the pointer's word cannot be played, where it cannot. Never for the
-    // word play is standing on, which is used and unreachable by the same two
-    // tests and is neither a mistake nor a move going begging.
+    // word play is standing on, which those same two tests refuse.
     const at = sel >= 0 && sel !== this.#chain.end;
     if (at && this.#chain.played(sel))
       parts.push('<span class="warn">already played, so not a move</span>');
@@ -1617,21 +1452,11 @@ class WordDisc extends HTMLElement {
     this.#glossEl.innerHTML = parts.join(" · ");
   }
 
-  /* Every word that could be played next, listed in the column beside the
-     disc in alphabetical order, which is how one is found by eye in a list
-     that runs past the column. `byHead` holds a wedge commonest first, and
-     that order is still what decides which words are shown at all when the
-     whole category is longer than the cap: the sort is for reading and the
-     order is for choosing.
-
-     Before the first move every word is a move, so the list is the category:
-     that is the one case the cap truncates, and the only one, since no wedge
-     any category has reaches it. Rendered as nodes rather than as markup
-     because a word is a word and building the list out of a string would
-     invite the one bug that has no visible symptom.
-
-     Only the landscape layout has room for it, so nothing is built otherwise
-     — on a phone this would be several hundred elements behind display:none. */
+  /* Every word that could be played next, listed in the column beside the disc
+     in alphabetical order, which is how one is found by eye in a list that runs
+     past the column. Rendered as nodes rather than as markup, since a word is
+     arbitrary text. Landscape only: nothing is built in the stacked layout,
+     where it would be several hundred elements behind display:none. */
   #showMoves() {
     if (!this.#ready) return;
     if (!this.#frame.classList.contains("wide")) {
@@ -1663,9 +1488,8 @@ class WordDisc extends HTMLElement {
   }
 
   /* The next page of rows, appended. Nothing already placed is thrown away as
-     it goes out of view, which is what makes this an append rather than a
-     windowing scheme: scrolling back up is free and the scroll position never
-     has to be guessed at. */
+     it goes out of view, so this is an append rather than a windowing scheme
+     and the scroll position never has to be guessed at. */
   #page() {
     const to = Math.min(this.#moves.length, this.#listed + MOVES_PAGE);
     if (to === this.#listed) return;
@@ -1679,20 +1503,16 @@ class WordDisc extends HTMLElement {
     this.#listEl.append(...rows);
     this.#listed = to;
     // A page that did not fill the column leaves no scrollbar to ask for the
-    // next one, so it asks here instead. Bounded by the list.
+    // next one, so it asks here instead. Bounded by the move count.
     if (this.#listEl.scrollHeight <= this.#listEl.clientHeight) this.#page();
   }
 
   /* The chain, each step a button that winds play back to just after it, and
-     before them the category, which winds play back to nothing.
-
-     That last one is the only way to open on a different first word: the one
-     step of a one-step chain renders as the name you are at rather than as a
-     button, so without a root there is nothing before it to click. It is drawn
-     as a label rather than as a step because it is not one — the words in the
-     line were played and the category was not, and rendering the two alike had
-     it reading as the first word of the chain. The chevrons therefore separate
-     words from words only, and the rule beside the label does the rest. */
+     before them the category, which clears it. That root is the only way to
+     open on a different first word, since the one step of a one-step chain
+     renders as the name you are at rather than as a button. It is drawn as a
+     label rather than as a step because it was not played, so the chevrons
+     separate words from words only. */
   #crumbs() {
     if (this.#failed) return;
     const steps = this.#chain?.steps ?? [];
@@ -1715,18 +1535,16 @@ class WordDisc extends HTMLElement {
     this.#showTail();
   }
 
-  /* The move the pointer is offering, carried on past the chain the way
-     playing it would leave the line. Muted, so what has been played still
-     reads as the chain and this as a pointer passing over. */
+  /* The move the pointer is offering, carried on past the chain the way playing
+     it would leave the line. Muted, so the chain still reads as the chain. */
   #showTail() {
     if (this.#failed) return;
     const sel = this.#focus();
     const show = sel >= 0 && this.#chain.legal(sel) ? sel : -1;
     if (show === this.#crumbSel) return;
     this.#crumbSel = show;
-    // Only ever a legal word, so never one already used. It takes a chevron
-    // only where a word comes before it: against the label alone the rule is
-    // already the separator.
+    // A chevron only where a word comes before it: against the root label the
+    // rule beside it is already the separator.
     this.#tailEl.innerHTML =
       show < 0 ? "" : `${this.#chain.length ? "<i>›</i>" : ""}<em>${this.#words[show]}</em>`;
   }

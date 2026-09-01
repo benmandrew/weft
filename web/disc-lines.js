@@ -1,27 +1,19 @@
-/* A text file's lines, kept as the text and where each line starts.
+/* A text file's lines, kept as the text and where each line starts. Splitting
+ * on the newline buys 82,115 string headers and frees nothing, since every
+ * substring holds the whole text alive anyway. Names are deliberately not held
+ * this way — the search reads every one of them on every query.
  *
- * `wordnet-glosses.txt` is 5.5 MB of definitions, one per synset, and the disc
- * shows one of them at a time. Split on the newline it is 82,115 strings, and
- * every one of them holds the whole text alive anyway, since that is what a
- * substring is: 3.1 MB of headers on top of the 5.5 MB, for a readout two
- * lines deep. Held this way the same file costs the text and one Int32Array,
- * 0.3 MB, and a slice is cut when the pointer asks for it.
- *
- * The offsets are the whole of it, so this is a module rather than a method:
- * an index table that is out by one returns the tail of the line above, which
- * reads as a definition and is nobody's, and tools/check_web.mjs can say so
- * where a browser cannot.
- *
- * Names are not held this way. The search reads every one of them on every
- * query and would cut 82,115 slices to do it.
+ * A module rather than a method because an offset table out by one returns the
+ * tail of the line above, which reads as a definition and is nobody's, and
+ * tools/check_web.mjs can say so where a browser cannot.
  */
 export class Lines {
   #t = "";
   #off = new Int32Array(1);
 
   /* From the text, or from anything else a host hands the element, which is
-     joined back up rather than kept as an array: one shape downstream, and the
-     property is documented as a file's lines. */
+     joined back up rather than kept as an array, so there is one shape
+     downstream. */
   constructor(v = "") {
     this.#t = typeof v === "string" ? v : Array.from(v).join("\n");
     // One pass, and one entry past the end, so a line is off[i] to off[i + 1]

@@ -1,33 +1,18 @@
 /* <letter-disc> — the letter graph as a chord diagram.
  *
- * Data is {category, words: ["cat", …], zipf: [4.7, …]}, the same file
- * tools/export_words.py writes for <word-disc>. The 26 by 26 count is built
- * from it in one pass, so there is nothing new to export and a page that
- * carries both discs fetches one file for the pair.
+ * Data is {category, words: ["cat", …], zipf: [4.7, …]}, the file
+ * tools/export_words.py writes for <word-disc>, so a page carrying both discs
+ * fetches one file for the pair.
  *
  *   <letter-disc src="words-animal.json"></letter-disc>
  *   <letter-disc> wrapping an application/json script child holding {…}
  *   document.querySelector("letter-disc").data = {category, words};
  *
- * A word runs from its first letter to its last, so every word is a directed
- * edge between two of 26 letters. <word-disc> draws the line graph of that —
- * a node per word, 96,470 chords for animal — and this draws the graph
- * underneath it: 26 nodes and one arc per letter pair some word bridges, 344
- * of them at the worst. Where the word disc answers "which word", this
- * answers "which letters, and how heavily".
+ * Where <word-disc> answers "which word", this answers "which letters, and how
+ * heavily". letter-graph.js holds all of the geometry and none of the DOM.
  *
- * Nothing is bundled. At 344 arcs every one of them is a thing to point at and
- * read a count off, and a merged arc is nothing at all; the log width, the
- * split arcs and the hover are what do the decluttering instead. See
- * letter-graph.js, which holds all of the geometry and none of the DOM.
- *
- * There is no worker either, and no cached bitmap. animal is 344 filled
- * ribbons where <word-disc> is 96,470 strokes, so the whole picture is a
- * frame's work and a resize redraws it rather than blitting one.
- *
- * The pointer highlights and a click drills. Pointing at an arc or a letter
- * lights it and dims the rest; clicking one drills into the letter, which the
- * hub names and the readout describes, and clicking the hub goes back.
+ * No worker and no cached bitmap: a few hundred filled ribbons is a frame's
+ * work, so a resize redraws rather than blitting a picture already built.
  *
  * Attributes: src, index-src (words-index.json, which turns the picker on),
  *             readout="off", fit
@@ -56,38 +41,28 @@ import {
   solve,
 } from "./letter-graph.js";
 
-// The hub's name, as <word-disc> sets it: the weight rather than the size is
-// what marks it out, and the ladder's bottom rungs are there so a frame too
-// small for the hub to mean anything degrades rather than clips.
+// The hub's name, as <word-disc> sets it: the weight rather than the size
+// marks it out, and the bottom rungs degrade a frame too small for the hub.
 const HUB_SIZES = [16, 14, 12, 10, 8],
   HUB_WEIGHT = 700;
 // The hub's "back" hint, and the room it takes from the name above it.
 const HINT_PX = 11,
   HINT_H = 15;
 
-// The column beside the disc and the gutter to it. The same thresholds the
-// other two discs break to landscape at, so all three do it together. It holds
-// the picker and the readout: this disc has no search box, no list of arcs and
-// no crumb line, so what a click drills into is read in the hub and in the
-// readout rather than named a third time in a column.
+// The column beside the disc and its gutter, at the thresholds the other two
+// discs break to landscape at, so all three do it together.
 const ASIDE_MIN = 200,
   ASIDE_GAP = 18;
 const RESIZE_HOLD = 60;
 
 // How much of the picture is left where something is highlighted, and what the
-// lit arcs are drawn at. Dimming is a scrim over the whole frame rather than a
-// second pass over 344 arcs at a lower alpha: one fill against 344, and it
-// dims the ring bands and the letters with them, so the highlight reads
-// against the whole figure rather than against the ribbons alone.
+// lit arcs are drawn at. Dimming is one scrim fill over the whole frame.
 const SCRIM = 0.74,
   LIT = 0.92;
 // The arriving half of a letter's ring band, against the leaving half's full
-// weight. Bright is where play sets out from and dim is where it lands, which
-// is the third thing saying which way an arc runs after the split and the
-// taper.
+// weight: bright is where play sets out from and dim where it lands.
 const IN_DIM = 0.38;
-// Words named in the readout for the arc under the pointer, before it gives up
-// and says how many are left. Two lines stacked, five in the column.
+// Words named in the readout before it says how many are left instead.
 const NAMED = 14;
 
 const TPL = document.createElement("template");
@@ -111,18 +86,13 @@ TPL.innerHTML = `
   :host([fit]){height:100%}
   :host([fit]) .frame{display:flex;flex-direction:column;height:100%}
   :host([fit]) .stage{flex:1;min-height:0;width:auto;max-width:100%;align-self:center}
-  /* Three rows, the picker's first and the readout's last, with the slack
-     between them: the readout sits at the foot of the column, level with the
-     bottom of the disc. No row-gap, so with no index named the picker's row
-     measures nothing and every distance below is what it was without it. */
+  /* Three rows, the picker's first and the readout's last. No row-gap, so
+     with no index named the picker's row measures nothing. */
   :host([fit]) .frame.wide{display:grid;column-gap:18px;
     grid-template-columns:minmax(200px,280px) minmax(0,1fr);
     grid-template-rows:auto minmax(0,1fr) auto}
-  /* No box around this column, where both other discs draw one. Theirs
-     encloses a search box and a scrolling list; this one holds a picker that
-     carries its own border and a readout that is one paragraph, so a border
-     round the pair would be a tall empty rectangle beside the disc with two
-     lines of text at the foot of it. */
+  /* No box around this column, where both other discs draw one: a border
+     round a picker and one paragraph is a tall empty rectangle. */
   :host([fit]) .frame.wide .pick{grid-area:1/1;margin-bottom:0}
   :host([fit]) .frame.wide .stage{grid-area:1/2/4/3;height:100%;min-height:0;
     justify-self:center}
@@ -136,15 +106,12 @@ TPL.innerHTML = `
   .pick select:focus-visible{outline:2px solid var(--_accent);outline-offset:-1px}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-  /* The arrow is the resting state and #onMove lifts it to a pointer over
-     what a click would take: an arc, a letter, or the hub with something to
-     clear. */
+  /* The arrow is the resting state; #onMove lifts it to a pointer over what
+     a click would take. */
   canvas.over{cursor:default;touch-action:none}
   :host([readout="off"]) .gloss{display:none}
-  /* Held to a height whatever it holds, which is what stops the disc moving
-     under the pointer: with fit set the frame is a flex column and the stage
-     takes what this leaves, so a block that grows by a line takes a line off
-     the disc's height and, the stage being square, as much off its width. */
+  /* Held to a height whatever it holds, which stops the disc moving under the
+     pointer: with fit set the stage takes what this leaves. */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
     margin-top:7px;overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
@@ -181,9 +148,8 @@ class LetterDisc extends HTMLElement {
   /* The letter a click has drilled into: what the hub names at rest and what
      the readout describes there. -1 is the whole category. */
   #letter = -1;
-  /* What the pointer is on: 1 for a letter, 2 for an arc, 0 for nothing. It is
-     what the hub names, what the readout describes and what the draw dims
-     around, and it is the only one of the two a hover moves. */
+  /* What the pointer is on: 1 for a letter, 2 for an arc, 0 for nothing. A
+     hover moves this and never #letter, so it cannot shift a click. */
   #kind = 0;
   #on = -1;
   #ready = false;
@@ -230,24 +196,16 @@ class LetterDisc extends HTMLElement {
     this.#over.addEventListener("click", this.#onClick);
     this.#catEl.addEventListener("change", this.#onCat);
     this.#ro = new ResizeObserver(() => this.#fit());
-    /* The stage, whose box is what the canvases are sized from, and the frame,
-       whose shape is what decides the layout — because the two do not move
-       together. Stacked, the stage is a square of whatever height the flex
-       column leaves it, so its height comes off the frame's height and a frame
-       dragged wider leaves its box exactly where it was. Observing the stage
-       alone, the element drops to the stacked layout when the page narrows and
-       then never hears another thing: no callback is raised however wide the
-       page is dragged afterwards, and it stays stacked for good. */
+    /* Watch the stage, whose box sizes the canvases, and the frame too: the
+       stacked stage's box does not move when the frame is dragged wider, so
+       the way out of the stacked layout would never be heard of. */
     this.#ro.observe(this.#sr.querySelector(".stage"));
     this.#ro.observe(this.#frame);
     this.#mq = matchMedia("(prefers-color-scheme: dark)");
     this.#mq.addEventListener("change", this.#onScheme);
     this.#onRatio();
-    /* The font swap both other discs guard against. Canvas text is measured
-       rather than laid out, so a face landing after the first frame reflows
-       nothing and the hub would keep a fit solved for the fallback. Nothing
-       here is solved off a word's width the way <word-disc>'s ring is, so
-       repaint() is the whole of it. */
+    /* Canvas text is measured rather than laid out, so a face landing later
+       reflows nothing and the hub keeps a fit solved for the fallback. */
     document.fonts?.ready?.then(() => {
       if (this.#box) this.repaint();
     });
@@ -286,9 +244,7 @@ class LetterDisc extends HTMLElement {
   }
 
   /* The picker, built only where the host names an index: a page embedding one
-     category names one file and needs no control at all. Fetched rather than
-     derived, since the element is handed one word file and the names of the
-     other 36 are nowhere in it. */
+     category names one file and needs no control at all. */
   async #loadIndex() {
     const src = this.getAttribute("index-src");
     if (!src || src === this.#indexSrc) return;
@@ -297,8 +253,8 @@ class LetterDisc extends HTMLElement {
     try {
       rows = await (await fetch(src)).json();
     } catch (err) {
-      // The words may well have arrived from `src`, and then only the picker
-      // is missing, which is not worth taking the readout for.
+      // Where the words arrived from `src`, only the picker is missing, which
+      // is not worth taking the readout for.
       if (!this.#ready) {
         this.#say(`<b>Could not load the categories.</b> ${err.message}`);
       }
@@ -313,12 +269,10 @@ class LetterDisc extends HTMLElement {
         return o;
       }),
     );
-    // One category is not a choice.
     this.#pickEl.hidden = rows.length < 2;
     this.#mark();
-    // An index is enough to open on: named without a src it means the first
-    // category rather than a blank disc, and #load has already run and found
-    // nothing by the time this resolves, so a src written by hand still wins.
+    // An index alone opens the first category rather than a blank disc.
+    // #load has already run by now, so a src written by hand still wins.
     if (!this.#ready && !this.getAttribute("src")) {
       this.setAttribute("src", href(this.#indexSrc, rows[0].name));
     }
@@ -395,11 +349,9 @@ class LetterDisc extends HTMLElement {
     return true;
   }
 
-  /* Browser zoom multiplies devicePixelRatio and leaves the CSS box alone, so
-     an element a host sized in pixels sees no observation and would go on
-     painting at the resolution before the zoom. A media query naming the
-     current ratio fires when it moves, and has to be re-armed each time, since
-     a query can only report leaving the one value it names. */
+  /* Zoom moves devicePixelRatio and leaves the CSS box alone, so a sized
+     element sees no resize. Re-armed each time, since the query only reports
+     leaving the one ratio it names. */
   #onRatio = () => {
     this.#dq?.removeEventListener("change", this.#onRatio);
     this.#dq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
@@ -421,9 +373,8 @@ class LetterDisc extends HTMLElement {
       return;
     }
     this.#box = { w: box.width, h: box.height, dpr, pw, ph };
-    // 344 fills is a frame's work rather than a drag's, so the first change
-    // goes through outright and the rest are coalesced; the canvases stretch
-    // until the drag stops.
+    // The first change goes through outright and the rest are coalesced; the
+    // canvases stretch until the drag stops.
     if (performance.now() - this.#resized > RESIZE_HOLD) return this.#resize();
     clearTimeout(this.#fitTimer);
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
@@ -469,18 +420,14 @@ class LetterDisc extends HTMLElement {
     }
     return v;
   }
-  /* The letter wheel palette.py spreads over the circle, read through the two
-     custom properties the host sets. The same wheel <word-disc> colours its
-     wedges with, so a page carrying both says the same thing with the same
-     colour in each. */
+  /* The letter wheel palette.py spreads over the circle, and the one
+     <word-disc> colours its wedges with. */
   #hue(letter) {
     return hsv(letter / LETTERS, +this.#tok("--_sat", ".55"), +this.#tok("--_val", ".88"));
   }
 
-  /* The resting picture: every arc, then the ring band each letter's arcs
-     leave from and land in, then the letters. It moves when the data or the
-     geometry does and never on a pointer, so a hover repaints the overlay
-     alone. */
+  /* The resting picture: the arcs, the ring bands, the letters. It moves with
+     the data or the geometry and never on a pointer. */
   #draw() {
     if (!this.#ready || !this.#pw) return;
     const t0 = performance.now();
@@ -495,9 +442,7 @@ class LetterDisc extends HTMLElement {
   }
 
   /* Every arc, or the ones `only` holds. Light before heavy, so the trunks
-     read over the hairlines rather than the back of the alphabet reading over
-     the front — the ranking word-bundle.js has to cut into bands to escape,
-     and the one thing 344 unequal arcs do have. */
+     read over the hairlines. */
   #arcs(g, only, alpha) {
     const L = this.#L;
     g.globalAlpha = alpha;
@@ -510,10 +455,9 @@ class LetterDisc extends HTMLElement {
     g.globalAlpha = 1;
   }
 
-  /* The band at the ring, a letter at a time: the leaving half at the letter's
-     own weight and the arriving half dimmed. Which half is which is the whole
-     of how an arc's direction reads at its ends, so it is drawn under the
-     scrim as well as over it. */
+  /* The band at the ring, the leaving half at the letter's own weight and the
+     arriving half dimmed. Direction reads off it, so it is drawn over the
+     scrim as well as under it. */
   #rings(g, alpha) {
     const r = this.#r;
     g.lineWidth = this.#bandPx;
@@ -533,11 +477,9 @@ class LetterDisc extends HTMLElement {
     g.globalAlpha = 1;
   }
 
-  /* The letters outside the ring. Dropped where the arc is narrower than the
-     glyph, which under log weighting is the quiet end of animal's range: the
-     hub names what the pointer is on instead, which is <word-disc>'s answer at
-     its own label floor. The letter under the pointer is drawn whatever its
-     arc, since that is the one that has to be identifiable. */
+  /* The letters outside the ring, dropped where the arc is narrower than the
+     glyph — the hub names what the pointer is on instead. `force` is drawn
+     whatever its arc. */
   #letters(g, alpha, force = -1) {
     if (!this.#labelPx) return;
     const at = this.#r + this.#bandPx / 2 + this.#labelPx * 0.95;
@@ -558,10 +500,8 @@ class LetterDisc extends HTMLElement {
     g.globalAlpha = 1;
   }
 
-  /* The pointer's layer: the picture dimmed to whatever it is on, and the hub.
-     Dimming is one scrim over the frame rather than a second pass over 344
-     arcs, which also takes the ring bands and the letters down with it so the
-     highlight reads against the whole figure. */
+  /* The pointer's layer: the picture dimmed to whatever it is on, and the
+     hub. */
   #overlay() {
     if (!this.#ready || !this.#pw) return;
     this.#showRead();
@@ -584,18 +524,16 @@ class LetterDisc extends HTMLElement {
     this.#hub(g);
   }
 
-  /* Which arcs are lit, and null for the resting picture. A letter lights
-     everything that touches it, in either direction, which is the letter's
-     whole part in the game; an arc lights itself. */
+  /* Which arcs are lit, and null for the resting picture: a letter lights
+     everything touching it in either direction, an arc lights itself. */
   #lit() {
     if (this.#kind === 1) return new Set(this.#L.byLetter[this.#on]);
     if (this.#kind === 2) return new Set([this.#on]);
     return null;
   }
 
-  /* disc-label.js's reference band, held per font: the measure is the
-     module's and the cache is the element's, since g.font is the one thing
-     that can change the answer. */
+  /* disc-label.js's reference band, held per font, since g.font is the one
+     thing that changes the answer. */
   #band(g) {
     const held = this.#bands.get(g.font);
     if (held !== undefined) return held;
@@ -619,17 +557,9 @@ class LetterDisc extends HTMLElement {
     return got;
   }
 
-  /* The hub names whatever the pointer is on, otherwise the letter a click
-     drilled into, otherwise the category, muted, since nothing is selected for
-     it to be the name of. Under the name sits the way out, and only where
-     there is one: never at the category, where a click on the hub is a no-op,
-     and never with the pointer on the disc, where the room is wanted for the
-     name.
-
-     Nothing is drawn behind it. The middle is where the long arcs cross, which
-     is the part of the figure worth seeing rather than the part to cover, so
-     the text carries its own ground: ringed copies of the same fill that draws
-     the letters, which hide the shape of their own letters and nothing else. */
+  /* The hub names what the pointer is on, otherwise the drilled-into letter,
+     otherwise the category, muted. Nothing is drawn behind it — the middle is
+     where the long arcs cross — so the text carries its own ground. */
   #hub(g) {
     const named = this.#named();
     const way = this.#kind === 0 && this.#letter >= 0;
@@ -639,9 +569,8 @@ class LetterDisc extends HTMLElement {
     // Alphabetic and placed by hand, because "middle" centres the em square
     // and its descender space is empty for most names, so the type sits low.
     g.textBaseline = "alphabetic";
-    // Both disc-label.js's: the band measured off the face rather than off the
-    // name, so every name in a face sits on one baseline and a descender hangs
-    // below the centre instead of dragging the line up to meet it.
+    // The band is off the face rather than the name, so all names share a
+    // baseline.
     const first = baseline(this.#cy, this.#band(g), lines.length, lh, way ? HINT_H / 2 : 0);
     this.#ground(g, lines, first, lh, Math.max(HALO_MIN, px * HALO));
     g.fillStyle = named.ink;
@@ -661,7 +590,7 @@ class LetterDisc extends HTMLElement {
   }
 
   /* What the hub says and in what colour. One method, so the name in the
-     middle and the readout below it can never be of different things. */
+     middle and the readout below can never be of different things. */
   #named() {
     const ink = this.#tok("--_ink", "#e7eded");
     if (this.#kind === 2) {
@@ -673,18 +602,9 @@ class LetterDisc extends HTMLElement {
     return { text: this.#category || "the letters", ink: this.#tok("--_muted", "#90a1a1") };
   }
 
-  /* A point on the disc, as a letter, an arc, or nothing.
-   *
-   * The ring band answers with an arc and the band outside it with a letter,
-   * both by binary search or by a walk over 26 — the same absence of a spatial
-   * index both other discs have. Inside the ring an arc is answered for by
-   * asking the path itself, since a ribbon there is a curved shape no
-   * arithmetic short of the path describes; topmost first, so the answer is
-   * the arc that is actually visible at that point. `near` refuses most of
-   * them for two comparisons before a path is built at all, which is what
-   * keeps this off the pointer's budget at 344 arcs. The transform is dropped,
-   * because isPointInPath takes its point in the canvas's own space where the
-   * paths are built in CSS pixels. */
+  /* A point on the disc, as a letter, an arc, or nothing. Inside the ring the
+     path itself has to be asked, topmost first. The transform is dropped,
+     because isPointInPath takes its point in the canvas's own space. */
   #hit(px, py) {
     const dx = px - this.#cx,
       dy = py - this.#cy,
@@ -740,16 +660,14 @@ class LetterDisc extends HTMLElement {
   };
   #onClick = ev => {
     const [px, py] = this.#at(ev);
-    // The hub is the way out, which is the one thing clicking an arc cannot
-    // do: it takes the disc back out to the whole category.
+    // The hub is the way out, the one thing clicking an arc cannot do.
     if (Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub) return this.show(-1);
     const [kind, on] = this.#hit(px, py);
     if (kind) this.#drill(kind, on);
   };
 
-  /* The cursor says what a click would do. Written only when it turns over,
-     since a pointer move fires several times over one arc and an inline style
-     set per event is a style invalidation per event. */
+  /* The cursor says what a click would do, written only when it turns over,
+     since an inline style set per pointer event invalidates per event. */
   #showCursor(kind) {
     const on = this.#inHub ? this.#letter >= 0 : kind > 0;
     if (on === this.#points) return;
@@ -764,10 +682,8 @@ class LetterDisc extends HTMLElement {
     this.#on = on;
     this.#overlay();
     if (!kind) return;
-    /* An arc and a letter are different things and are reported as different
-       things. A letter used to carry a `words` of its starts plus its ends,
-       which counts a word twice wherever it begins and ends on that letter —
-       12 of animal's arcs do, over 52 words. */
+    /* A letter carries `starts` and `ends` rather than one total, since
+       adding the two counts a word that begins and ends on it twice. */
     const e = kind === 2 ? this.#L.edges[on] : null;
     this.#emit(
       "letter-hover",
@@ -783,17 +699,15 @@ class LetterDisc extends HTMLElement {
     );
   }
 
-  /* A click. Pointing at a thing highlights it and clicking it drills, which
-     is the split all three discs make. An arc drills to the letter it
-     leaves. */
+  /* A click drills, where a hover only highlights. An arc drills to the
+     letter it leaves, since that is where play sets out from. */
   #drill(kind, on) {
     this.show(kind === 2 ? this.#L.edges[on].from : on);
     this.#preview(kind, on);
   }
 
   /* The letter the disc is drilled into, as a letter or an index, and -1 for
-     the whole category. The public way in, so a host can drive it without
-     synthesising a pointer event. */
+     the whole category. The public way in. */
   show(letter) {
     if (!this.#L) return;
     const L = typeof letter === "string" ? letter.toLowerCase().charCodeAt(0) - 97 : letter;
@@ -821,24 +735,15 @@ class LetterDisc extends HTMLElement {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
 
-  /* The one thing said where the readout would otherwise be, since the readout
-     answers off data that never arrived: #showRead returns on #ready, so a
-     words failure holds this line for good. An index that fails on its own
-     holds it only until the words land, where the crumb line this used to be
-     written into held it for good — the disc draws either way, and a missing
-     picker says so by not being there. */
+  /* A failed fetch, written where the readout would otherwise be. #showRead
+     returns on #ready, so a words failure holds this line for good. */
   #say(html) {
     this.#glossEl.innerHTML = html;
   }
 
-  /* One line saying what the thing named in the middle is. It answers off the
-     same state the hub does, so the name and the sentence below it can never
-     be of different things.
-
-     For an arc that is the words on it, named rather than counted, which is
-     what ties this disc to <word-disc>: an arc is 32 words and this is which
-     32. Past NAMED it says how many are left instead of running off the end of
-     a block held to two lines. */
+  /* One line saying what the middle names, off the state the hub reads, so
+     the two cannot differ. For an arc it names the words rather than counting
+     them. */
   #showRead() {
     if (!this.#ready) return;
     const L = this.#L;

@@ -32,8 +32,7 @@ Point = tuple[float, float]
 RGB = tuple[float, float, float]
 
 # Every distance and size the disc figures need is a field on config.Geometry,
-# which a figure takes the way it takes a Theme. DEFAULT holds the values they
-# were tuned at, and a wordchain.toml overrides any of them.
+# which a figure takes the way it takes a Theme, never a module constant here.
 
 
 _SVG_NS = "http://www.w3.org/2000/svg"
@@ -46,11 +45,8 @@ def _typeface() -> None:
     plt.rcParams["font.monospace"] = palette.DATA
     plt.rcParams["font.family"] = "sans-serif"
 
-    # SVG output embeds each glyph as an outline rather than naming the font.
-    # It costs a little size against `svg.fonttype = "none"`, and it means the
-    # figure renders the same on a machine that has none of Iowan Old Style,
-    # Avenir or Menlo installed — which, given how much of the design rests on
-    # those three, is worth more than selectable text.
+    # Outlines rather than font names, so the figure renders the same on a
+    # machine with none of Iowan Old Style, Avenir or Menlo installed.
     plt.rcParams["svg.fonttype"] = "path"
 
 
@@ -72,11 +68,10 @@ def _ring(count: int, radius: float = 1.0) -> list[Point]:
 def _disc_limit(size_in: float, longest: int, geo: Geometry) -> float:
     """The axis limit that exactly contains the labels and the wedge letters.
 
-    A label's length is fixed in inches by the font, but the axis limit is what
-    converts inches into data units, so the limit appears on both sides and the
-    two are related by one equation rather than a measurement. Solving it is
-    what lets the axes fill the figure, and a figure with no margin is a figure
-    matplotlib does not have to draw twice to find out where to crop.
+    A label's length is fixed in inches by the font and the axis limit converts
+    inches into data units, so the limit appears on both sides and is solved
+    rather than measured. That is what lets the axes fill the figure with no
+    margin for matplotlib to redraw the whole disc to find.
     """
     label_in = longest * geo.label_pt * geo.glyph_width / 72
     crowding = 1 - 2 * label_in / size_in
@@ -95,8 +90,7 @@ def _wanted_inches(span: float, geo: Geometry) -> float:
 
     A label sits at a fixed radius in data units while its font size is in
     points, so the only thing that buys it room along the ring is a larger
-    canvas. Solving for the size that gives every label a full line of leading
-    is what lets all 364 words share one radius.
+    canvas.
     """
     arc = geo.label_radius * span
     return geo.label_pt * geo.leading * (2 * geo.disc_limit) / (72 * arc)
@@ -111,14 +105,10 @@ def _fitted_pt(span: float, geo: Geometry) -> float:
     """`label_pt`, or as much of it as the capped canvas leaves room for.
 
     Below the cap the figure grows until the labels clear each other and the
-    type is untouched, which is every disc at the default limit. Past it the
-    words keep coming and the room does not, so the type takes the shortfall
-    rather than the labels overlapping: `limit = 0` on animal wants 101 inches,
-    gets 30, and sets 2.0 pt instead of 6.8. That is small on a screen and
-    exact under a zoom, which is the same trade `--format svg` already makes.
-
-    The cap is tested rather than the two sizes compared, so a disc that fits
-    returns `label_pt` itself and no figure moves by a rounding error.
+    type is untouched. Past it the type takes the shortfall rather than the
+    labels overlapping. The cap is tested rather than the two sizes compared,
+    so a disc that fits returns `label_pt` itself and cannot move by a rounding
+    error.
     """
     wanted = _wanted_inches(span, geo)
     if wanted <= _MAX_INCHES:
@@ -129,12 +119,10 @@ def _fitted_pt(span: float, geo: Geometry) -> float:
 def _hoist_shared_attributes(out: FilePath) -> None:
     """Lift style and clip-path off the paths in a group and onto the group.
 
-    matplotlib stamps both onto every path element, even though a collection's
-    paths share them by construction: a 364-word disc carries 49 distinct style
-    strings and one clip across 9713 elements, which is 35% of the file spent on
-    identical bytes. Every property involved is inherited in SVG, and clipping a
-    group is the same as clipping each of its children by the same path, so the
-    rendered result does not change.
+    matplotlib stamps both onto every path element, though a collection's paths
+    share them by construction, and that repetition is about a third of the
+    file. Both are inherited in SVG and clipping a group is clipping each of its
+    children by the same path, so the rendered result does not change.
     """
     path = FilePath(out)
     if path.suffix.lower() != ".svg":
@@ -167,18 +155,11 @@ def _hoist_shared_attributes(out: FilePath) -> None:
 def _fan_key(word: Word) -> tuple[int, str]:
     """Sort key laying a wedge out so its curves leave as a fan.
 
-    Every word in a wedge already shares a first letter, so the letter that
-    matters is the one it hands over on. Sorting on that alone starts every
-    wedge at A, which is arbitrary once the wedges themselves are a ring: for
-    the S wedge it drops the destinations nearest to S into the middle of the
-    block and sends the bundle back across itself.
-
-    Rotating the alphabet to begin just before the wedge's own letter puts the
-    destinations in the order the ring visits them, counted against the way the
-    words themselves are placed. S then runs R, Q, P back to A, wraps to Z, and
-    finishes on T. Two chords from one wedge avoid crossing when the nearer
-    origin takes the farther destination, so the sequence has to run opposite to
-    the placement, and the bundle leaves in one sweep.
+    The tail letter, rotated to start just before the wedge's own letter and
+    running backwards. Plain tail-letter order starts every wedge at A and makes
+    the bundle cross itself. The direction is opposite to the placement because
+    two chords from one wedge avoid crossing when the nearer origin takes the
+    farther destination. `web/word-layout.js` sorts the same way.
     """
     return (ord(word.head) - ord(word.tail) - 1) % 26, word.text
 
@@ -186,9 +167,8 @@ def _fan_key(word: Word) -> tuple[int, str]:
 def _curve(start: Point, end: Point, pull: float) -> Path:
     """A cubic from start to end, bowed towards the centre.
 
-    Four control points rather than a sampled polyline. SVG has cubics natively,
-    so the curve is exact instead of approximated, the file holds a sixth of the
-    coordinates, and nothing has to evaluate the curve to draw it.
+    Four control points rather than a sampled polyline: SVG has cubics natively,
+    so sampling would cost build time, file size and accuracy at once.
     """
     return Path(
         [start, (start[0] * pull, start[1] * pull), (end[0] * pull, end[1] * pull), end],
@@ -226,9 +206,8 @@ def _blank_disc(
     _typeface()
     fig = plt.figure(figsize=(size, size), facecolor=theme.ground)
     # The axes already frames the disc through its own limits, so letting it
-    # fill the figure leaves no margin for bbox_inches="tight" to crop. That
-    # matters because trimming means measuring, and measuring means drawing all
-    # 4856 curves a second time, for 110 ms of the save.
+    # fill the figure leaves no margin for bbox_inches="tight" to crop, and
+    # cropping means drawing every curve a second time to measure it.
     ax = fig.add_axes((0.0, 0.0, 1.0, 1.0)) if bleed else fig.add_subplot()
     ax.set_facecolor(theme.ground)
     ax.set_aspect("equal")
@@ -447,13 +426,9 @@ def words_disc(
     chrome: bool = False,
     geometry: Geometry = DEFAULT,
 ) -> None:
-    """The word graph, laid out in wedges by first letter.
-
-    A spring layout of this graph is a hairball: every word ending in A links to
-    every word starting with A, so the edge density defeats any force model.
-    Grouping by first letter puts the structure back, because the bundles of
-    curves between two wedges are exactly the letter graph's ribbons.
-    """
+    """The word graph, laid out in wedges by first letter: a spring layout is a
+    hairball here, and a bundle of curves between two wedges is one of the
+    letter graph's ribbons, which is `graph.py`'s claim drawn."""
     # A limit of 0 draws every word, since a count being lifted reads as "all
     # of them" rather than as none; the slice would return an empty list.
     ranked = sorted(words, key=lambda w: (-w.zipf, w.text))
@@ -490,7 +465,7 @@ def words_disc(
     fig, ax = _blank_disc(theme, size, bleed=not chrome, limit=reach)
 
     # One collection per starting letter rather than a patch per edge: the
-    # colour is constant within a bundle, and 4856 separate artists is slow to
+    # colour is constant within a bundle, and an artist per edge is slow to
     # draw and slower to save.
     pull = geometry.pull_dense if crowded else geometry.pull
     for letter in live:
@@ -513,9 +488,9 @@ def words_disc(
                 )
             )
 
-    # One call for all 364 dots. A scatter per word builds the same picture out
-    # of 364 PathCollections, which costs twice: once assembling them and again
-    # when the renderer walks the list.
+    # One call for every dot. A scatter per word builds the same picture out of
+    # one PathCollection each, paid once assembling them and again when the
+    # renderer walks the list.
     ax.scatter(
         [placed[w.text][0] for w in shown],
         [placed[w.text][1] for w in shown],

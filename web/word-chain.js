@@ -1,20 +1,9 @@
 /* The chain <word-disc> builds, with no DOM in it.
  *
- * The rule is the whole game: the next word starts with the letter the last
- * one ended on, and no word is played twice. That makes legality a letter
- * comparison and a count lookup, and the set of legal moves the unused part of
- * one wedge of the disc, so nothing here walks a graph.
- *
- * A word cannot follow itself, and that falls out rather than being written
- * down: the word play is standing on is used, so the test that refuses a
- * repeat refuses it too. render.py makes the same exclusion when it builds the
- * bundle, since a word ending on the letter it starts with is in its own reply
- * group.
- *
- * Refusing a repeat rather than recording one puts the whole of the rule in
- * `legal`, which is what the disc paints, what the readout explains and what
- * the cursor follows — so a word that cannot be played cannot look, read or
- * click as though it can.
+ * The next word starts with the letter the last one ended on, and no word is
+ * played twice. The whole rule lives in `legal`, which is what the disc paints,
+ * what the readout explains and what the cursor follows, so a word that cannot
+ * be played cannot look, read or click as though it can.
  *
  *   const c = new Chain(L.head, L.tail);
  *   c.legal(i) && c.play(i);
@@ -23,10 +12,8 @@ export class Chain {
   #head;
   #tail;
   #steps = [];
-  // Whether each word has been used, so the paint can ask about all of them in
-  // one pass over the disc rather than searching the chain per word. A count
-  // rather than a flag, because rewinding has to put it back and a word can
-  // sit in the chain only once.
+  // Used-ness per word, so the paint can ask about all of them in one pass. A
+  // count rather than a flag, because rewinding has to put it back.
   #count;
 
   constructor(head, tail) {
@@ -52,10 +39,8 @@ export class Chain {
   }
 
   legal(i) {
-    // An index the word list does not have is never a move. The disc can only
-    // offer one it has, but `play` is public and a host holding an index from
-    // before a `limit` change would otherwise put a word with no letters into
-    // the chain and take the paint down with it.
+    // `play` is public, so a host holding an index from before a `limit` change
+    // must not be able to put a word with no letters into the chain.
     if (!(i >= 0 && i < this.#head.length)) return false;
     if (this.#count[i] > 0) return false;
     if (!this.#steps.length) return true;
@@ -75,8 +60,7 @@ export class Chain {
   undo() {
     return this.rewind(this.#steps.length - 1);
   }
-  /* Keeps the first `k` steps and drops the rest. Clicking step k in the line
-     under the disc rewinds to just after it, so play carries on from there. */
+  /* Keeps the first `k` steps and drops the rest. */
   rewind(k) {
     const keep = Math.max(0, Math.min(k, this.#steps.length));
     while (this.#steps.length > keep) this.#count[this.#steps.pop()]--;
@@ -87,12 +71,8 @@ export class Chain {
   }
 
   /* How many words could follow `i`: the wedge it hands over to, less the word
-     itself and everything already used.
-
-     Asked of the word play is standing on, which is itself used, that is the
-     move set as it stands — so the count beside the current word and the count
-     beside one the pointer is over are the same question put to two words, and
-     the second is what the first would become. Zero is the end of the round.  */
+     itself and everything already used. Asked of the word play is standing on,
+     which is itself used, that is the move set as it stands. */
   replies(i, byHead) {
     let count = 0;
     for (const j of byHead[this.#tail[i]]) if (j !== i && this.#count[j] === 0) count++;

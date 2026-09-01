@@ -1,18 +1,16 @@
 """Serve `web/` with a file watcher that reloads the browser on save.
 
-The point is the edit loop: change `hypernym-disc.js`, save, and the page in
-front of you is already showing the new code with its timings measured again
-from a cold build. `/` is the nested-arc harness, `/words.html` the word chain
-one and `/letters.html` the letter graph.
+`/` is the nested-arc harness, `/words.html` the word chain one and
+`/letters.html` the letter graph.
 
 `web/` is served at `/` and `out/` at `/out/`, so a page reaches the exported
 tree at `/out/wordnet-tree.json` and a category at `/out/words-animal.json`
 without either directory having to know where the other sits. A background
-thread compares file modification times every
-`--interval` seconds and bumps a counter when any of them move; every open
-`/__reload` stream notices the new number and tells its page to reload. Server
-sent events rather than a websocket, because the whole protocol is one line of
-text and `http.server` can already speak it.
+thread compares file modification times every `--interval` seconds and bumps a
+counter when any of them move; every open `/__reload` stream notices the new
+number and tells its page to reload. Server sent events rather than a
+websocket, because the whole protocol is one line of text and `http.server` can
+already speak it.
 
 HTML is the one thing not served straight off disk: the reload client is
 injected on the way out, so no page has to carry a script that only exists
@@ -187,14 +185,10 @@ class Server(http.server.ThreadingHTTPServer):
     """Quiet about a browser hanging up, loud about everything else.
 
     A reload closes every socket the old page held, and a keep-alive one is
-    usually mid-read when that happens: the reset surfaces in
-    `handle_one_request`, outside any handler code this file owns, so
-    socketserver prints the whole traceback for something that is the normal
-    end of a connection. Saving a file therefore wrote a stack trace to the
-    terminal the watcher is reporting into, which is the one place a real error
-    has to be legible. `_stream` already swallows the same two exceptions for
-    the reload channel, and this is that rule applied where the read happens
-    between requests rather than inside one.
+    usually mid-read when that happens. The reset surfaces in
+    `handle_one_request`, outside any handler code here, so socketserver would
+    print a whole traceback for the normal end of a connection, into the one
+    terminal a real error has to be legible in.
     """
 
     def handle_error(self, request: Any, client_address: Any) -> None:
