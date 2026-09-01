@@ -15,9 +15,11 @@
    canvas is allowed. */
 export const MAX_AREA = 8_388_608;
 
-/* The ratio to size a `w` by `h` CSS box's canvas at, never above the screen's
+/** The ratio to size a `w` by `h` CSS box's canvas at, never above the screen's
    own and never past the budget. A box of no area keeps the screen's, since
-   there is nothing yet to spend. */
+   there is nothing yet to spend.
+   @param {number} dpr @param {number} w @param {number} h
+   @returns {number} */
 export function ratio(dpr, w, h) {
   const d = dpr > 0 ? dpr : 1;
   const area = w * h;

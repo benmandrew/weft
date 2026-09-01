@@ -29,6 +29,7 @@ export const STEP = 256,
 /* The square a ring of this radius wants, in device pixels. Here rather than in
    the element so tools/check_web.mjs can hold it: an undersized square draws a
    blurred bundle and nothing downstream can tell. */
+/** @param {number} r @param {number} dpr @returns {number} */
 export function square(r, dpr) {
   const want = (r * dpr) / RING;
   return Math.min((((want / STEP) | 0) + 1) * STEP, MAX_PX);
@@ -38,6 +39,9 @@ export function square(r, dpr) {
    so a replaced one reads to the collector as a small object under no pressure
    and is never reclaimed. A canvas, which is what the main-thread fallback's
    bundle is, carries no close and answers to its dimensions instead. */
+/** Duck-typed rather than a union of ImageBitmap and the two canvases, since
+   what it needs is the close or the dimensions and nothing else.
+   @param {{close?: () => void, width?: number, height?: number} | null | undefined} pic */
 export function release(pic) {
   if (!pic) return;
   if (pic.close) pic.close();
@@ -47,6 +51,10 @@ export function release(pic) {
 /* A chord as its own subpath: the `moveTo` and then disc-colour.js's `bow`, the
    cubic all three discs draw. The element draws its fan and its chain through
    here too, so the resting picture and the live one cannot differ in shape. */
+/** @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D} g
+   @param {number} cx @param {number} cy
+   @param {number} x0 @param {number} y0 @param {number} x1 @param {number} y1
+   @param {number} pull */
 export function curve(g, cx, cy, x0, y0, x1, y1, pull) {
   g.moveTo(x0, y0);
   bow(g, cx, cy, x0, y0, x1, y1, pull);
@@ -64,6 +72,7 @@ export const KNEE = 12000,
 /* The tuned alpha, thinned by what the disc actually holds. Here rather than in
    the element because an alpha of zero draws nothing and one above the tuned
    value overdraws, and the element could notice neither. */
+/** @param {number} alpha @param {number} chords @returns {number} */
 export function thin(alpha, chords) {
   if (chords <= KNEE) return alpha;
   return alpha * (KNEE / chords) ** FALL;
@@ -85,6 +94,26 @@ export const BANDS = 64;
    Nothing is shuffled and no seed is drawn: the order is fixed by the word set
    alone, so two builds composite identically and a resize or a theme change
    cannot make the picture shimmer. */
+/** Everything a build needs, which is what crosses to the worker: `px` the
+   square's side in device pixels, `ang` and `tail` indexed by word, `byHead[L]`
+   every word starting with L, and `colours` one per letter.
+   @typedef {object} Spec
+   @property {number} px
+   @property {Float64Array} ang
+   @property {number[][]} byHead
+   @property {Uint8Array} tail
+   @property {number[]} live
+   @property {string[]} colours
+   @property {number} pull
+   @property {number} alpha
+   @property {number} lineWidth */
+
+/** One letter's place in the draw, carried across the bands.
+   @typedef {{L: number, n: number, at: number, to: number, done: number}} Cursor */
+
+/** @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D} g
+   @param {Spec} spec
+   @returns {number} strokes drawn */
 export function bundle(g, spec) {
   const { px, ang, byHead, tail, live, colours, pull, alpha, lineWidth } = spec;
   const c = px / 2,
@@ -105,6 +134,7 @@ export function bundle(g, spec) {
   });
 
   // One letter's next `want` chords, wherever the band before it left off.
+  /** @type {(s: Cursor, want: number) => void} */
   const slice = (s, want) => {
     const from = byHead[s.L];
     while (want > 0 && s.at < from.length) {

@@ -49,6 +49,10 @@
             # running the early-error pass a browser runs, so the check loads
             # each module in web/ instead, which needs a JavaScript runtime.
             pkgs.nodejs
+            # `make types` reads the JSDoc annotations in web/ under
+            # tsconfig.json. Nothing is emitted and no .ts file exists: the
+            # types are comments, so the module served is the module edited.
+            pkgs.typescript
           ];
 
           env = {

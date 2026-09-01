@@ -11,9 +11,13 @@
    already being read. Nothing either side, since a page scrolls down. */
 export const MARGIN = "100% 0px";
 
-/* Watch `el` and call `sleep` when it is more than a viewport away, `wake` when
+/** Watch `el` and call `sleep` when it is more than a viewport away, `wake` when
    it comes back. Returns the observer to disconnect, or null where a browser
-   has none — which is a disc that keeps its pixels. */
+   has none — which is a disc that keeps its pixels.
+   @param {Element} el
+   @param {() => void} sleep
+   @param {() => void} wake
+   @returns {IntersectionObserver | null} */
 export function watch(el, sleep, wake) {
   if (typeof IntersectionObserver === "undefined") return null;
   const io = new IntersectionObserver(

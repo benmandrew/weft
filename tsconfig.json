@@ -1,0 +1,31 @@
+{
+  // Types the browser modules through JSDoc comments, so nothing is compiled
+  // and the file served is the file edited. `make types` runs it.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    // Painter's typed arrays are filled by layout() rather than by the
+    // constructor, and every read of one is already guarded by #n.
+    "strictPropertyInitialization": false,
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom", "dom.iterable"]
+  },
+  // Everything in web/ is checked, and what is not ready is named below, so a
+  // new module is typed by existing rather than by being added to a list.
+  "include": ["web/*.js"],
+  "exclude": [
+    // The three elements, ~660 errors between them: they are mostly DOM
+    // lookups that come back nullable, which is a job of its own.
+    "web/hypernym-disc.js",
+    "web/word-disc.js",
+    "web/letter-disc.js",
+    // The two workers, which want lib.webworker where everything else wants
+    // lib.dom, and one program cannot hold both.
+    "web/disc-worker.js",
+    "web/word-bundle-worker.js"
+  ]
+}

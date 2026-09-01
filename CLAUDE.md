@@ -442,7 +442,7 @@ find out.
 
 `make check` must pass before a commit: `ruff check`, `ruff format --check` and
 `mypy` over `src/` and `tools/`, then `taplo check`, `tools/check_schema.py`,
-`biome lint`, `biome format` and `make web`. mypy is strict, with
+`biome lint`, `biome format`, `make web` and `make types`. mypy is strict, with
 `mypy_path = src` because `tools/` is not part of the package. nltk, wordfreq,
 pyvis and networkx ship no type information, so `mypy.ini` declares them untyped
 and the values crossing those boundaries are annotated by hand.
@@ -456,14 +456,14 @@ in `biome.jsonc`, which is `.jsonc` because Biome refuses comments in
 `biome.json`.
 
 `make web` is `node tools/check_web.mjs`, a prerequisite of `check` rather than
-a line in its recipe, since it is the one part that needs node. `node --check`
-skips the early-error pass that resolves private names, so a `this.#gone` left
-by a refactor throws only when the browser evaluates the class body, leaving the
-element undefined and the page blank; a field initialiser naming a moved
-constant does the same. Both have happened. So the check imports every module
-against a stubbed DOM and then drives all three elements, with clicks computed
-from `word-layout.js`, hovers fired at rows, and resizes and scrolls driven
-through the observers' recorded callbacks.
+a line in its recipe, since it and `make types` are the parts that need node.
+`node --check` skips the early-error pass that resolves private names, so a
+`this.#gone` left by a refactor throws only when the browser evaluates the
+class body, leaving the element undefined and the page blank; a field
+initialiser naming a moved constant does the same. Both have happened. So the
+check imports every module against a stubbed DOM and then drives all three
+elements, with clicks computed from `word-layout.js`, hovers fired at rows, and
+resizes and scrolls driven through the observers' recorded callbacks.
 
 It asserts properties rather than exact counts, which move whenever the geometry
 does, and every assertion was mutation-tested. Its limits are worth knowing: the
@@ -473,6 +473,23 @@ lacks a search box is read off the module's text rather than the shadow root;
 and the main-thread fallback is synchronous, so a stale bundle arrival is not
 covered. Anything about layout has to be looked at in a browser, which is what
 `make serve` is for.
+
+`make types` is `tsc --noEmit` over the JSDoc annotations in `web/`, a
+prerequisite of `check` rather than a line in its recipe for the same reason
+`make web` is: tsc is the other part that needs node. Nothing is compiled and no
+`.ts` file exists, so the types are comments and the module served is the module
+edited. `tsconfig.json` includes `web/*.js` and excludes what is not ready, so a
+new module is checked by existing rather than by being added to a list. The
+three elements are excluded, `hypernym-disc.js`, `word-disc.js` and
+`letter-disc.js`, about 660 errors between them, mostly DOM lookups that come
+back nullable. The two workers are excluded as well, since they want
+`lib.webworker` where everything else wants `lib.dom`, and one program cannot
+hold both. `strictPropertyInitialization` is off, since `Painter`'s typed arrays
+are filled by `layout()` rather than by the constructor and every read of one is
+guarded by `#n`. It catches what `check_web.mjs` cannot, a renamed field on a
+worker message that no test path happens to read, or a wrong argument order in a
+call whose arguments are all numbers, which shows up as a subtly wrong picture
+rather than an exception.
 
 A last block reads `web/embed.html` and holds it to the directory it ships in,
 since `web-dist` finds its modules by glob where that page names them by hand.

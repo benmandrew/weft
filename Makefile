@@ -39,7 +39,7 @@ EMBED := web/embed.html
 # The directory web-dist stages the modules and the data into. DIST= moves it.
 DIST ?= $(OUT)/web-dist
 
-.PHONY: all check clean list tree words serve web web-dist
+.PHONY: all check clean list tree types words serve web web-dist
 
 all: $(SVGS)
 
@@ -54,7 +54,7 @@ $(OUT)/%.svg: $(SOURCES)
 # Biome is named web/ tools/ rather than `.`: config discovery runs before
 # `files.includes` filters, so from the root Biome finds the biome.jsonc inside
 # any git worktree under .claude/worktrees/ and refuses to run at all.
-check: web
+check: web types
 	@ruff check src/ tools/
 	@ruff format --check src/ tools/
 	@mypy
@@ -63,11 +63,18 @@ check: web
 	@biome lint web/ tools/
 	@biome format web/ tools/
 
-# A prerequisite of check rather than a line in it, since it is the one part
-# that needs node. It loads every module in web/ the way a browser does, which
-# `node --check` does not: that parses without resolving private names.
+# A prerequisite of check rather than a line in it, since it and types below
+# are the parts that need node. It loads every module in web/ the way a browser
+# does, which `node --check` does not: that parses without resolving private
+# names.
 web:
 	@node tools/check_web.mjs
+
+# The JSDoc types in web/, checked without emitting anything. A prerequisite
+# rather than a recipe line for the reason web is: tsc is the other part that
+# needs node. tsconfig.json names what is checked and what is not yet.
+types:
+	@tsc --noEmit
 
 # A prerequisite rather than a recipe line, so the corpus walk reruns when
 # lexicon.py or the exporter moves and not on every serve. Grouped, because one
