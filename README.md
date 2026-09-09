@@ -27,6 +27,8 @@ python -m weft build animal     # render the word graph
 
 `build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark`, which overrides the config file's `theme` and stands at dark with neither, and `--limit N`, the words in the disc, 110 unless the config file moves it, or 0 for every word the category has. The label size is solved rather than set: the canvas grows until adjacent labels clear each other, and past the 30 inches it is capped at the type shrinks instead.
 
+`stats` takes one flag of its own, `--opening WORD`, which pins the chain it reports to a first word. The longest chain section below is what that changes.
+
 All four commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance`, `--max-rank` and `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters. A flag beats the config file for one run, so `--no-multiword` turns off a file that switched it on. Every command takes `--no-cache` and `--config FILE`.
 
 `make -j` renders every category, one file each. `make clean` removes the output directory, `OUT=` moves it, and `CONFIG=` names a config file.
@@ -60,6 +62,32 @@ Each letter's place on the ring is split in two, the half words leave from and t
 Pointing at an arc lights it and dims everything else, and pointing at a letter lights every arc touching it. The line under the disc names the words on the arc rather than counting them, which is where this disc and the playable one meet. Clicking a letter drills into it, and clicking an arc drills into the letter it leaves, since that is the letter play sets out from; the middle then names that letter, and clicking the middle goes back out to every arc the category has.
 
 It reads the same category file `<word-disc>` reads, so a page carrying both fetches one file for the pair, and naming an index gives it the same picker. `/letters.html` under `make serve` is where to try it.
+
+## The longest chain
+
+A round ends when the current word's last letter starts nothing that is still unplayed, so the question a category invites is how far play can run when every word is chosen perfectly and none is repeated. `weft` answers that exactly. animal chains 640 of its 1,582 words, and for 32 of the 37 categories the answer arrives with a proof that no longer chain exists.
+
+Nothing here searches for that chain. With words as vertices the question is the longest path through a graph of 1,582 nodes and 96,470 edges, for which no efficient exact algorithm is known. With letters as vertices it turns small: a word is an arc from its first letter to its last, so a chain is a *trail*, an arc-disjoint walk on 26 vertices, and keeping as many words as possible is discarding as few as possible.
+
+Discarding as few as possible is a min-cost *transshipment* on those 26 nodes, the supply at each letter being its outgoing words minus its incoming, the capacities the word counts and the cost one per word dropped. Every cost is non-negative and the constraint matrix is *totally unimodular*, so the answer comes back whole-numbered with no integer solver anywhere. Words sharing a letter pair are interchangeable, so they aggregate into one arc of capacity n rather than n arcs of capacity one.
+
+A chain has an opening and an ending, and moving one unit of supply at each end is the whole of what separates it from a closed circuit, so its cost is the balanced answer plus the shortest residual path from the ending letter back to the opening one. 26 runs of Dijkstra's algorithm price all 676 openings and endings off a single balanced solve, with a 677th candidate for the circuit that opens and ends on the same letter.
+
+What the relaxation ignores is whether the arcs it keeps form one connected run, so what it returns is an upper bound. A *union-find* pass settles that. Where the kept arcs are connected the bound is attained and the chain is provably the longest there is; where they are not, the largest component is kept and the rest is solved again at full capacity, and the gap is reported rather than hidden.
+
+Five categories finish with a gap: fabric chains 61 words against a bound of 63, furniture 9 against 10, instrument 10 against 11, mineral 18 against 19, and river 64 against 65. Exhaustive search over the letter multidigraph proves furniture's 9, instrument's 10 and mineral's 18 are the true maxima, so in those three the bound is loose by one rather than the chain being short.
+
+`python -m weft stats <category>` prints the chain with its verdict: `longest chain: 640 words, crab … ungulate — provably the longest there is` for animal, and `longest chain: 9 words, crib … rolodex — against an upper bound of 10 nothing reached` for furniture.
+
+The same machinery answers a narrower question, and it is the one a player actually has. Nobody stands at the start of a category; they stand on a word, with a letter already fixed, wanting to know how far play can still run from there. That is the whole-category question with one letter pinned. Spend the opening word, solve from the letter it ends on, and put the word back on the front of whatever comes back, so the count and the bound both cover the chain including that word.
+
+`python -m weft stats <category> --opening WORD` asks it, and the flag sits on that command alone, the other three printing no chain. The word is matched lowercased, so `--opening CRIB` works, and the report takes it into the heading: furniture's line above becomes `longest chain from crib: 9 words, crib … rolodex — against an upper bound of 10 nothing reached`, where `--opening desk` reads `longest chain from desk: 1 word, desk — provably the longest there is`. A word the category does not yield is refused, answered with the nearest word `difflib` finds, or with the category's word count and a pointer at `weft words <category>` when nothing is near. Reporting the unpinned chain under a pinned heading would be a wrong answer printed confidently.
+
+Every candidate opening on another letter is dropped before the scan. The closed circuit is the one candidate a fixed letter cannot rule out, since a closed walk can be rotated to begin on any letter it touches, so it stands or falls on whether it touches this one. The bound is then computed over the candidates that survive, which is what lets a chain forced through a poor opening still report whether it is the longest that opening allows.
+
+Certification is harder to come by under a constraint. Across 2,189 constrained solves over the 37 categories, 75% came back certified, where 32 of the 37 categories certify when the opening is free. A forced opening can strand play in a small component, and the relaxation's bound goes loose there where the free one did not. furniture shows all three outcomes on a category whose overall best is 9 words: opening on *crib* still reaches 9, opening on *bookcase* reaches 2 against a bound of 5 that nothing attains, and opening on *bunk* reaches 1 and is certified, since no word in the category starts with K. A missing certificate says less than it sounds like it does: mineral certifies on 1% of its openings, and exhaustive search over 60 of them found the solver's chain optimal in 59.
+
+The solver is written twice, in `src/weft/graph.py` and in `web/word-longest.js`, held to one another by seventeen frozen cases in `tools/chains.json`. The two produce byte-identical chains on all 37 categories, Python taking 8 ms on the largest category and JavaScript 0.8 ms. Constrained, they disagreed on none of those 2,189 solves and produced no illegal chain, and a further 2,314 solves on random word lists were checked against exhaustive search, all of them reaching the true optimum. The browser module draws nothing yet, since no element on any page reads it.
 
 ## Configuration
 

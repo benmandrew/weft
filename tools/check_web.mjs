@@ -7,6 +7,7 @@
  *     node tools/check_web.mjs
  */
 const mod = name => new URL(`../web/${name}`, import.meta.url);
+const { existsSync, readFileSync } = await import("node:fs");
 const problems = [];
 const check = (ok, said) => {
   if (!ok) problems.push(said);
@@ -389,6 +390,7 @@ const MODULES = [
   "word-chain.js",
   "word-disc.js",
   "word-layout.js",
+  "word-longest.js",
 ];
 for (const name of MODULES) {
   try {
@@ -800,6 +802,166 @@ check(dry.stuck(L.byHead), "dog is not a dead end, since nothing starts with G")
 dry.rewind(2);
 check(!dry.stuck(L.byHead), "winding back off a dead end left the chain stuck");
 check(dry.legal(at("toad")) && !dry.legal(at("trout")), "the wound-back move set is wrong");
+
+/* How far the category runs if every word is chosen perfectly, which is
+   graph.py's `longest_chain` written a second time. The two halves drift
+   quietly — both keep answering with a playable chain, one of them just stops
+   finding the longest — so tools/chains.json pins the answer word for word and
+   tools/check_chain.py runs the same cases through the Python. Every case is
+   also played out here, so a fixture and an implementation that have drifted
+   together still fail. */
+const {
+  buckets: chainBuckets,
+  chain: longestChain,
+  components: chainParts,
+  hierholzer: chainWalk,
+  longest: longestOn,
+} = await import(mod("word-longest.js"));
+
+/** Whatever stops `said` being playable from `pool`, or null. */
+const unplayable = (said, pool, opening) => {
+  const held = new Set(pool),
+    played = new Set();
+  if (opening !== undefined && said[0] !== opening)
+    return `it was to open on ${opening} and opens on ${said[0]}`;
+  for (let i = 0; i < said.length; i++) {
+    const word = said[i];
+    if (!held.has(word)) return `${word} is not in the list`;
+    if (played.has(word)) return `${word} is played twice`;
+    if (i && said[i - 1].slice(-1) !== word[0])
+      return `${said[i - 1]} does not hand over to ${word}`;
+    played.add(word);
+  }
+  return null;
+};
+
+const CHAINS = JSON.parse(readFileSync(new URL("chains.json", import.meta.url), "utf8"));
+/* A case constrained to an opening word names the list it shares rather than
+   carrying a second copy of it. */
+const CHAIN_LISTS = new Map(CHAINS.cases.filter(k => k.words).map(k => [k.name, k.words]));
+for (const kase of CHAINS.cases) {
+  const kaseWords = kase.words ?? CHAIN_LISTS.get(kase.like);
+  const got = longestChain(kaseWords, kase.opening);
+  const broken = unplayable(got.words, kaseWords, kase.opening);
+  check(broken === null, `chains.json ${kase.name}: the chain is not playable — ${broken}`);
+  const parted = got.words.findIndex((w, i) => w !== kase.chain[i]);
+  check(
+    got.words.length === kase.chain.length && parted < 0,
+    `chains.json ${kase.name}: chained ${got.words.length} words where the file holds` +
+      ` ${kase.chain.length}` +
+      (parted < 0
+        ? ""
+        : `, and parts from it at ${parted}: ${got.words[parted]} for ${kase.chain[parted]}`),
+  );
+  check(
+    got.bound === kase.bound,
+    `chains.json ${kase.name}: bound ${got.bound}, where the file holds ${kase.bound}`,
+  );
+  check(
+    got.certified === kase.certified,
+    `chains.json ${kase.name}: certified ${got.certified}, where the file holds ${kase.certified}`,
+  );
+  /* The bound is what the flow relaxation allows and the chain is what
+     connectivity leaves of it, so one can never pass the other. */
+  check(
+    got.words.length <= got.bound,
+    `chains.json ${kase.name}: a chain of ${got.words.length} beat its own bound of ${got.bound}`,
+  );
+  check(
+    got.certified === (got.words.length === got.bound),
+    `chains.json ${kase.name}: certified does not mean the bound was reached`,
+  );
+}
+
+/* A multiword entry is stored as it came in. Stripping the space would put the
+   word in the right bucket and hand back a spelling the category does not have,
+   which no other assertion here would notice. */
+check(
+  chainBuckets(["polar bear"])[("p".charCodeAt(0) - 97) * 26 + ("r".charCodeAt(0) - 97)][0] ===
+    "polar bear",
+  "a multiword entry lost its spelling on the way into a bucket",
+);
+
+/* The two pieces the driver rests on, asserted on their own: a split the union
+   find has to see, and a walk that has to spend every arc it is given. */
+const SPLIT = new Int32Array(26 * 26);
+SPLIT[2 * 26 + 19] = 1; // c -> t
+SPLIT[19 * 26 + 0] = 1; // t -> a
+SPLIT[3 * 26 + 14] = 1; // d -> o
+const { find: splitFind, touched: splitTouched } = chainParts(SPLIT);
+check(
+  splitFind(2) === splitFind(19) && splitFind(2) !== splitFind(3),
+  "the union find joined two letters no word bridges, or split two a word does",
+);
+check(
+  splitTouched[2] && splitTouched[0] && !splitTouched[1],
+  "a letter no arc touches came back touched",
+);
+
+const TRIANGLE = new Int32Array(26 * 26);
+TRIANGLE[0 * 26 + 1] = 1; // a -> b
+TRIANGLE[1 * 26 + 2] = 1; // b -> c
+TRIANGLE[2 * 26 + 0] = 1; // c -> a
+check(
+  chainWalk(TRIANGLE, 0).join("") === "0120",
+  `the walk round a triangle came back ${chainWalk(TRIANGLE, 0)}`,
+);
+
+/* An empty category is a chain of none rather than a throw, since the element
+   is handed its words asynchronously and draws before they land. */
+check(longestOn(new Int32Array(26 * 26)).letters.length === 0, "an empty matrix chained something");
+
+/* And what the fixture cannot cover: word lists nobody wrote down. What is
+   asserted is the two properties that hold whatever the words are. */
+let seed = 12345;
+const roll = n => {
+  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+  return seed % n;
+};
+let chained = 0;
+for (let trial = 0; trial < 200; trial++) {
+  const alphabet = "abcdefgh".slice(0, 2 + roll(6));
+  const list = new Set();
+  for (let i = 0, n = 4 + roll(12); i < n; i++) {
+    let word = "";
+    for (let j = 0, len = 2 + roll(3); j < len; j++) word += alphabet[roll(alphabet.length)];
+    list.add(word);
+  }
+  const words = [...list];
+  const got = longestChain(words);
+  chained += got.words.length;
+  const broken = unplayable(got.words, words);
+  if (broken !== null) {
+    check(false, `a random list chained something unplayable — ${broken}: ${words}`);
+    break;
+  }
+  if (got.words.length > got.bound) {
+    check(
+      false,
+      `a random list chained ${got.words.length} past its bound of ${got.bound}: ${words}`,
+    );
+    break;
+  }
+  /* And the same two properties under an opening word, which is the question a
+     player standing on a word asks. A forced opening cannot be longer than the
+     free one, and it has to be the word that was asked for. */
+  const opener = words[roll(words.length)];
+  const forced = longestChain(words, opener);
+  chained += forced.words.length;
+  const spoilt = unplayable(forced.words, words, opener);
+  if (spoilt !== null) {
+    check(false, `opening on ${opener} chained something unplayable — ${spoilt}: ${words}`);
+    break;
+  }
+  if (forced.words.length > forced.bound || forced.words.length > got.bound) {
+    check(
+      false,
+      `opening on ${opener} chained ${forced.words.length} past a bound of` +
+        ` ${Math.min(forced.bound, got.bound)}: ${words}`,
+    );
+    break;
+  }
+}
 
 /* The sizing, one equation with the label size on both sides. What is asserted
    is that it stays inside its square at every count, down to a frame too small
@@ -1879,7 +2041,6 @@ check(
 /* And <letter-disc> itself, driven: class-body faults surface only on
    construction, so the real element is built here. The points a pointer is moved
    to come from letter-graph.js, so a hit says the element agrees with it. */
-const { existsSync, readFileSync } = await import("node:fs");
 const LetterDisc = REGISTRY.get("letter-disc");
 check(LetterDisc !== undefined, "letter-disc never reached the registry");
 
@@ -2126,5 +2287,6 @@ console.log(
   `web/: ${MODULES.length} modules load, ${N.toLocaleString("en-GB")} nodes` +
     ` merge to ${dense.drawn.toLocaleString("en-GB")} arcs,` +
     ` ${WORDS.length} words lay out in ${L.live.length} wedges and play,` +
-    ` ${LWORDS.length} words make ${LL.pairs} letter arcs`,
+    ` ${LWORDS.length} words make ${LL.pairs} letter arcs,` +
+    ` ${CHAINS.cases.length} chains match graph.py and ${chained} more come off random lists`,
 );

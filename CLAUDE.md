@@ -339,6 +339,118 @@ Shared rules first, then what is particular to each.
 - No search box, no list, no crumb line, and no box around its column. A path
   one letter deep is nothing to draw a crumb line of.
 
+## The longest chain
+
+- `graph.longest_chain(words)` and `web/word-longest.js`'s `chain(words)` are
+  one algorithm written twice, so a change to either is a change to both.
+  `tools/chains.json` is what holds them together: 17 frozen cases, each a word
+  list with the chain it must produce word for word, its bound and whether it
+  certified. A case may also carry `opening`, the word its chain must open on,
+  and `like`, naming the case whose word list it shares rather than carrying a
+  second copy of it; both checks resolve those and assert the chain opens on
+  the word asked for. `tools/check_chain.py` runs the Python half and
+  `check_web.mjs` the JavaScript half. The word lists there are a snapshot and
+  do not track the corpus, so a corpus change is not answered by regenerating
+  the file.
+- The model is `graph.py`'s claim applied again: a word is an arc from its first
+  letter to its last, so a chain is a trail on 26 vertices and keeping the most
+  words is discarding the fewest. That is a min-cost transshipment on 26 nodes,
+  supplies the out-degree minus the in-degree, capacities the word counts, costs
+  one per word. Every cost is non-negative and the matrix is totally unimodular,
+  so the answer comes back integral with no solver. Words sharing a letter pair
+  are interchangeable and aggregate into one arc of capacity n rather than n
+  arcs.
+- 26 Dijkstras price all 676 start/end pairs off a single balanced solve, since a
+  chain from s to t moves supply by one unit at each end and costs the balanced
+  answer plus the shortest residual path t to s. The 677th candidate is the
+  closed circuit.
+- The candidate scan stops early once no remaining candidate can keep more words
+  than the best fragment found. That break is load-bearing beyond speed: it also
+  decides which component the next round runs on, and a smaller fragment can free
+  more words than a larger one — river chains 64 words with the break and 63
+  without. Both implementations stop on the same test.
+- Candidates sort on the whole tuple, cost then s then t, since neither Python
+  nor JavaScript promises anything about ties. No word list here needs it: 37
+  categories and 3,000 random ones answer the same either way. It is there so the
+  two halves never have to agree by luck.
+- The relaxation ignores whether the arcs it keeps form one connected run, so it
+  answers with an upper bound. Union-find checks; where the arcs come back
+  connected the bound is attained and `certified` is true. Where they do not, the
+  largest component is kept and the rest solved again at full capacity, and the
+  gap is reported rather than hidden.
+- `certified` under-reports on the small categories. 32 of the 37 certify, and
+  the five that do not are fabric 61 against a bound of 63, furniture 9/10,
+  instrument 10/11, mineral 18/19 and river 64/65; exhaustive search over the
+  letter multidigraph proves furniture's 9, instrument's 10 and mineral's 18
+  optimal, so the bound is loose by one in those three.
+- `graph.longest_chain(words, opening=None)` and `web/word-longest.js`'s
+  `chain(words, opening)` take a word the chain must open on, which is the
+  question a player standing on a word asks. Under both sits the real
+  primitive, a forced opening *letter*, `_solve_matrix(m, start)` in Python and
+  `longest(m, start)` in JavaScript. The word-level form spends the word,
+  solves from the letter it ends on, and puts it back on the front, so the
+  bound it reports covers the whole chain including that word. An opening that
+  is not one of the words is refused rather than ignored.
+- Every candidate opening on another letter is dropped before the scan. The
+  closed circuit survives whatever the letter is, since a closed walk can be
+  rotated to open on any letter it touches, and the existing `touched` guard is
+  what decides whether this one does. That circuit is the one candidate a
+  letter filter cannot simply drop, and `circuit-opened` is the fixture case
+  that holds it.
+- The bound is computed over the admissible candidates alone, so a chain forced
+  through a bad opening still says whether it is the longest chain that opening
+  allows.
+- 2,189 constrained solves across the 37 categories gave 0 disagreements
+  between the two implementations and 0 illegal chains, every one opening on
+  the word it was asked for. 2,314 more on random word lists were checked
+  against exhaustive brute force, with 0 failures and every one reaching the
+  true optimum.
+- Certification falls under a constraint. Over those 2,189 solves 75%
+  certified, where 32 of the 37 categories certify unconstrained. A forced
+  opening can sit in a small component, so the relaxation's bound goes loose
+  where the free one did not. furniture chains 9 words whole; opening on `crib`
+  still reaches 9, `bookcase` reaches 2 against a bound of 5, and `bunk`
+  reaches 1 and is certified, since nothing starts with K.
+- A missing certificate is a loose bound far more often than a short chain.
+  Over every word of every category under 300 words 69% certify, and mineral is
+  the worst at 1% of its openings, against tree 3%, river 3% and fabric 8%.
+  Exhaustive search over the letter multidigraph settled all 60 sampled mineral
+  openings and the solver had 59 of them exactly right, the exception being
+  `sienna`, which chains 13 against a true optimum of 14 and a bound of 15. A
+  readout that shows the bound will therefore read as much less certain than
+  the solver is, which is why the disc prints the count without its
+  certificate.
+- A letter no word leaves is short cut rather than solved. The general path
+  answers the same, so this is speed and not correctness. It runs in 0.05 ms
+  against 0.56 on animal, over the 11 of its 1,582 words that end on a letter
+  nothing starts with.
+- The five constrained cases each hold something the free ones cannot:
+  `circuit-opened` the rotation, `furniture-opened` an opening that costs
+  nothing, `furniture-stranded` a dead end certified at one word,
+  `furniture-boxed` the constrained bound going loose where the free one did
+  not, and `bird-opened` an opening at scale, 116 words certified.
+- `web/word-longest.js` has no DOM in it, exporting `chain`, `longest`,
+  `buckets`, `components` and `hierholzer`. It imports `matrix` and `LETTERS`
+  from `letter-graph.js` rather than counting the matrix a third time. No
+  element reads it; wiring it into one is the conversation the other views in
+  `render.py` need before they reach the command line.
+- `buckets` stores word text exactly as it came in and never rewrites it, so a
+  multiword entry like "polar bear" comes back out of a chain spelled the way the
+  category spells it.
+- `--opening WORD` sits on `stats` alone, since the other three commands print
+  no chain and the word it names belongs to one category's list. It is
+  lowercased and stripped before matching, and a word the category does not
+  yield is refused the way an unknown config key is, naming the nearest word
+  `difflib` finds, or the category's count and `weft words <category>` where
+  nothing is near. Reporting the unpinned chain under a pinned heading would be
+  a wrong answer printed confidently. `graph.summary(words, opening=None)`
+  carries the argument through, so `render.py`'s caller is unchanged, and the
+  opening goes into the report's heading: `longest chain from crib: 9 words,
+  …`.
+- `summary()` carries `longest_chain`, `chain_bound` and `chain_certified`, and
+  `stats` prints the line. Python is 8 ms on the largest category and JavaScript
+  0.8 ms, and the two produce byte-identical chains on all 37.
+
 ## Build and distribution
 
 - The Makefile's `all` renders one SVG per category and takes its parallelism
@@ -362,15 +474,6 @@ Shared rules first, then what is particular to each.
   Nothing positions one relative to another. It asks for its data beside itself
   where the three harnesses ask for `/out/…`, which is why `tools/serve.py`'s
   `translate_path` falls back to `out/` for a top-level name not in `web/`.
-- `tools/serve.py` gzips the textual types in `GZIP_TYPES` above `GZIP_MIN`,
-  holding each body against its mtime, since a deployed copy is served brotli'd
-  and a dev server sending 7.1 MB of exports raw is not the thing being
-  developed against. It does its own `If-Modified-Since` check, `send_head`
-  having no way in to the 304 without the uncompressed body.
-- `tools/serve.py`'s `Server` returns from `handle_error` for `BrokenPipeError`
-  and `ConnectionResetError`, since a reload abandons open sockets and the reset
-  surfaces outside any handler, writing a traceback into the terminal the
-  watcher reports into.
 - `tools/export_words.py` writes `words-<category>.json` and `words-index.json`
   flat: 37 categories, 13,212 words, 197 KB. Each file holds the whole category
   in `render.py`'s order and reads `[selection]`, so what the element draws is
@@ -403,6 +506,7 @@ Shared rules first, then what is particular to each.
     web/word-chain.js              the chain and the repeat rule, no DOM
     web/word-bundle.js             the resting bundle and its square, no DOM
     web/word-bundle-worker.js      builds it off the main thread
+    web/word-longest.js            the longest chain solver, no DOM
     web/words.html                 the word disc's harness, with a picker
     web/letter-disc.js             the letter graph as a chord diagram
     web/letter-graph.js            its matrix, ring, ribbons and hits, no DOM
@@ -418,6 +522,8 @@ Shared rules first, then what is particular to each.
     tools/export_words.py          writes a file per category and the index
     tools/serve.py                 serves web/ and reloads it on save
     tools/check_web.mjs            loads and drives web/ as a browser does
+    tools/check_chain.py           the Python half of the chain cross-check
+    tools/chains.json              the 17 frozen cases both halves answer
 
 ## Known limits
 
@@ -444,10 +550,11 @@ find out.
 
 `make check` must pass before a commit: `ruff check`, `ruff format --check` and
 `mypy` over `src/` and `tools/`, then `taplo check`, `tools/check_schema.py`,
-`biome lint`, `biome format`, `make web` and `make types`. mypy is strict, with
-`mypy_path = src` because `tools/` is not part of the package. nltk, wordfreq,
-pyvis and networkx ship no type information, so `mypy.ini` declares them untyped
-and the values crossing those boundaries are annotated by hand.
+`tools/check_chain.py`, `biome lint`, `biome format`, `make web` and
+`make types`. mypy is strict, with `mypy_path = src` because `tools/` is not
+part of the package. nltk, wordfreq, pyvis and networkx ship no type
+information, so `mypy.ini` declares them untyped and the values crossing those
+boundaries are annotated by hand.
 
 Biome needs no `node_modules`. The recipe names `web/ tools/` rather than `.`,
 because config discovery runs before file filtering and Biome walks into any git
@@ -473,32 +580,23 @@ stub carries no CSS, so a rule that drew every row as an empty box passes it,
 and did; one fragment serves all three templates, so a claim that an element
 lacks a search box is read off the module's text rather than the shadow root;
 and the main-thread fallback is synchronous, so a stale bundle arrival is not
-covered. Anything about layout has to be looked at in a browser, which is what
-`make serve` is for.
+covered. The chain solver's dead-end short cut is the same kind of blind spot,
+a speed path answering exactly what the general path would, so neither check
+can tell which of the two ran. Anything about layout has to be looked at in a
+browser, which is what `make serve` is for.
 
-`make types` is `tsc --noEmit` over the JSDoc annotations in `web/`, a
-prerequisite of `check` rather than a line in its recipe for the same reason
-`make web` is: tsc is the other part that needs node. Nothing is compiled and no
-`.ts` file exists, so the types are comments and the module served is the module
-edited. `tsconfig.json` includes `web/*.js` and excludes what is not ready, so a
-new module is checked by existing rather than by being added to a list. The
-three elements are excluded, `hypernym-disc.js`, `word-disc.js` and
-`letter-disc.js`, about 660 errors between them, mostly DOM lookups that come
-back nullable. The two workers are excluded as well, since they want
-`lib.webworker` where everything else wants `lib.dom`, and one program cannot
-hold both. `strictPropertyInitialization` is off, since `Painter`'s typed arrays
-are filled by `layout()` rather than by the constructor and every read of one is
-guarded by `#n`. It catches what `check_web.mjs` cannot, a renamed field on a
-worker message that no test path happens to read, or a wrong argument order in a
-call whose arguments are all numbers, which shows up as a subtly wrong picture
-rather than an exception.
+`tools/check_chain.py` runs the 17 cases in `tools/chains.json` through
+`graph.longest_chain`, and `check_web.mjs` runs the same 17 through
+`word-longest.js`, so the two solvers meet at one file rather than at each
+other. The JavaScript half plays every chain out independently of the fixture
+and adds 200 random word lists, asserting the two properties that hold whatever
+the words are: the chain is playable, and it never beats its own bound. Each
+list is then solved a second time with a forced opening, which must be
+playable, must open on the word it was given, and must not be longer than the
+free chain.
 
 A last block reads `web/embed.html` and holds it to the directory it ships in,
 since `web-dist` finds its modules by glob where that page names them by hand.
-
-Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
-`src/` on the path, and the tree is clean under it. The pyright CLI is not in
-the flake, so that check happens in the editor.
 
 ## Style
 
