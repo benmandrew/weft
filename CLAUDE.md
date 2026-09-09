@@ -552,6 +552,32 @@ for it.
   Nothing positions one relative to another. It asks for its data beside itself
   where the three harnesses ask for `/out/…`, which is why `tools/serve.py`'s
   `translate_path` falls back to `out/` for a top-level name not in `web/`.
+- One `<select>` above the word disc sets the category for both `<word-disc>`
+  and `<letter-disc>`, where the picker each grows from an `index-src` of its
+  own would give the page two: two pickers for one choice is the page saying
+  the discs are unrelated when they are reading the same file. `<word-run>`
+  follows the word disc, so it changes with them and the control writes nothing
+  to it. It is a `<section>` with its own script like the rest, and it writes to
+  whatever `document.querySelectorAll("word-disc, letter-disc")` finds rather
+  than to anything it requires, so lifting it out leaves the discs on the
+  category they name themselves and lifting a disc out leaves it driving
+  whichever is left. It waits on `DOMContentLoaded` where the document is still
+  loading, since the script sits above both discs and neither can be found or
+  read before the page has finished parsing. It writes `src`, which both discs
+  already observe, so the page needs no other way in to them; `disc-index.js`'s
+  `href` does the path arithmetic and its `label` writes the option text with
+  the word count. The index is `words-index.json`, which `web-dist` already
+  stages among the 38 word files, and a failed fetch shows in the select itself
+  rather than leaving it stuck on "loading".
+- `tools/serve.py` gzips the textual types in `GZIP_TYPES` above `GZIP_MIN`,
+  holding each body against its mtime, since a deployed copy is served brotli'd
+  and a dev server sending 7.1 MB of exports raw is not the thing being
+  developed against. It does its own `If-Modified-Since` check, `send_head`
+  having no way in to the 304 without the uncompressed body.
+- `tools/serve.py`'s `Server` returns from `handle_error` for `BrokenPipeError`
+  and `ConnectionResetError`, since a reload abandons open sockets and the reset
+  surfaces outside any handler, writing a traceback into the terminal the
+  watcher reports into.
 - `tools/export_words.py` writes `words-<category>.json` and `words-index.json`
   flat: 37 categories, 13,212 words, 197 KB. Each file holds the whole category
   in `render.py`'s order and reads `[selection]`, so what the element draws is
@@ -730,6 +756,18 @@ rather than an exception.
 
 A last block reads `web/embed.html` and holds it to the directory it ships in,
 since `web-dist` finds its modules by glob where that page names them by hand.
+The category control is no element, and names its id, its index and its module
+in script text rather than in a `src` attribute, where that loop does not look,
+so five assertions of its own cover it, every one mutation-tested: the
+selector's id is on the page; the page names `words-index.json`; its inline
+script imports at least one module, and every `from "./…js"` in it resolves to
+a module `web/` has; and `word-disc.js` and `letter-disc.js` both declare `src`
+in `observedAttributes`, since the control reaches them through that attribute
+and nothing else.
+
+Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
+`src/` on the path, and the tree is clean under it. The pyright CLI is not in
+the flake, so that check happens in the editor.
 
 ## Style
 

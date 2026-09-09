@@ -53,7 +53,7 @@ That line counts perfect play, and `<word-run>` names it. Given the id of a disc
 
 It fetches nothing of its own, reading the words and the chain off the disc it follows, so a page carrying both still asks for one category file. `/words.html` and `/embed.html` each carry one under the disc.
 
-The element takes one category file and draws every word in it, with a `limit` attribute to cap that at a count, where `build` draws 110. Every chord the printed figure draws sits under the playable disc at any word count. A page that also names an index of the categories gets a picker above the search box and changes category itself; `/words.html` under `make serve` is where to try it. A page embedding a single category names one file and gets no picker, which is what `/embed.html` does.
+The element takes one category file and draws every word in it, with a `limit` attribute to cap that at a count, where `build` draws 110. Every chord the printed figure draws sits under the playable disc at any word count. A page that also names an index of the categories gets a picker above the search box and changes category itself; `/words.html` under `make serve` is where to try it. A page embedding a single category names one file and gets no picker, which is what `/embed.html` does, carrying one control of its own above the two discs that sets the category for both.
 
 Where the window is wide enough for a column beside the disc, every word that could be played next is listed there in alphabetical order, and clicking one plays it. The search suggestions take that column while you are typing.
 

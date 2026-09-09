@@ -2571,6 +2571,33 @@ check(
   `embed.html's run follows ${bound ? bound[1] : "nothing"}, which no element on the page is`,
 );
 
+/* The page's own control, which is not an element and so is not covered by the
+   loop above: it names its index and its module inside script text rather than
+   in a src attribute, where nothing else here would look. web-dist stages the
+   modules by glob and the index among the word files, so both are there — what
+   drifts is the page naming one that is not. */
+check(page.includes('id="embed-category"'), "embed.html has no category selector");
+check(
+  page.includes('"words-index.json"'),
+  "embed.html's selector names no index, so it has no categories to offer",
+);
+const brought = [...page.matchAll(/from\s+"\.\/([\w.-]+\.js)"/g)].map(m => m[1]);
+check(brought.length > 0, "embed.html's inline script imports nothing");
+for (const mod of brought)
+  check(
+    existsSync(new URL(`../web/${mod}`, import.meta.url)),
+    `embed.html imports ${mod}, which web/ does not have`,
+  );
+/* It writes `src`, so both discs have to be watching that attribute or the
+   choice would load nothing. */
+for (const tag of ["word-disc.js", "letter-disc.js"]) {
+  const text = readFileSync(new URL(`../web/${tag}`, import.meta.url), "utf8");
+  check(
+    /observedAttributes\s*=\s*\[[^\]]*"src"/.test(text),
+    `${tag} does not observe src, so embed.html's category control cannot reach it`,
+  );
+}
+
 if (problems.length) {
   for (const said of problems) console.error(`web: ${said}`);
   process.exit(1);

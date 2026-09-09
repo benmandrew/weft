@@ -42,6 +42,14 @@ h1{font-family:var(--display);font-size:17px;font-weight:600;margin:0 0 4px}
 section{border-top:1px solid var(--rule);padding-top:14px;margin-top:28px}
 h2{font-family:var(--body);font-size:12px;font-weight:600;margin:0 0 10px;
    color:var(--muted);letter-spacing:.04em}
+/* The page's one control. It belongs to no element and reads none of the disc
+   tokens: it writes `src` on the two discs below, which both watch that
+   attribute already, so the page needs no other way in to them. */
+.pick{display:flex;align-items:baseline;gap:10px;color:var(--muted);font-size:12.5px}
+.pick select{font:inherit;font-size:13px;color:var(--ink);background:transparent;
+  border:1px solid var(--rule);border-radius:5px;padding:4px 8px}
+.pick select:disabled{color:var(--muted)}
+
 /* Each element carries its own tokens and its own height, so a host lifting one
    section takes everything that section needs. `fit` makes an element fill the
    box it is given, which is why each one is given a definite height here: a
@@ -109,7 +117,9 @@ letter-disc{
   <h1>weft</h1>
   <p class="note">Each disc below stands on its own. Copy any section into a
   page of your own, together with the rule that gives that element its height
-  and its colours, and it needs nothing from the others.</p>
+  and its colours, and it needs nothing from the others. The category control
+  is a section like the rest: it writes to the discs it finds beside it, and
+  none of them needs it to be there.</p>
 
   <!-- WordNet by hypernym. Its own script, its own data, its own worker. -->
   <section>
@@ -119,6 +129,53 @@ letter-disc{
                    src="wordnet-tree.json"
                    names-src="wordnet-names.txt"
                    glosses-src="wordnet-glosses.txt"></hypernym-disc>
+  </section>
+
+  <!-- The category the two discs below read, as one control rather than the
+       picker each element grows from an `index-src` of its own: two pickers for
+       one choice is the page saying the discs are unrelated when they are
+       reading the same file. Its own section all the same, and it writes to
+       whatever it finds rather than to anything it requires, so lifting it out
+       leaves the discs on the category they name themselves and lifting a disc
+       out leaves this driving whichever is left. -->
+  <section>
+    <h2>category</h2>
+    <label class="pick">words from
+      <select id="embed-category" aria-label="category" disabled>
+        <option>loading…</option>
+      </select>
+    </label>
+    <script type="module">
+      import { href, label } from "./disc-index.js";
+      const INDEX = "words-index.json";
+      const pick = document.getElementById("embed-category");
+      /* Whatever of the two is still on the page. A section lifted out is one
+         fewer element to write to rather than an error. */
+      const discs = () => document.querySelectorAll("word-disc, letter-disc");
+      /* This script runs where it sits, which is above both discs, so the
+         document has to finish before either can be found or read. */
+      if (document.readyState === "loading")
+        await new Promise(go => document.addEventListener("DOMContentLoaded", go, { once: true }));
+      try {
+        const rows = await (await fetch(INDEX)).json();
+        const opened = discs()[0]?.getAttribute("src") ?? "";
+        pick.replaceChildren(
+          ...rows.map(row => {
+            const opt = document.createElement("option");
+            opt.value = row.name;
+            opt.textContent = label(row);
+            opt.selected = href(INDEX, row.name) === opened;
+            return opt;
+          }),
+        );
+        pick.disabled = false;
+        pick.addEventListener("change", () => {
+          for (const el of discs()) el.setAttribute("src", href(INDEX, pick.value));
+        });
+      } catch (err) {
+        pick.replaceChildren(new Option(`no index: ${err.message}`));
+      }
+    </script>
   </section>
 
   <!-- The word chain. animal with no limit, so all 1,582 words and 96,470
