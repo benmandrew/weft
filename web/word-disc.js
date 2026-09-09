@@ -26,7 +26,7 @@
  *
  * Attributes: src, index-src (words-index.json, which turns the picker on),
  *             limit (0, every word the category has; a count caps it),
- *             readout="off", search="off", fit
+ *             readout="off", search="off", hint="off", fit
  * Properties: data, words, chain, stats. Methods: play(i), undo(), rewind(k),
  *             clear(), repaint().
  * Events: word-hover {index,word,replies}, word-play {index,word,chain},
@@ -41,6 +41,7 @@ import { band, baseline, fit, halo, HALO, HALO_MIN, HUB_DROP } from "./disc-labe
 import { ratio } from "./disc-ratio.js";
 import { Search } from "./disc-search.js";
 import { Chain } from "./word-chain.js";
+import { longest } from "./word-longest.js";
 import { watch } from "./disc-idle.js";
 import { bundle as strokeBundle, curve, release, RING, square, thin } from "./word-bundle.js";
 import {
@@ -328,6 +329,11 @@ class WordDisc extends HTMLElement {
   #pick = -1;
   #hover = -1;
   // Where the search left the highlight, and -1 when nothing holds it.
+  // What perfect play still allows, held per word: a pointer crossing the
+  // disc asks about the same word many times over, and the answer only moves
+  // when the chain does. #bestRun is the same question of the whole word set.
+  #reachOf = new Map();
+  #bestRun = -1;
   #cursor = -1;
   #crumbSel = -2;
   #failed = false;
@@ -650,6 +656,8 @@ class WordDisc extends HTMLElement {
     this.#L = layout(this.#words);
     this.#chain = new Chain(this.#L.head, this.#L.tail);
     this.#chordCount = chords(this.#L);
+    this.#reachOf.clear();
+    this.#bestRun = -1;
     this.#hover = -1;
     this.#cursor = -1;
     this.#search = null;
@@ -1406,6 +1414,7 @@ class WordDisc extends HTMLElement {
   /* Every move goes through here, so the disc, the line under it and the
      event can never describe different chains. */
   #after() {
+    this.#reachOf.clear();
     this.#draw();
     this.#crumbs();
     this.#overlay();
@@ -1426,6 +1435,42 @@ class WordDisc extends HTMLElement {
     this.#tailEl.replaceChildren();
   }
 
+  /* Whether the perfect-play figures are wanted. Off is for a host that has
+     no use for them: every one costs a solve, and a page that never shows them
+     should not pay for them. */
+  #hinting() {
+    return this.getAttribute("hint") !== "off";
+  }
+
+  /* How many more words play could make if word `i` were taken now, which is
+     word-longest.js's answer over the words still unplayed rather than a guess
+     off the count of replies. Asking about the word play already stands on
+     gives the same thing, since a played word is out of the reckoning either
+     way and the walk opens on the letter it left behind. */
+  #reach(i) {
+    const held = this.#reachOf.get(i);
+    if (held !== undefined) return held;
+    const m = new Int32Array(LETTERS * LETTERS);
+    for (let k = 0; k < this.#words.length; k++)
+      if (k !== i && !this.#chain.played(k)) m[this.#L.head[k] * LETTERS + this.#L.tail[k]]++;
+    const walk = longest(m, this.#L.tail[i]);
+    const n = Math.max(0, walk.letters.length - 1);
+    this.#reachOf.set(i, n);
+    return n;
+  }
+
+  /* The longest chain the word set allows at all, which is what the disc says
+     before a chain is opened. One solve per word set, since `limit` and the
+     category are the only things that move it. */
+  #run() {
+    if (this.#bestRun < 0) {
+      const m = new Int32Array(LETTERS * LETTERS);
+      for (let k = 0; k < this.#words.length; k++) m[this.#L.head[k] * LETTERS + this.#L.tail[k]]++;
+      this.#bestRun = Math.max(0, longest(m).letters.length - 1);
+    }
+    return this.#bestRun;
+  }
+
   /* One line saying what the state is, for whatever the hub names. It answers
      off #focus like the hub does, so the name in the middle and the sentence
      below it are always of the same word. */
@@ -1435,7 +1480,12 @@ class WordDisc extends HTMLElement {
     const i = sel >= 0 ? sel : this.#chain.end;
     if (i < 0) {
       const n = this.#words.length;
-      this.#glossEl.innerHTML = `${n} word${n === 1 ? "" : "s"} in ${this.#category || "the category"}. Pick any one to open the chain.`;
+      const best = this.#hinting()
+        ? ` The longest chain here runs <b>${this.#run()}</b> of them.`
+        : "";
+      this.#glossEl.innerHTML =
+        `${n} word${n === 1 ? "" : "s"} in ${this.#category || "the category"}. ` +
+        `Pick any one to open the chain.${best}`;
       return;
     }
     const word = this.#words[i];
@@ -1455,6 +1505,17 @@ class WordDisc extends HTMLElement {
         : `<span class="warn">no possible next words: ` +
           `${ever ? `every ${letter} word is used` : `nothing starts with ${letter}`}</span>`,
     ];
+    // What perfect play still allows, which the count of replies cannot say:
+    // a letter with forty replies can still be the shorter road. Only where
+    // there is a reply to make, since the line above already says there is not.
+    if (left && this.#hinting()) {
+      const rest = this.#reach(i);
+      parts.push(
+        sel >= 0 && sel !== this.#chain.end
+          ? `playing it leaves ${rest} more`
+          : `perfect play reaches ${rest} more`,
+      );
+    }
     // Why the pointer's word cannot be played, where it cannot. Never for the
     // word play is standing on, which those same two tests refuse.
     const at = sel >= 0 && sel !== this.#chain.end;

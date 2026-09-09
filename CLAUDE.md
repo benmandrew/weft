@@ -237,6 +237,25 @@ Shared rules first, then what is particular to each.
   rule — what the disc paints, what the readout explains and what the cursor
   follows. `--disc-warn` is the colour, and `#onMove` writes the cursor only
   when it turns over.
+- The readout prices perfect play beside the count of replies, since a letter
+  with many replies can still be the shorter road: on animal `crab` opens on the
+  full 640, where `bear` after it leaves 637 and makes 639. Three states, the
+  work being `word-longest.js`'s (`## The longest chain`): at rest the free run
+  of the whole word set, for the word play stands on what perfect play still
+  reaches, and for a legal move under the pointer what playing it would leave.
+- Both figures are held. `#reachOf` maps a word to its figure over the words not
+  yet played and is cleared in `#after()`, so every chain change drops it, and
+  `#build()` clears it and `#bestRun`, the free run, when the word set moves. A
+  pointer crossing the disc asks about the same word over and over and the
+  answer moves only when the chain does. `#reach(i)` solves from the letter word
+  `i` ends on, which answers for the word play already stands on as well, since
+  a played word is out of the reckoning either way and the walk opens on the
+  letter it left behind. About 0.9 ms for a word the pointer has not been on and
+  nothing for one it has: animal loaded and five figures printed is 24 ms in
+  `check_web.mjs`, furniture 2 ms.
+- `hint="off"` turns both figures off, read in JavaScript where the work would
+  be done rather than in CSS the way `readout="off"` is, since what it saves is
+  a solve and not a paint. `embed.html` names no attribute and gets them.
 - Labels below 5.5 px are dropped and the hub names what the pointer is on
   instead. `HUB_SIZES` runs 16 down to 8 at weight 700. The hub is one radius
   doing two jobs, what a click undoes and what the name must fit inside, and
@@ -431,9 +450,11 @@ Shared rules first, then what is particular to each.
   not, and `bird-opened` an opening at scale, 116 words certified.
 - `web/word-longest.js` has no DOM in it, exporting `chain`, `longest`,
   `buckets`, `components` and `hierholzer`. It imports `matrix` and `LETTERS`
-  from `letter-graph.js` rather than counting the matrix a third time. No
-  element reads it; wiring it into one is the conversation the other views in
-  `render.py` need before they reach the command line.
+  from `letter-graph.js` rather than counting the matrix a third time, so
+  `<word-disc>`, its one reader, pulls `letter-graph.js` transitively and a page
+  carrying that element alone fetches one module more than it used to;
+  `embed.html` already loads it for `<letter-disc>`. What the element prints off
+  it is in `### <word-disc>`.
 - `buckets` stores word text exactly as it came in and never rewrites it, so a
   multiword entry like "polar bear" comes back out of a chain spelled the way the
   category spells it.
@@ -594,6 +615,15 @@ the words are: the chain is playable, and it never beats its own bound. Each
 list is then solved a second time with a forced opening, which must be
 playable, must open on the word it was given, and must not be longer than the
 free chain.
+
+Six assertions hold `<word-disc>`'s figures, every one of them mutation-tested.
+The at-rest line names the free run; a perfect prefix holds words played plus
+words still to come equal to that free run the whole way down it; a move off
+that chain makes the figure fall; the element's figure for a word under the
+pointer equals what `word-longest.js` answers over the words not yet played,
+which is what catches a figure worked out before a move and held past it;
+`hint="off"` does no work; and a move under the pointer is worded differently
+from the word play stands on.
 
 A last block reads `web/embed.html` and holds it to the directory it ships in,
 since `web-dist` finds its modules by glob where that page names them by hand.

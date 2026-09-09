@@ -1373,6 +1373,93 @@ check(
   `the readout still names the letter twice: ${gloss.innerHTML}`,
 );
 
+/* How far perfect play can still run, which word-longest.js answers and the
+   count of replies cannot: a letter with many replies can still be the shorter
+   road. What is asserted is the invariant rather than the figure, since the
+   figure moves whenever the word list does — the words played plus the words
+   still to come never pass the free run, and while play stays on an optimal
+   chain the two are equal. */
+const reaches = () => {
+  const said = /(?:perfect play reaches|playing it leaves) (\d+) more/.exec(gloss.innerHTML);
+  return said ? +said[1] : -1;
+};
+/* The hub is the one place on the disc that names no word, so it is where the
+   pointer goes to read the at-rest line rather than a word's own. */
+const offWord = () => fire(over, "pointermove", { offsetX: BOX / 2, offsetY: BOX / 2 });
+const FREE = longestChain(WORDS).words.length;
+disc.clear();
+offWord();
+check(
+  gloss.innerHTML.includes(`runs <b>${FREE}</b>`),
+  `at rest the readout does not name the ${FREE}-word run: ${gloss.innerHTML}`,
+);
+/* A perfect prefix holds the sum at the free run the whole way down it, since
+   what is left is priced over the words not yet played. A figure taken from the
+   whole set instead runs over, which is the one thing this catches and the
+   count of replies cannot. */
+disc.clear();
+for (const w of ["cat", "tiger", "rat", "trout"]) {
+  point(w);
+  check(
+    disc.chain.length + reaches() === FREE,
+    `after ${w} the readout has ${disc.chain.length} + ${reaches()}` +
+      ` against a free run of ${FREE}`,
+  );
+}
+/* And a move off that chain costs, so the figure falls rather than holding. */
+disc.clear();
+point("cat");
+point("trout");
+point("toad");
+check(
+  disc.chain.length + reaches() < FREE,
+  `toad cost nothing: ${disc.chain.length} + ${reaches()} still makes ${FREE}`,
+);
+check(reaches() >= 0, `a chain in progress printed no figure: ${gloss.innerHTML}`);
+
+/* The element against the module, across a move. trout is a move in both states
+   below and worth different amounts in them, so a figure worked out before the
+   move and held past it fails here rather than reading plausibly. */
+disc.clear();
+fire(over, "pointermove", spot("trout"));
+const trout = reaches();
+for (const w of ["cat", "tiger", "rat"]) point(w);
+fire(over, "pointermove", spot("trout"));
+const spent = WORDS.filter(w => !disc.chain.includes(w));
+const owed = longestChain(spent, "trout").words.length - 1;
+check(
+  reaches() === owed,
+  `the disc prices trout at ${reaches()} where word-longest.js says ${owed}`,
+);
+check(
+  reaches() !== trout,
+  `trout is worth ${trout} in both states, so this no longer tests a stale figure`,
+);
+
+/* Pointing at a word that is a move prices that move rather than the one play
+   stands on, and says so in words a reader can tell apart. */
+disc.clear();
+point("cat");
+fire(over, "pointermove", spot("toad"));
+check(
+  gloss.innerHTML.includes("playing it leaves"),
+  `the pointer on a move did not price it: ${gloss.innerHTML}`,
+);
+
+/* A host with no use for the figures turns them off, and then nothing is
+   solved: the attribute is read where the work would be done, not in CSS. */
+disc.setAttribute("hint", "off");
+disc.clear();
+offWord();
+check(!gloss.innerHTML.includes("runs <b>"), `hint="off" still named the run: ${gloss.innerHTML}`);
+point("cat");
+check(reaches() === -1, `hint="off" still priced the move: ${gloss.innerHTML}`);
+disc.removeAttribute("hint");
+
+/* Left as the block above found it: cat played, and the pointer on it. */
+disc.clear();
+point("cat");
+
 /* An illegal word is inert: rat does not follow cat, and clicking it neither
    plays nor clears what is there. */
 point("rat");
