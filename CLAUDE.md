@@ -358,6 +358,63 @@ Shared rules first, then what is particular to each.
 - No search box, no list, no crumb line, and no box around its column. A path
   one letter deep is nothing to draw a crumb line of.
 
+## `<word-run>`
+
+Its own section rather than a fourth subsection above: it has no canvas and no
+hit testing, so not one of the shared rules under `## The three discs` holds
+for it.
+
+- It names the chain the disc could still make, where `<word-disc>`'s readout
+  counts it. On animal at rest: `640 words │ crab › boa › anaconda › alpaca ›
+  632 more › zebra › avocet › teju › ungulate`. Three moves in: `636 more, 639
+  in all │ crab › bear › raven › nutria › 631 more › avocet › teju ›
+  utahraptor › racoon`. The played words take the accent colour and the
+  projected ones the ink colour, and the separator is the crumb line's own `›`.
+- The count sits outside the chain behind a rule, the way the disc's category
+  label does, since reading as a step is what it must not do.
+- `for` is an id and nothing else, since `<word-disc>`'s events bubble and are
+  composed and no host code has to sit between the two. The id resolves through
+  `getRootNode()` rather than `document`, so a run inside a shadow tree finds
+  its disc. A host that would rather own the answer sets `.source`, the
+  element, which beats the attribute, or `.run`, the words themselves.
+- It listens for `word-chain` and `word-render`: the first covers play, the
+  second the first draw and a change of category. A held key means the pair
+  costs one solve between them rather than one each. `disconnectedCallback`
+  removes both listeners, so a detached run is not held by the disc.
+- The fold is `ENDS`, 4, moved by the `ends` attribute. A run of `2n+1` or
+  shorter is shown whole, since hiding one word behind a count reads worse than
+  the word.
+- `.run` is a flex row in which every word and every chevron is an item in its
+  own right, and `justify-content:space-between` splits whatever width the line
+  has spare between each pair. Nothing grows. Grouping the ends into two items
+  put all the spare width in one place and left the two ends shrinkable: a flex
+  item shrinks below its content before its parent scrolls, so at a narrow
+  width the words overran the chevrons between them and one end read as a chain
+  with no chevrons in it at all. `.run>*{flex:0 0 auto}` is what stops that, and
+  what turns the overflow back into a scroll.
+- The elision takes a chevron on either side and carries no ellipsis, since the
+  words it stands for are steps like any other and the chain has to hand over
+  into it and out of it the way it does everywhere else. With the chevrons
+  doing that, an ellipsis inside them says the same thing twice.
+- The style block is a template literal, so a backtick in a comment inside it
+  ends the string and the module stops parsing. That happened, and
+  `check_web.mjs` importing every module is what caught it.
+- The type is 15px at line-height 1.7. 11px matched `<word-disc>`'s crumb line,
+  which is a different job: the crumb is a control strip and this is a line to
+  read.
+- It fetches nothing. It reads `disc.words` and `disc.chain`, so a page
+  carrying the disc, the run and `<letter-disc>` still fetches one word file.
+  One solve per chain change, about 0.9 ms on animal, and none on hover.
+- `run(words, played)` and `elide(length, ends)` have no DOM in them, and the
+  element itself is clean under `tsc`: it is not in `tsconfig.json`'s exclude
+  list, unlike the three discs.
+- `words.html` carries it under the disc, its `main` a column so the run takes
+  its height off the page rather than off the disc. That `main` names no
+  `align-items`, so the column's children stretch to its width by default
+  rather than each naming `width:100%`. `embed.html`'s
+  word-disc section carries two scripts and two elements. Each still carries
+  its own tokens, so the pair lifts out together.
+
 ## The longest chain
 
 - `graph.longest_chain(words)` and `web/word-longest.js`'s `chain(words)` are
@@ -528,6 +585,7 @@ Shared rules first, then what is particular to each.
     web/word-bundle.js             the resting bundle and its square, no DOM
     web/word-bundle-worker.js      builds it off the main thread
     web/word-longest.js            the longest chain solver, no DOM
+    web/word-run.js                the chain the disc could still make
     web/words.html                 the word disc's harness, with a picker
     web/letter-disc.js             the letter graph as a chord diagram
     web/letter-graph.js            its matrix, ring, ribbons and hits, no DOM
@@ -544,7 +602,7 @@ Shared rules first, then what is particular to each.
     tools/serve.py                 serves web/ and reloads it on save
     tools/check_web.mjs            loads and drives web/ as a browser does
     tools/check_chain.py           the Python half of the chain cross-check
-    tools/chains.json              the 17 frozen cases both halves answer
+    tools/chains.json              the 12 frozen cases both halves answer
 
 ## Known limits
 
@@ -590,7 +648,9 @@ a line in its recipe, since it and `make types` are the parts that need node.
 `node --check` skips the early-error pass that resolves private names, so a
 `this.#gone` left by a refactor throws only when the browser evaluates the
 class body, leaving the element undefined and the page blank; a field
-initialiser naming a moved constant does the same. Both have happened. So the
+initialiser naming a moved constant does the same, and so does a backtick in a
+comment inside a template literal, which ends the string. All three have
+happened, the last of them in `word-run.js`'s style block. So the
 check imports every module against a stubbed DOM and then drives all three
 elements, with clicks computed from `word-layout.js`, hovers fired at rows, and
 resizes and scrolls driven through the observers' recorded callbacks.
@@ -598,7 +658,8 @@ resizes and scrolls driven through the observers' recorded callbacks.
 It asserts properties rather than exact counts, which move whenever the geometry
 does, and every assertion was mutation-tested. Its limits are worth knowing: the
 stub carries no CSS, so a rule that drew every row as an empty box passes it,
-and did; one fragment serves all three templates, so a claim that an element
+and did, and `<word-run>`'s items being let shrink again is the same blind spot
+in the same place; one fragment serves all three templates, so a claim that an element
 lacks a search box is read off the module's text rather than the shadow root;
 and the main-thread fallback is synchronous, so a stale bundle arrival is not
 covered. The chain solver's dead-end short cut is the same kind of blind spot,
@@ -624,6 +685,48 @@ pointer equals what `word-longest.js` answers over the words not yet played,
 which is what catches a figure worked out before a move and held past it;
 `hint="off"` does no work; and a move under the pointer is worded differently
 from the word play stands on.
+
+`dispatchEvent` in the stub was a no-op returning true. It now delivers to the
+listeners registered on the element and bubbles to the parent, since an element
+that binds by listening cannot be driven at all without real delivery.
+`getRootNode` and `document.getElementById` were added alongside it, the latter
+backed by a map filled when an id is set, and the shared markup fragment gained
+a `.run` div.
+
+Nine assertions hold `<word-run>`, every one mutation-tested: the fold leaves
+a `2n+1` run whole and loses no word; nothing runs two words together, the row
+opening with its count, then a word, no word ever standing next to another and
+the chain ending on a word, and a run folded to two words at each end carrying
+four chevrons, one inside each end and one on either side of the elision, and
+one elision, counted alongside the neighbour rule since the fault reported was
+chevrons missing from one end while the other kept them, which a rule about
+neighbours cannot see;
+the run with nothing played is the free chain; opening on a word that is on a
+longest chain costs nothing and a word off one costs; the run never repeats a
+word nor comes out longer than the free chain, which is what catches a
+continuation solved over the category rather than over what is left; the
+element hears play and undo with nothing touching it; a change of the disc's
+word set resolves the run over the new words with nothing played, which is what
+`embed.html`'s control rests on; a run set by hand shows; and a disconnected
+run stops following and lets go of its listeners. `embed.html` is read for the
+tenth, that its `for` names an id that page carries.
+
+`make types` is `tsc --noEmit` over the JSDoc annotations in `web/`, a
+prerequisite of `check` rather than a line in its recipe for the same reason
+`make web` is: tsc is the other part that needs node. Nothing is compiled and no
+`.ts` file exists, so the types are comments and the module served is the module
+edited. `tsconfig.json` includes `web/*.js` and excludes what is not ready, so a
+new module is checked by existing rather than by being added to a list. The
+three elements are excluded, `hypernym-disc.js`, `word-disc.js` and
+`letter-disc.js`, about 660 errors between them, mostly DOM lookups that come
+back nullable. The two workers are excluded as well, since they want
+`lib.webworker` where everything else wants `lib.dom`, and one program cannot
+hold both. `strictPropertyInitialization` is off, since `Painter`'s typed arrays
+are filled by `layout()` rather than by the constructor and every read of one is
+guarded by `#n`. It catches what `check_web.mjs` cannot, a renamed field on a
+worker message that no test path happens to read, or a wrong argument order in a
+call whose arguments are all numbers, which shows up as a subtly wrong picture
+rather than an exception.
 
 A last block reads `web/embed.html` and holds it to the directory it ships in,
 since `web-dist` finds its modules by glob where that page names them by hand.

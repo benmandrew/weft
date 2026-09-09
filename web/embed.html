@@ -42,7 +42,6 @@ h1{font-family:var(--display);font-size:17px;font-weight:600;margin:0 0 4px}
 section{border-top:1px solid var(--rule);padding-top:14px;margin-top:28px}
 h2{font-family:var(--body);font-size:12px;font-weight:600;margin:0 0 10px;
    color:var(--muted);letter-spacing:.04em}
-
 /* Each element carries its own tokens and its own height, so a host lifting one
    section takes everything that section needs. `fit` makes an element fill the
    box it is given, which is why each one is given a definite height here: a
@@ -62,6 +61,13 @@ word-disc{
   --disc-ground:#0c1112; --disc-panel:#141b1c; --disc-ink:#e7eded;
   --disc-muted:#90a1a1; --disc-accent:#59b491; --disc-warn:#e8705f;
   --disc-sat:.55; --disc-val:.88;
+  --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
+  --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
+}
+word-run{
+  display:block; width:100%; padding-top:8px;
+  --disc-ground:#0c1112; --disc-ink:#e7eded; --disc-muted:#90a1a1;
+  --disc-accent:#59b491; --disc-edge:rgba(231,237,237,.11);
   --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
   --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
 }
@@ -85,6 +91,10 @@ letter-disc{
     --disc-ground:#eef1f0; --disc-panel:#fbfcfc; --disc-ink:#131a1b;
     --disc-muted:#5d6d6e; --disc-accent:#2c7359; --disc-warn:#b8342a;
     --disc-sat:.62; --disc-val:.60;
+  }
+  word-run{
+    --disc-ground:#eef1f0; --disc-ink:#131a1b; --disc-muted:#5d6d6e;
+    --disc-accent:#2c7359; --disc-edge:rgba(19,26,27,.10);
   }
   letter-disc{
     --disc-ground:#eef1f0; --disc-panel:#fbfcfc; --disc-ink:#131a1b;
@@ -119,7 +129,9 @@ letter-disc{
   <section>
     <h2>word-disc</h2>
     <script type="module" src="word-disc.js"></script>
-    <word-disc fit src="words-animal.json"></word-disc>
+    <script type="module" src="word-run.js"></script>
+    <word-disc id="embed-word-disc" fit src="words-animal.json"></word-disc>
+    <word-run for="embed-word-disc"></word-run>
   </section>
 
   <!-- The same category as the graph underneath the one above: 26 letters

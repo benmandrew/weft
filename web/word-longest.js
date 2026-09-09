@@ -518,7 +518,7 @@ export function buckets(words) {
    given. Two words spanning the same pair are interchangeable, so which of them
    comes out is the order the caller handed them in and nothing more.
    @param {number[]} letters @param {string[][]} held @returns {string[]} */
-function name(letters, held) {
+export function name(letters, held) {
   const scan = new Int32Array(CELLS);
   /** @type {string[]} */
   const out = [];

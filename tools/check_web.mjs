@@ -54,9 +54,27 @@ class El {
   addEventListener(type, fn) {
     (this._on.get(type) ?? this._on.set(type, []).get(type)).push(fn);
   }
-  removeEventListener() {}
-  dispatchEvent() {
+  removeEventListener(type, fn) {
+    const held = this._on.get(type);
+    if (held)
+      this._on.set(
+        type,
+        held.filter(f => f !== fn),
+      );
+  }
+  /* Real delivery, where this used to answer true and drop the event: it is how
+     <word-run> hears the disc, and an element that binds by listening cannot be
+     driven at all against a stub that never calls back. Bubbling walks the
+     parents the append above recorded. */
+  dispatchEvent(ev) {
+    for (const fn of (this._on.get(ev.type) ?? []).slice()) fn(ev);
+    if (ev.bubbles && this._parent) this._parent.dispatchEvent(ev);
     return true;
+  }
+  /* No shadow tree in the stub deep enough to matter, so the one root is the
+     document, which is what getElementById below answers off. */
+  getRootNode() {
+    return globalThis.document;
   }
   append(...kids) {
     for (const kid of kids) if (kid instanceof El) kid._parent = this;
@@ -102,6 +120,7 @@ class El {
   }
   setAttribute(n, v) {
     this._attr.set(n, String(v));
+    if (n === "id") BY_ID.set(String(v), this);
   }
   getAttribute(n) {
     return this._attr.get(n) ?? null;
@@ -264,12 +283,18 @@ const fragment = () => {
   const crumb = new El("div", "crumb");
   crumb.append(new El("span", "head"), new El("span", "tail"));
   frame.append(pick, find, stage, new El("div", "gloss"), crumb);
+  // <word-run> holds no frame at all: one line, and the rest of this is what
+  // the discs reach for.
   const root = new El("div", "");
-  root.append(new El("style", ""), frame);
+  root.append(new El("style", ""), frame, new El("div", "run"));
   return root;
 };
 
+/* Elements by id, filled as one is set rather than by walking a tree, since
+   the stub has no tree to walk. */
+const BY_ID = new Map();
 globalThis.document = {
+  getElementById: id => BY_ID.get(id) ?? null,
   // Resolved, so the elements' document.fonts.ready callbacks are run rather
   // than only parsed. Awaited once below, after the word disc's draw counts.
   fonts: { ready: Promise.resolve() },
@@ -391,6 +416,7 @@ const MODULES = [
   "word-disc.js",
   "word-layout.js",
   "word-longest.js",
+  "word-run.js",
 ];
 for (const name of MODULES) {
   try {
@@ -1897,6 +1923,171 @@ resize();
 check(nFrame.classList.contains("wide"), "the nested disc stayed stacked when the frame went wide");
 check(kidRows.children.length > 0, "the ring below did not come back when the frame went wide");
 
+/* <word-run>, which follows the disc rather than being driven by a host: the
+   events <word-disc> emits bubble and cross the shadow boundary, so an id is
+   the whole of the binding. What is asserted is that it hears them, and that
+   what it names is the run word-longest.js gives for the state the disc is in.
+   The stub's dispatchEvent had to become real for any of this to be reachable. */
+const { elide, run: makeRun } = await import(mod("word-run.js"));
+const WordRun = REGISTRY.get("word-run");
+check(WordRun !== undefined, "word-run never reached the registry");
+
+/* The fold on its own. Hiding one word behind an ellipsis and a count reads
+   worse than the word, so a run of 2n+1 is left whole and the fold starts
+   above it. */
+const whole = elide(9, 4);
+check(
+  whole.head === 9 && whole.hidden === 0,
+  `a run of exactly 2n+1 folded to ${JSON.stringify(whole)} rather than staying whole`,
+);
+const folded = elide(20, 4);
+check(
+  folded.head === 4 && folded.tail === 4 && folded.hidden === 12,
+  `20 words folded to ${JSON.stringify(folded)}`,
+);
+check(folded.head + folded.hidden + folded.tail === 20, "the fold lost or invented a word");
+/* A host asking for no ends still gets a chain rather than an empty line. */
+check(elide(20, 0).head > 0, "ends=0 folded every word away");
+
+/* The run against the module the disc prices with: nothing played is the free
+   chain, and opening on a word that is on one costs nothing. */
+check(
+  makeRun(WORDS, []).join("|") === longestChain(WORDS).words.join("|"),
+  `the run with nothing played is ${makeRun(WORDS, [])}, not the free chain`,
+);
+const opened = makeRun(WORDS, ["cat"]);
+check(opened[0] === "cat", `the run does not open on the word played: ${opened}`);
+check(
+  opened.length === FREE,
+  `cat is on a longest chain, so opening on it should still make ${FREE}: ${opened}`,
+);
+/* And a word off every longest chain has to cost, or the element is telling a
+   player their mistake was free. */
+check(makeRun(WORDS, ["cat", "trout", "toad"]).length < FREE, "the run says toad cost nothing");
+/* A word already played is not a move, so a run can neither repeat a word nor
+   come out longer than the free chain. Continuing over the category rather
+   than over what is left breaks both at once, and reads plausibly doing it. */
+const runDeep = makeRun(WORDS, ["cat", "tiger", "rat", "trout"]);
+check(new Set(runDeep).size === runDeep.length, `the run plays a word twice: ${runDeep}`);
+check(
+  runDeep.length <= FREE,
+  `the run makes ${runDeep.length} where the free chain makes ${FREE}: ${runDeep}`,
+);
+
+/* Bound by id to a disc of its own, since the one above has been reloaded
+   twice by here and the run has to be read against a word set it is known to
+   agree with. Driven through play/undo rather than the pointer: what is being
+   tested is that the disc's events arrive, not where a word sits. */
+const runDisc = new WordDisc();
+runDisc.connectedCallback();
+runDisc.setAttribute("fit", "");
+runDisc._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
+runDisc.setAttribute("id", "the-word-disc");
+runDisc.data = { category: "test", words: WORDS, zipf: WORDS.map((_, i) => 8 - i) };
+
+const runEl = new WordRun();
+runEl.setAttribute("for", "the-word-disc");
+runEl.connectedCallback();
+const runLine = () => runEl._shadow.querySelector(".run");
+const runText = () => runLine().textContent;
+/* The words are nested inside the two ends now, so this counts through them
+   rather than across the row. */
+const runDone = () => {
+  let n = 0;
+  const walk = el => {
+    for (const kid of el.children ?? []) {
+      if (kid.className === "done") n++;
+      walk(kid);
+    }
+  };
+  walk(runLine());
+  return n;
+};
+const runParts = () => runLine().children.map(c => c.className);
+const playOn = w => runDisc.play(runDisc.words.indexOf(w));
+
+check(
+  runText().includes(`${FREE} words`),
+  `at rest the run does not name the ${FREE}-word chain: ${runText()}`,
+);
+check(runDone() === 0, `nothing is played, yet ${runDone()} words read as played`);
+/* Every word and every chevron is an item of the row, since what splits the
+   line's spare width between each pair is space-between over those items. What
+   has to hold is that nothing runs two words together: the row opens with its
+   count, then a word, and no word ever stands next to another. The elision is
+   a step like the words it stands for, so it takes a chevron on either side
+   and reads as three items rather than one; strict alternation would refuse
+   that, where the rule below allows it and still catches a chevron dropped.
+   The stub carries no CSS, so the shape is all that can be seen from here. */
+const isJoin = c => c === "sep" || c === "gap";
+const illaid = () => {
+  const parts = runParts();
+  if (parts[0] !== "count") return `it opens with ${parts[0]}`;
+  const body = parts.slice(1);
+  if (!body.length || isJoin(body[0])) return `the chain opens with ${body[0]}`;
+  if (isJoin(body[body.length - 1])) return `the chain ends on ${body[body.length - 1]}`;
+  for (let i = 1; i < body.length; i++)
+    if (!isJoin(body[i]) && !isJoin(body[i - 1])) return `${body[i - 1]} runs into ${body[i]}`;
+  return null;
+};
+check(illaid() === null, `the unfolded run is laid out wrong: ${illaid()} — ${runParts()}`);
+runEl.setAttribute("ends", "2");
+check(illaid() === null, `the folded run is laid out wrong: ${illaid()} — ${runParts()}`);
+/* Two words at each end is one chevron inside each of them and one on either
+   side of the elision. Counted rather than left to the rule above, since the
+   fault this replaced was chevrons missing from one end while the other kept
+   them, and a rule about neighbours cannot see that. */
+const runSeps = () => runParts().filter(c => c === "sep").length;
+check(runSeps() === 4, `a run folded to two words each end drew ${runSeps()} chevrons, not 4`);
+check(runParts().filter(c => c === "gap").length === 1, "the folded run has no elision in it");
+runEl.removeAttribute("ends");
+
+/* The binding is the feature: nothing below touches the run element, so a word
+   reaching it is the disc's own event arriving. */
+playOn("cat");
+check(runDone() === 1, `after one move ${runDone()} words read as played`);
+check(runText().startsWith(`${FREE - 1} more`), `after cat the run counts ${runText()}`);
+playOn("trout");
+check(runDone() === 2, `after two moves ${runDone()} words read as played`);
+/* Winding back is heard the same way, undo going through the same #after. */
+runDisc.undo();
+check(runDone() === 1, `undo left ${runDone()} words reading as played`);
+
+/* A change of category reaches it too, which is what embed.html's control
+   rests on: it writes `src` on the disc and nothing at all on the run. The stub
+   fetches nothing, so the word set is set the way a load would end up setting
+   it, through the same #build. */
+const OTHER = ["ant", "toad", "newt", "test", "tern"];
+runDisc.data = { category: "other", words: OTHER, zipf: OTHER.map((_, i) => 8 - i) };
+check(
+  runEl.run.length > 0 && runEl.run.every(w => OTHER.includes(w)),
+  `after a change of category the run is still ${runEl.run}`,
+);
+check(runDone() === 0, "a change of category left words reading as played");
+runDisc.data = { category: "test", words: WORDS, zipf: WORDS.map((_, i) => 8 - i) };
+check(
+  runEl.run.join("|") === longestChain(WORDS).words.join("|"),
+  `changing back did not restore the run: ${runEl.run}`,
+);
+
+/* A host that would rather own the answer sets it, and the element shows that
+   instead of working one out. */
+runEl.run = ["one", "two", "three"];
+check(runText().includes("three"), `a run set by hand did not show: ${runText()}`);
+
+/* Unbinding stops it: an element off the page must not hold the disc. */
+runEl.disconnectedCallback();
+const heldRun = runText();
+playOn("toad");
+check(runText() === heldRun, `a disconnected run still followed the disc: ${runText()}`);
+/* And it lets go rather than merely ignoring what arrives: a listener left on
+   the disc holds a detached element for the life of the page. */
+check(
+  (runDisc._on.get("word-chain") ?? []).length === 0 &&
+    (runDisc._on.get("word-render") ?? []).length === 0,
+  "a disconnected run left its listeners on the disc",
+);
+
 /* The letter graph, graph.py's claim drawn rather than printed: 26 nodes, one arc
    per letter pair some word bridges, nothing bundled. Weights span a factor of
    thirty, which is why the width is a log and why no arc is merged away. */
@@ -2365,6 +2556,20 @@ for (const tag of ["hypernym-disc", "word-disc", "letter-disc"]) {
     `embed.html does not load ${tag}.js, so its section cannot be lifted out alone`,
   );
 }
+/* The word disc's section carries a second element, so lifting it out takes two
+   modules rather than one. The binding is an id written twice on that page, and
+   a run bound to nothing renders a line saying so rather than failing, which is
+   what this catches instead. */
+check(page.includes("<word-run"), "embed.html carries no <word-run>");
+check(
+  page.includes('src="word-run.js"'),
+  "embed.html does not load word-run.js, so the run beside the disc would not upgrade",
+);
+const bound = /<word-run[^>]*\bfor="([^"]+)"/.exec(page);
+check(
+  bound !== null && page.includes(`id="${bound[1]}"`),
+  `embed.html's run follows ${bound ? bound[1] : "nothing"}, which no element on the page is`,
+);
 
 if (problems.length) {
   for (const said of problems) console.error(`web: ${said}`);
