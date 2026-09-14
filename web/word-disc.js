@@ -52,6 +52,7 @@ import {
   LETTERS,
   rank,
   solve,
+  spans,
   turns,
   WEDGE_BAND,
 } from "./word-layout.js";
@@ -85,6 +86,14 @@ const MOVES_PAGE = 200,
 // The wedge letter that sits outside the labels. Every other distance the disc
 // needs is solved in word-layout.js, where it can be checked without a canvas.
 const WEDGE_PX = 15;
+
+// How far off a chord the pointer may sit and still be on it. The fan is drawn
+// a pixel wide, which is a line to look at rather than a line to hit.
+const HIT_PX = 5;
+
+// Where the dots give out and the disc is chords alone. #onMove reads it too,
+// so what holds the anchor is the same boundary the hit test crosses.
+const INNER = 0.62;
 
 // How far a chord's control points sit towards the centre, and the tighter
 // figure past 150 words. config.Geometry's pull and pull_dense.
@@ -400,6 +409,10 @@ class WordDisc extends HTMLElement {
   // after a pointer event.
   #points = false;
   #inHub = false;
+  /* The word the pointer was on when it crossed into the chords, held until it
+     comes back out. Only at rest: where play stands there is one fan drawn and
+     it is the chain's own, so #anchor answers off the chain instead. */
+  #held = -1;
   #box = null;
   #resized = -Infinity;
   #fitTimer = 0;
@@ -660,6 +673,7 @@ class WordDisc extends HTMLElement {
     this.#bestRun = -1;
     this.#hover = -1;
     this.#cursor = -1;
+    this.#held = -1;
     this.#search = null;
     this.#widest = 0;
     // A different word set, so the held bundle is of words no longer on the
@@ -1107,20 +1121,26 @@ class WordDisc extends HTMLElement {
     g.clearRect(0, 0, this.#pw / this.#dpr, this.#ph / this.#dpr);
 
     const sel = this.#focus();
+    /* The fan is drawn from the held word rather than from what the pointer is
+       on, so that following a chord inwards leaves the fan where it was: the
+       chord under the pointer is one of the held word's, and redrawing from the
+       word it lands on would take it out from under the pointer. Outside the
+       chords nothing is held and the two are the same word. */
+    const fan = this.#held >= 0 ? this.#held : sel;
+    // What that word would open up. Only where it is a move: a word the chain
+    // cannot reach leads nowhere from here.
+    if (fan >= 0 && this.#chain.legal(fan)) {
+      const to = this.#L.tail[fan];
+      g.strokeStyle = this.#hue(to);
+      g.lineWidth = 1;
+      g.globalAlpha = 0.5;
+      g.beginPath();
+      const pull = this.#words.length > DENSE ? PULL_DENSE : PULL;
+      for (const j of this.#L.byHead[to]) if (j !== fan) this.#chord(g, fan, j, pull);
+      g.stroke();
+      g.globalAlpha = 1;
+    }
     if (sel >= 0) {
-      const to = this.#L.tail[sel];
-      // What that word would open up. Only where it is a move: a word the chain
-      // cannot reach leads nowhere from here.
-      if (this.#chain.legal(sel)) {
-        g.strokeStyle = this.#hue(to);
-        g.lineWidth = 1;
-        g.globalAlpha = 0.5;
-        g.beginPath();
-        const pull = this.#words.length > DENSE ? PULL_DENSE : PULL;
-        for (const j of this.#L.byHead[to]) if (j !== sel) this.#chord(g, sel, j, pull);
-        g.stroke();
-        g.globalAlpha = 1;
-      }
       g.strokeStyle = this.#tok("--_ink", "#e7eded");
       g.lineWidth = 1.4;
       g.beginPath();
@@ -1219,9 +1239,65 @@ class WordDisc extends HTMLElement {
       r = Math.hypot(dx, dy);
     // Out to the end of the labels, which is what makes one clickable, and a
     // small band in its place where the labels were dropped.
-    if (r < this.#r * 0.62 || r > this.#outer + (this.#labelPx ? 0 : 10)) return -1;
+    if (r > this.#outer + (this.#labelPx ? 0 : 10)) return -1;
+    if (r < this.#r * INNER) return this.#fanHit(px, py, Math.atan2(-dy, dx), r);
     const t = Math.PI / 2 - Math.atan2(-dy, dx);
     return at(this.#L, this.#turn, ((t % TAU) + TAU) % TAU);
+  }
+
+  /* The word whose fan the chords answer on, which is the one fan drawn from a
+     word: where play stands that is the chain's end, and at rest the word the
+     pointer was on when it crossed in. Held rather than followed, since a chord
+     answers as the word it lands on and following that would swing the fan away
+     from the pointer at the moment it arrived on one. */
+  #anchor() {
+    const end = this.#chain?.end ?? -1;
+    return end >= 0 ? end : this.#held;
+  }
+
+  /* Inside the dot ring, where a chord answers as the word it lands on. The
+     anchor's fan alone is asked, since it is the one set of chords that is a
+     set of moves: the bundle under it is 96,470 chords on animal, each a pair
+     of words rather than a move, and no pointer rate hit-tests that.
+
+     The hub is no bar. Nothing is drawn behind the name, so the middle is where
+     the fan crosses and the way back is what answers where no chord does.
+
+     `spans` refuses most of the fan before a path is built, the same prune
+     letter-graph.js's `near` is, and the transform is dropped because
+     isPointInStroke takes its point in the canvas's own space. */
+  #fanHit(px, py, th, r) {
+    // Before any data, and before the pointer has been on a word, there is no
+    // fan and the middle is nothing to be on.
+    const end = this.#anchor();
+    if (end < 0) return -1;
+    const g = this.#over.getContext("2d");
+    if (!g.isPointInStroke) return -1;
+    const pull = this.#words.length > DENSE ? PULL_DENSE : PULL;
+    /* What HIT_PX is worth in angle here, which is the whole turn at the centre
+       and less the further out the pointer is. The chord lies in a cone out of
+       the centre, so a point `r` from it and `d` off the nearest edge of that
+       cone is `r * sin(d)` from the cone and no nearer the chord: the pad is
+       that read backwards, and it is a bound rather than a guess. */
+    const pad = r <= HIT_PX ? Math.PI : Math.asin(HIT_PX / r);
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.lineWidth = HIT_PX * 2;
+    let got = -1;
+    for (const j of this.#L.byHead[this.#L.tail[end]]) {
+      if (j === end || !spans(this.#L.ang[end], this.#L.ang[j], th, pad)) continue;
+      g.beginPath();
+      this.#chord(g, end, j, pull);
+      if (g.isPointInStroke(px, py)) {
+        got = j;
+        break;
+      }
+    }
+    // A path is not part of the drawing state, so restoring does not drop the
+    // last one built here and the next draw would begin on top of it.
+    g.beginPath();
+    g.restore();
+    return got;
   }
 
   #at(ev) {
@@ -1229,14 +1305,24 @@ class WordDisc extends HTMLElement {
   }
   #onMove = ev => {
     const [px, py] = this.#at(ev);
-    this.#inHub = Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub;
-    const h = this.#inHub ? -1 : this.#hit(px, py);
+    const d = Math.hypot(px - this.#cx, py - this.#cy);
+    /* The anchor is taken before the hit, so the word held is the one the
+       pointer was on outside rather than whatever the chords answer. It is let
+       go the moment the pointer is back among the dots, and never taken where
+       play stands, the chain's own fan being the one drawn there. */
+    if (d >= this.#r * INNER || this.#chain?.end >= 0) this.#held = -1;
+    else if (this.#held < 0) this.#held = this.#focus();
+    const h = this.#hit(px, py);
+    // The hub answers last, so the cursor over a chord crossing it says what
+    // clicking would really do.
+    this.#inHub = h < 0 && d < this.#rHub;
     this.#showCursor();
     if (h === this.#hover) return;
     this.#preview(h);
   };
   #onLeave = () => {
     this.#inHub = false;
+    this.#held = -1;
     this.#preview(-1);
     this.#showCursor();
   };
@@ -1271,9 +1357,11 @@ class WordDisc extends HTMLElement {
   }
   #onClick = ev => {
     const [px, py] = this.#at(ev);
-    if (Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub) return this.undo();
     const h = this.#hit(px, py);
-    if (h >= 0) this.play(h);
+    if (h >= 0) return this.play(h);
+    // The way back is the empty middle rather than the whole circle: a chord
+    // drawn across it is still a move.
+    if (Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub) this.undo();
   };
 
   #onQuery = () => {
@@ -1415,6 +1503,9 @@ class WordDisc extends HTMLElement {
      event can never describe different chains. */
   #after() {
     this.#reachOf.clear();
+    // The fan has moved, so the word held against it is no longer what is
+    // drawn. The next move takes the anchor again.
+    this.#held = -1;
     this.#draw();
     this.#crumbs();
     this.#overlay();

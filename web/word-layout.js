@@ -222,3 +222,25 @@ export function chords(L) {
   }
   return total;
 }
+
+/** The angle `th`, measured the way `ang` is, against the wedge a chord
+   between `a` and `b` can reach, widened by `pad` radians.
+
+   Every point of the cubic lies in that wedge: all four control points sit on
+   the two rays out of the centre at `a` and `b`, and the cone between two rays
+   under half a turn is convex, so the hull the curve cannot leave is inside it.
+   It is a prune, the same job letter-graph.js's `near` does, so what it owes is
+   never refusing a point that is on the chord. `pad` is what pays the hit
+   tolerance, and the caller reads it off the pointer's own radius: a point `d`
+   off the cone is `r * sin(d)` from it and no nearer the chord, so a tolerance
+   of a few pixels is worth the whole turn at the centre and almost nothing at
+   the rim.
+   @param {number} a @param {number} b @param {number} th @param {number} pad
+   @returns {boolean} */
+export function spans(a, b, th, pad) {
+  const turn = (/** @type {number} */ x) => ((x % TAU) + TAU) % TAU;
+  const d = turn(b - a);
+  // The minor arc, read from whichever end opens it.
+  const [from, width] = d <= Math.PI ? [a, d] : [b, TAU - d];
+  return turn(th - from + pad) <= width + 2 * pad;
+}

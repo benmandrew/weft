@@ -643,7 +643,12 @@ class LetterDisc extends HTMLElement {
 
   /* A point on the disc, as a letter, an arc, or nothing. Inside the ring the
      path itself has to be asked, topmost first. The transform is dropped,
-     because isPointInPath takes its point in the canvas's own space. */
+     because isPointInPath takes its point in the canvas's own space.
+
+     The hub is no bar. The long arcs are bowed through the middle and nothing
+     is drawn behind the name, so an arc crossing the hub is as much under the
+     pointer as one anywhere else; the way out is what answers where no arc
+     does, which is where the hint that names it is drawn. */
   #hit(px, py) {
     const dx = px - this.#cx,
       dy = py - this.#cy,
@@ -659,7 +664,6 @@ class LetterDisc extends HTMLElement {
       const L = letterAt(this.#L, t);
       return L >= 0 ? [1, L] : [0, -1];
     }
-    if (d < this.#rHub) return [0, -1];
     const g = this.#over.getContext("2d");
     if (!g.isPointInPath) return [0, -1];
     g.save();
@@ -686,8 +690,10 @@ class LetterDisc extends HTMLElement {
   }
   #onMove = ev => {
     const [px, py] = this.#at(ev);
-    this.#inHub = Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub;
-    const [kind, on] = this.#inHub ? [0, -1] : this.#hit(px, py);
+    const [kind, on] = this.#hit(px, py);
+    // The hub answers last, so the cursor over an arc crossing it says what
+    // clicking would really do.
+    this.#inHub = kind === 0 && Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub;
     this.#showCursor(kind);
     if (kind === this.#kind && on === this.#on) return;
     this.#preview(kind, on);
@@ -699,10 +705,11 @@ class LetterDisc extends HTMLElement {
   };
   #onClick = ev => {
     const [px, py] = this.#at(ev);
-    // The hub is the way out, the one thing clicking an arc cannot do.
-    if (Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub) return this.show(-1);
     const [kind, on] = this.#hit(px, py);
-    if (kind) this.#drill(kind, on);
+    if (kind) return this.#drill(kind, on);
+    // The hub is the way out, the one thing clicking an arc cannot do, and it
+    // is the empty middle rather than the whole circle.
+    if (Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub) this.show(-1);
   };
 
   /* The cursor says what a click would do, written only when it turns over,

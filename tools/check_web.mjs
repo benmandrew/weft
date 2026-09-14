@@ -26,6 +26,8 @@ const drew = {
   arc: 0,
   curve: 0,
   image: 0,
+  inPath: 0,
+  inStroke: 0,
 };
 const PX = 0.6; // stub glyph width, as a fraction of the font size
 
@@ -174,6 +176,10 @@ class Canvas extends El {
       arc: 0,
       curve: 0,
       image: 0,
+      // Whether the middle was asked at all. Both answer false below, so this
+      // is the only way to claim that the hub stopped swallowing the pointer.
+      inPath: 0,
+      inStroke: 0,
     };
     // Where the text went, so a claim can be made about the halo sitting on
     // the letter it belongs to rather than beside it.
@@ -217,9 +223,18 @@ class Canvas extends El {
         both("fill");
         this.fills.push(this._g.fillStyle);
       },
-      /* Answered false throughout, so what is driven below is the ring band and
-         the letters outside it; the interior hit asks the path itself. */
-      isPointInPath: () => false,
+      /* Both answered false throughout, so what is driven below is the ring
+         band and the letters outside it; the interior hit asks the path itself,
+         and <word-disc>'s fan asks the stroke. The prune in front of each is
+         where the arithmetic is, and `near` and `spans` are asserted directly. */
+      isPointInPath: () => {
+        both("inPath");
+        return false;
+      },
+      isPointInStroke: () => {
+        both("inStroke");
+        return false;
+      },
       bezierCurveTo: () => both("curve"),
       stroke: () => {
         both("stroke");
@@ -702,6 +717,7 @@ const {
   MIN_LABEL_PX,
   rank,
   solve,
+  spans,
   turns,
 } = await import(mod("word-layout.js"));
 
@@ -769,6 +785,57 @@ check(after("emu") === "", `emu leads somewhere: ${after("emu")}`);
 let walked = 0;
 for (let i = 0; i < L.n; i++) for (const j of L.byHead[L.tail[i]]) if (j !== i) walked++;
 check(wordChords(L) === walked, `chords counted ${wordChords(L)} against a walk's ${walked}`);
+
+/* The prune in front of the fan's hit test. It is allowed to let a point
+   through that is not on the chord, since a path is then built and asked; what
+   it may never do is refuse one that is. So the obligation is checked against
+   the cubic itself, walked point by point, for pairs that wrap through the top
+   and pairs that nearly face each other. */
+{
+  const PULL = 0.32;
+  const on = (a, b, t) => {
+    // disc-colour.js's bow, as Bernstein: the ends on the ring and the two
+    // control points pulled in along their own rays.
+    const p = [
+      [Math.cos(a), Math.sin(a)],
+      [Math.cos(a) * PULL, Math.sin(a) * PULL],
+      [Math.cos(b) * PULL, Math.sin(b) * PULL],
+      [Math.cos(b), Math.sin(b)],
+    ];
+    const u = 1 - t;
+    const w = [u ** 3, 3 * u * u * t, 3 * u * t * t, t ** 3];
+    return [0, 1].map(k => w.reduce((sum, c, j) => sum + c * p[j][k], 0));
+  };
+  const pairs = [
+    [0.2, 1.1],
+    [-0.3, 0.4],
+    [3.0, -3.0],
+    [0.1, 3.0],
+    [2.5, -2.5],
+    [1.0, 1.02],
+  ];
+  let held = true,
+    where = "";
+  for (const [a, b] of pairs)
+    for (let k = 0; k <= 64; k++) {
+      const [x, y] = on(a, b, k / 64);
+      if (x === 0 && y === 0) continue;
+      if (!spans(a, b, Math.atan2(y, x), 0)) {
+        held = false;
+        where = `${a},${b} at t=${k / 64}`;
+      }
+    }
+  check(held, `spans refused a point that is on the chord: ${where}`);
+
+  // And it prunes: a constant true would pass the obligation above.
+  check(
+    !spans(0.2, 1.1, 2.4, 0) && !spans(0.2, 1.1, -0.6, 0),
+    "spans accepted an angle outside the wedge its chord can reach",
+  );
+  // The pad widens the wedge at both ends, which is what pays the hit
+  // tolerance where the fan runs closest to the middle.
+  check(spans(0.2, 1.1, 1.2, 0.2) && spans(0.2, 1.1, 0.1, 0.2), "the pad did not widen the wedge");
+}
 
 /* The rule, and the one thing it does not enforce. */
 const { Chain } = await import(mod("word-chain.js"));
@@ -1492,6 +1559,58 @@ point("rat");
 check(disc.chain.join("|") === "cat", `clicking an illegal word gave ${disc.chain}`);
 point("toad");
 check(disc.chain.join("|") === "cat|toad", `toad did not follow cat: ${disc.chain}`);
+
+/* The fan is drawn across the middle, so the middle is asked before the hub
+   is: a move whose chord passes under the name is still a move. The stub
+   answers no, which is what leaves the way back reachable below. */
+over.drew.inStroke = 0;
+fire(over, "pointermove", { offsetX: BOX / 2, offsetY: BOX / 2 });
+check(over.drew.inStroke > 0, "the pointer in the middle never asked the fan");
+
+/* At rest the anchor is the word the pointer was on when it crossed in, so
+   following cat's fan inwards asks that fan and leaves it drawn. The chord
+   under the pointer belongs to it, and a fan redrawn from the word the chord
+   lands on would swing away at the moment the pointer arrived on one. */
+disc.clear();
+fire(over, "pointermove", spot("cat"));
+// Twice cat's fan: the hit test builds it against the overlay's own context,
+// and then the overlay draws it. An anchor on another word moves both.
+const catFan = 2 * L.byHead[L.tail[WORDS.indexOf("cat")]].length;
+over.drew.curve = 0;
+over.drew.stroke = 0;
+over.drew.inStroke = 0;
+fire(over, "pointermove", { offsetX: BOX / 2, offsetY: BOX / 2 });
+check(over.drew.inStroke > 0, "the middle never asked the fan of the word held");
+check(over.drew.stroke === 1, `the middle drew ${over.drew.stroke} strokes, not the fan alone`);
+check(
+  over.drew.curve === catFan,
+  `the middle asked and drew ${over.drew.curve} chords, not ${catFan}`,
+);
+
+/* Held until the pointer comes back out: a second move inside still asks that
+   fan, where taking the anchor afresh would lose it to the answer the chords
+   had just given. */
+over.drew.inStroke = 0;
+fire(over, "pointermove", { offsetX: BOX / 2 + 2, offsetY: BOX / 2 - 2 });
+check(over.drew.inStroke > 0, "the fan was let go of on a second move inside");
+
+/* A pointer that was on nothing holds nothing, and the middle then answers on
+   the way back alone: what lies under it is the resting bundle, every chord the
+   disc has as a pair of words rather than a move, which no pointer rate hits. */
+fire(over, "pointerleave", {});
+over.drew.inStroke = 0;
+fire(over, "pointermove", { offsetX: BOX / 2, offsetY: BOX / 2 });
+check(over.drew.inStroke === 0, "the middle asked a fan with nothing held");
+
+/* Where play stands the fan is the chain's own and is drawn on the base, so
+   nothing is held and the overlay puts no second fan under the pointer. */
+disc.clear();
+point("cat");
+fire(over, "pointermove", spot("tiger"));
+over.drew.stroke = 0;
+fire(over, "pointermove", { offsetX: BOX / 2, offsetY: BOX / 2 });
+check(over.drew.stroke === 0, "the middle held a word of its own with a chain standing");
+point("toad");
 
 /* The hub is the way back, which is the one thing clicking a word cannot do. */
 fire(over, "click", { offsetX: BOX / 2, offsetY: BOX / 2 });
@@ -2410,6 +2529,13 @@ check(ld.letter === "C", `clicking the C→T arc drilled to ${ld.letter}`);
 
 fire(lOver, "click", letterPt(tArc));
 check(ld.letter === "T", `clicking T's band drilled to ${ld.letter}`);
+
+/* The long arcs are bowed through the middle, so the middle is asked before
+   the hub is. The stub answers no, which is what leaves the way out reachable
+   on the line below. */
+lOver.drew.inPath = 0;
+fire(lOver, "pointermove", { offsetX: lmid, offsetY: lmid });
+check(lOver.drew.inPath > 0, "the pointer in the middle never asked the arcs");
 /* And the hub is the way back out, which is the one thing clicking an arc
    cannot do. */
 fire(lOver, "click", { offsetX: lmid, offsetY: lmid });
