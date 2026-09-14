@@ -136,6 +136,16 @@ Shared rules first, then what is particular to each.
   and sets `#pw` to 0, which every draw path already refuses on; `#asleep` stops
   `#fit` sizing them back. Nothing is dropped before the first fit, and waking
   sets `#resized = 0` so the fit is not held on the drag timer.
+- The sleep is held for `HOLD`, a second, and a wake cancels it. A fast scroll
+  crosses the whole band in one gesture, so a sleep taken the moment a disc left
+  it emptied and refilled a disc for a moment nobody spent looking at it, three
+  times over on `embed.html`, which is the stutter a fast scroll had in it. The
+  hold is only ever memory: nothing draws while it runs, and a disc genuinely
+  left behind still gives its pixels back a second later. `watch` returns a
+  handle rather than the observer, since a held sleep must not outlive a
+  disconnect. `check_web.mjs` drives `watch` on its own for that, the element
+  drawing the same either way and the claim being about the sleep that never
+  ran; its three element blocks wait the hold out through `away`.
 - The resize observer watches the frame as well as the stage. Stacked, the
   stage's box does not move when the frame is dragged wider, so watching the
   stage alone left an element stuck in the stacked layout for good.

@@ -386,6 +386,14 @@ globalThis.IntersectionObserver = class {
 const nearScreen = isIntersecting => {
   for (const fn of SEEN) fn([{ isIntersecting }]);
 };
+/* A disc left behind rather than scrolled past: out of range, and then past the
+   hold the sleep waits out. The hold is imported rather than written down here,
+   so a disc-idle.js that lengthens it does not leave this waiting too little. */
+const { HOLD, watch: watchIdle } = await import(mod("disc-idle.js"));
+const away = async () => {
+  nearScreen(false);
+  await new Promise(r => setTimeout(r, HOLD + 40));
+};
 /* The listeners are kept, so a change of resolution is driven as a browser
    drives one. Removal goes by function, since re-arming moves it to a new query. */
 const MEDIA = [];
@@ -1171,6 +1179,34 @@ for (const [d, w, h] of [
    the same and there is nothing to save by refusing them. */
 check(ratio(4, 716, 716) === 4, `a zoomed disc was held to ${ratio(4, 716, 716)}`);
 check(ratio(0, 700, 400) === 1, `a screen reporting no ratio came back at ${ratio(0, 700, 400)}`);
+
+/* The sleep a disc gives its pixels back on, held rather than taken the moment
+   the disc leaves the band. A fast scroll crosses the whole band in one
+   gesture, so a sleep taken there empties and refills a disc for a moment
+   nobody spent looking at it, which is the stutter. Driven here rather than
+   through an element, since the element draws the same either way and what has
+   to be asserted is the sleep that never ran. */
+const idleAt = SEEN.length;
+let slept = 0,
+  woke = 0;
+const idleWatch = watchIdle(
+  {},
+  () => slept++,
+  () => woke++,
+);
+const inBand = isIntersecting => SEEN[idleAt]([{ isIntersecting }]);
+inBand(false);
+inBand(true);
+await new Promise(r => setTimeout(r, HOLD + 40));
+check(slept === 0, `a disc scrolled past slept ${slept} times`);
+check(woke === 1, `a disc scrolled past woke ${woke} times`);
+/* And a disc left behind still gives them back, which the three elements below
+   each assert through `away`. Disconnecting is what a held sleep must not
+   outlive: an element taken out of the document is not one to empty. */
+inBand(false);
+idleWatch.disconnect();
+await new Promise(r => setTimeout(r, HOLD + 40));
+check(slept === 0, "a held sleep ran at a disc that had been disconnected");
 /* And the bundle's cap must not bind before that budget does, or the picture
    blurs under dots and labels that stayed sharp. */
 const budgeted = Math.sqrt(MAX_AREA) / 2;
@@ -1819,7 +1855,7 @@ zoom(2);
 await new Promise(r => setTimeout(r, 80));
 const bigBase = shadow.querySelector(".base").width;
 check(bigBase > 0 && disc.stats.bundle, "the disc had no pixels to give back");
-nearScreen(false);
+await away();
 check(
   shadow.querySelector(".base").width === 0 && shadow.querySelector(".over").width === 0,
   `a disc a screen away kept a ${shadow.querySelector(".base").width}px canvas`,
@@ -2593,7 +2629,7 @@ check(
    resting picture held beside them the way <word-disc> holds its bundle. */
 const lBig = lBase.width;
 check(lBig > 0, "the letter disc had no pixels to give back");
-nearScreen(false);
+await away();
 check(
   lBase.width === 0 && lOver.width === 0,
   `a letter disc a screen away kept a ${lBase.width}px canvas`,
@@ -2614,7 +2650,7 @@ nest._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
 resize();
 const nestBase = nest._shadow.querySelector(".base").width;
 check(nestBase > 0, "the nested disc had no pixels to give back");
-nearScreen(false);
+await away();
 check(
   nest._shadow.querySelector(".base").width === 0 &&
     nest._shadow.querySelector(".over").width === 0,
