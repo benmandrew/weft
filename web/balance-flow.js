@@ -32,7 +32,7 @@
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
-import { ALPHA, banks, bands, shipped, thin, walk } from "./balance-bank.js";
+import { ALPHA, banks, bands, route, shipped, thin, walk } from "./balance-bank.js";
 import { hsv } from "./disc-colour.js";
 import { watch } from "./disc-idle.js";
 import { href, label as catLabel } from "./disc-index.js";
@@ -62,6 +62,55 @@ const SLOT_GAP = 0.012,
 const BANK_ALPHA = 0.22;
 // The band the readout names, against the ones already laid.
 const LIT = 0.95;
+/* And an edge around it, since an alpha has nothing to raise on a band that is
+   not a pixel tall. The element opens at the balanced step, and successive
+   shortest paths leave the smallest pushes for last, so the band lit on arrival
+   is the thinnest there is: 0.96 px on animal and 0.56 px on food against a
+   426 px span. The fill was never the trouble — the ink under it comes to 0.26
+   on animal and 0.38 on furniture, so 0.95 is three times its own ground, with
+   half a pixel to say it in. So the lit band's outline is stroked once the fill
+   is down, in the band's own ink at the alpha it was filled at, the last 5%
+   being worth less than a line of its own. In pixels rather than in units,
+   because what it carries is which band the readout means rather than how much
+   that band shipped, and the fill keeps every bit of that. */
+const LIT_EDGE = 1.5;
+
+/* One band, as a ribbon `h` tall along `pts`: the top edge through them and the
+   bottom edge back through them offset by h, every leg a cubic whose control
+   points sit on that leg's own midline. Two points is the plain sweep every band
+   but the lit one draws; more than two is `route`'s line through the letters the
+   path walked, where a leg running right to left is a step that recovered a
+   word. An `edge` strokes that outline once the fill is down, in the band's own
+   ink at the alpha it was filled at, which is the whole of how the lit band is
+   lit at the heights these bands come out at. */
+/** @param {CanvasRenderingContext2D} g
+   @param {import("./balance-bank.js").Point[]} pts @param {number} h
+   @param {number} [edge]
+   @returns {void} */
+function ribbon(g, pts, h, edge = 0) {
+  /** @param {import("./balance-bank.js").Point} from
+     @param {import("./balance-bank.js").Point} to @param {number} dy */
+  const leg = (from, to, dy) => {
+    const mx = (from.x + to.x) / 2;
+    g.bezierCurveTo(mx, from.y + dy, mx, to.y + dy, to.x, to.y + dy);
+  };
+  g.beginPath();
+  g.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) leg(pts[i - 1], pts[i], 0);
+  const end = pts[pts.length - 1];
+  g.lineTo(end.x, end.y + h);
+  for (let i = pts.length - 1; i > 0; i--) leg(pts[i], pts[i - 1], h);
+  g.closePath();
+  g.fill();
+  if (edge > 0) {
+    // Round, because the reverse leg turns back on itself and a mitre there is a
+    // spike pointing out of the picture.
+    g.lineJoin = "round";
+    g.lineWidth = edge;
+    g.strokeStyle = g.fillStyle;
+    g.stroke();
+  }
+}
 
 // The whole run plays in about this, held either side so a small category does
 // not crawl and a large one does not blur. animal's 144 augmentations come out
@@ -580,18 +629,28 @@ class BalanceFlow extends HTMLElement {
     for (const slot of bank.right) g.fillRect(rx, padY + slot.y0, colW, slot.h);
 
     const drawn = bands(this.#frames, bank, this.#step);
-    const mid = (lx + rx) / 2;
+    /* Only the band the readout names is routed through the letters its path
+       walked. 57 of animal's 144 paths take more than one arc, and zigzagging
+       all of them would put three crossings in the middle where there is now
+       one; the readout already speaks for the step it stands at alone, so the
+       working shows exactly where the line is pointing. The rest are the plain
+       sweep, and their two points are written in place rather than allocated
+       144 times a redraw. */
+    const plain = [
+      { x: lx, y: 0 },
+      { x: rx, y: 0 },
+    ];
     for (const b of drawn) {
       const last = b.step === this.#step - 1;
       g.globalAlpha = last ? LIT : this.#alpha;
       g.fillStyle = this.#hue(b.from);
-      g.beginPath();
-      g.moveTo(lx, padY + b.a);
-      g.bezierCurveTo(mid, padY + b.a, mid, padY + b.b, rx, padY + b.b);
-      g.lineTo(rx, padY + b.b + b.h);
-      g.bezierCurveTo(mid, padY + b.b + b.h, mid, padY + b.a + b.h, lx, padY + b.a + b.h);
-      g.closePath();
-      g.fill();
+      if (last) {
+        ribbon(g, route(this.#frames[b.step], b, bank, lx, rx, padY), b.h, LIT_EDGE);
+      } else {
+        plain[0].y = padY + b.a;
+        plain[1].y = padY + b.b;
+        ribbon(g, plain, b.h);
+      }
     }
     g.globalAlpha = 1;
 

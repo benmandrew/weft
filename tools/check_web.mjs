@@ -191,7 +191,17 @@ class Canvas extends El {
     // The colour each stroke went down in, in order, which is the only way to
     // make a claim about z-order without rasterising; the same for fills.
     this.inks = [];
+    this.nibs = [];
     this.fills = [];
+    // Where each path opened and where its far edge turned back. A band is one
+    // path and its ribbon is written by shared code, so those two points are the
+    // only things that say it was handed its own slice at each end, and at the
+    // height it was cut for.
+    this.moves = [];
+    this.lines = [];
+    // And where each cubic landed, which is what says a ribbon's two edges are
+    // the height apart it was cut for rather than lying on one another.
+    this.curves = [];
     const both = what => {
       drew[what]++;
       this.drew[what]++;
@@ -217,8 +227,12 @@ class Canvas extends El {
       rotate() {},
       beginPath() {},
       closePath() {},
-      moveTo() {},
-      lineTo() {},
+      moveTo: (x, y) => {
+        this.moves.push({ x, y });
+      },
+      lineTo: (x, y) => {
+        this.lines.push({ x, y });
+      },
       fill: () => {
         both("fill");
         this.fills.push(this._g.fillStyle);
@@ -235,10 +249,17 @@ class Canvas extends El {
         both("inStroke");
         return false;
       },
-      bezierCurveTo: () => both("curve"),
+      bezierCurveTo: (_ax, _ay, _bx, _by, x, y) => {
+        both("curve");
+        this.curves.push({ x, y });
+      },
       stroke: () => {
         both("stroke");
         this.inks.push(this._g.strokeStyle);
+        // The nib as well as the ink: a stroke at no width goes down invisibly
+        // and counts the same, and a mitred join at a path that turns back on
+        // itself is a spike rather than a corner.
+        this.nibs.push({ width: this._g.lineWidth, join: this._g.lineJoin });
       },
       arc: () => both("arc"),
       fillText: (t, x, y) => {
@@ -2713,6 +2734,7 @@ const {
   bands,
   banks,
   KNEE: BANK_KNEE,
+  route,
   shipped,
   thin: bankThin,
   walk: bankWalk,
@@ -2886,6 +2908,88 @@ check(bankThin(BANK_ALPHA, BANK_KNEE) === BANK_ALPHA, "a stack at the knee was t
 check(bankThin(BANK_ALPHA, BANK_KNEE * 4) < BANK_ALPHA, "four times the knee was not thinned");
 check(bankThin(BANK_ALPHA, BANK_KNEE * 4) > 0, "a large category was thinned to nothing");
 
+/* The lit band's own line, which is the one place a reverse arc is drawn. A band
+   is otherwise a sweep from one column to the other and says nothing about the
+   arcs between its ends; a recovery shows by direction alone, the leg spending a
+   negative arc running right to left where every other leg runs left to right.
+
+   RWORDS is cut for it. Its last path is b→e→c⇠d→a, which banks every letter it
+   walks and takes in both columns on the way, and the one before it is b→e→c,
+   multi-arc and not lit, which is what stops the counts below reading the same
+   whether the lit band alone is routed or all of them are. */
+const RWORDS = "bae bbae bbc bbdb be bece cc ce dc dcda eb ebd ec ecac".split(" ");
+const RTR = chainTrace(RWORDS);
+const RBANK = banks(RTR.excess, 600, 6);
+const RLAID = bands(RTR.frames, RBANK, RTR.frames.length);
+check(RTR.frames.length === 5, `the routed list balances in ${RTR.frames.length} paths, not 5`);
+check(RLAID.length === RTR.frames.length, "a routed band was dropped for want of a slot");
+{
+  const rev = RTR.frames.length - 1;
+  const one = RTR.frames.findIndex(f => f.steps.length === 1);
+  check(
+    RTR.frames[rev].steps.some(s => s < 0),
+    "the routed list's last path recovers nothing",
+  );
+  check(one >= 0, "the routed list holds no one-arc path");
+  // A one-arc path is the plain sweep, so routing it has to move nothing at all.
+  const flat = route(RTR.frames[one], RLAID[one], RBANK, 100, 400, 20);
+  check(
+    flat.length === 2 && flat[0].x === 100 && flat[1].x === 400,
+    `a one-arc path routed through ${flat.length} points`,
+  );
+  const line = route(RTR.frames[rev], RLAID[rev], RBANK, 100, 400, 20);
+  const seq = bankWalk(RTR.frames[rev].steps);
+  check(
+    line.length === seq.length,
+    `a ${seq.length}-letter path routed through ${line.length} points`,
+  );
+  // Both ends stay on the band's own slice, so a routed band tiles its slots
+  // exactly as an unrouted one does and the tiling asserted above still holds.
+  check(
+    line[0].y === 20 + RLAID[rev].a && line[line.length - 1].y === 20 + RLAID[rev].b,
+    "a routed band does not open and close on its own slice",
+  );
+  let wrong = null;
+  for (const [i, step] of RTR.frames[rev].steps.entries()) {
+    if (line[i + 1] === undefined) {
+      wrong = `arc ${i} has no point to run to`;
+      break;
+    }
+    const back = line[i + 1].x < line[i].x;
+    if (step > 0 === back)
+      wrong = `arc ${i} signed ${Math.sign(step)} runs ${back ? "back" : "on"}`;
+  }
+  check(wrong === null, `a leg runs against its arc — ${wrong}`);
+  check(
+    line.some((p, i) => i > 0 && p.x < line[i - 1].x),
+    "the reversing path came back with no leg running right to left",
+  );
+  // An interior letter is passed through rather than shipped from, so the line
+  // crosses the middle of its slot and takes no slice of it. Both columns are
+  // walked here, so a lookup built over one of them alone would show.
+  const slots = [...RBANK.left, ...RBANK.right];
+  for (const [i, v] of seq.slice(1, -1).entries()) {
+    const slot = slots.find(one => one.letter === v);
+    const at = line[i + 1];
+    check(
+      at !== undefined && Math.abs(at.y + RLAID[rev].h / 2 - (20 + slot.y0 + slot.h / 2)) < 1e-9,
+      `letter ${v} is not crossed at the middle of its slot`,
+    );
+  }
+}
+{
+  // A balanced letter banks nowhere, so it is dropped rather than drawn at an
+  // invented height. a → b → c, where b owes nothing and holds no slot.
+  const excess = new Int32Array(26);
+  excess[0] = 1;
+  excess[2] = -1;
+  const bank = banks(excess, 600, 6);
+  const band = bands([{ from: 0, to: 2, push: 1 }], bank, 1)[0];
+  const cell = (head, tail) => head * 26 + tail + 1;
+  const through = route({ steps: [cell(0, 1), cell(1, 2)], cost: 2 }, band, bank, 100, 400, 20);
+  check(through.length === 2, `a letter banking nowhere took ${through.length - 2} points`);
+}
+
 /* <balance-flow>. The transport is the whole of its state — the bands drawn are
    the ones below the step it stands at, and the line under them names the last
    of those — so what is driven here is the keys and the scrub. */
@@ -2997,6 +3101,83 @@ bKey(".play");
 check(bf.playing && bf.step === 0, `play from the balanced end left it at ${bf.step}`);
 bKey(".play");
 check(!bf.playing, "the play key did not stop a run it had started");
+
+/* And at the element: the lit band is the only one routed, so the step standing
+   on a multi-arc path draws two cubics a leg and every band below it draws two.
+   BWORDS above is one-arc paths throughout, which is what makes the count there
+   a claim about the plain sweep being left alone. */
+bf.data = { category: "routed", words: RWORDS };
+{
+  const legs = n => route(RTR.frames[n - 1], RLAID[n - 1], RBANK, 0, 1, 0).length - 1;
+  const plain = RTR.frames.findIndex(f => f.steps.length === 1) + 1;
+  check(legs(RTR.frames.length) > 1, "the lit path routes to one leg, so the counts are vacuous");
+  check(legs(RTR.frames.length - 1) > 1, "the path below the last one routes to one leg");
+  for (const at of [RTR.frames.length, RTR.frames.length - 1, plain]) {
+    bBase.drew.curve = 0;
+    bBase.drew.stroke = 0;
+    bBase.moves.length = 0;
+    bBase.lines.length = 0;
+    bBase.curves.length = 0;
+    bBase.inks.length = 0;
+    bBase.nibs.length = 0;
+    bBase.fills.length = 0;
+    bf.seek(at);
+    check(
+      bBase.drew.curve === (at - 1) * 2 + legs(at) * 2,
+      `${at} bands with a ${legs(at)}-leg path lit drew ${bBase.drew.curve} cubics`,
+    );
+    /* And every band opens on its own slice of the surplus column, which needs
+       no scale to say: the slots run down that column in letter order and the
+       bands tile each one in the order the solver found them, so sorting the
+       openings that way has to put them in ascending order. Handed the other
+       end's slice they would come back ordered by where they land. */
+    check(bBase.moves.length === at, `${at} bands opened ${bBase.moves.length} paths`);
+    /* Lit is an edge as well as an alpha, since the band the readout names can
+       be half a pixel tall and an alpha has nothing to raise there. One stroke,
+       on the band the readout means, in that band's own ink: a stroke on every
+       band would light none of them, and a stroke in another colour would stop
+       saying which letter the words left. */
+    check(bBase.drew.stroke === 1, `${at} bands went down with ${bBase.drew.stroke} strokes`);
+    check(
+      bBase.inks[0] === bBase.fills[bBase.fills.length - 1],
+      `the lit band is stroked ${bBase.inks[0]} over a fill of ${bBase.fills[bBase.fills.length - 1]}`,
+    );
+    const nib = bBase.nibs[0] ?? { width: 0, join: "none" };
+    check(
+      nib.width > 0 && nib.join === "round",
+      `the edge goes down ${nib.width}px wide, joined ${nib.join}`,
+    );
+    /* The lit band's two edges, which is the shape every band is drawn in. Its
+       far edge turns back the band's own height below where the near edge
+       arrived, and the near edge comes home that same height below where the
+       band opened. Both lying on one another would still count as two cubics a
+       leg. */
+    {
+      const near = bBase.curves[bBase.curves.length - legs(at) - 1];
+      const home = bBase.curves[bBase.curves.length - 1];
+      const tall = bBase.lines[bBase.lines.length - 1].y - near.y;
+      check(tall > 0, `the lit band turns back ${tall.toFixed(2)}px below its near edge`);
+      check(
+        Math.abs(home.y - bBase.moves[bBase.moves.length - 1].y - tall) < 1e-9,
+        `the lit band comes home ${(home.y - bBase.moves[bBase.moves.length - 1].y).toFixed(2)}px below where it opened, against ${tall.toFixed(2)}`,
+      );
+    }
+    for (const [end, at2, said] of [
+      ["from", bBase.moves, "open"],
+      ["to", bBase.lines, "close"],
+    ]) {
+      const down = RTR.frames
+        .slice(0, at)
+        .map((f, i) => ({ letter: f[end], i }))
+        .sort((one, two) => one.letter - two.letter || one.i - two.i)
+        .map(one => at2[one.i].y);
+      check(
+        down.every((y, i) => i === 0 || y > down[i - 1]),
+        `the bands ${said} at ${down.map(y => y.toFixed(1))}, which is not down the column`,
+      );
+    }
+  }
+}
 
 /* It gives its canvas back a screen away, and stops playing with it: a run
    nobody can see is a timer spending frames on nothing. Coming back does not

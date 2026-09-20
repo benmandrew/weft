@@ -129,6 +129,65 @@ export function walk(steps) {
   return seq;
 }
 
+/** One point on the line a band walks, in the picture's own pixels.
+   @typedef {object} Point
+   @property {number} x
+   @property {number} y */
+
+/** The line one augmentation's path walks, rather than the sweep that hides it.
+   A band is otherwise drawn from the surplus it leaves straight to the deficit
+   it reaches, which says nothing about the arcs in between; this puts a point at
+   every letter on the way, placed across the span by how many arcs the path has
+   paid for by the time it gets there. A reverse step recovers a word an earlier
+   path discarded, so it takes that count back down and its leg runs right to
+   left, against every other stroke in the picture.
+
+   Direction is the whole of how a recovery shows here, because it is the one
+   channel that costs no ink. A reversing path is a thin one — animal's 13 have a
+   median push of 2 against 3 across all 144, so they stand about 0.96 px tall on
+   a 426 px span — and anything drawn at weight on a band that thin would make
+   3.3% of the shipping the loudest thing on the picture.
+
+   The two ends stay exactly where `bands` put them, so a routed band still opens
+   and closes on its own slice and the tiling is untouched. An interior letter is
+   passed through rather than shipped from, so it takes no slice of its slot: the
+   line crosses the slot's middle and leaves the slot whole. A band can be taller
+   than a slot it passes through, since a path may push more than the letter
+   under it was ever owed, so the line is not held to the span: 5 interior points
+   over the 37 categories overhang it, the worst by 2.01 px of a 426 px span, and
+   they land in the margin the column headings sit in. Clamping would take the
+   line off the middle of the slot, which is the one thing it has to say.
+   A letter that banks nowhere, being balanced and so in neither column, is
+   dropped rather than given an invented height — 4% of food's interior letters
+   and none of animal's.
+   @param {{steps: number[], cost: number}} frame @param {Band} band
+   @param {Bank} bank @param {number} lx @param {number} rx @param {number} padY
+   @returns {Point[]} */
+export function route(frame, band, bank, lx, rx, padY) {
+  /** @type {Point[]} */
+  const out = [{ x: lx, y: padY + band.a }];
+  const n = frame.steps.length;
+  if (n > 1 && frame.cost > 0) {
+    const seq = walk(frame.steps);
+    const centre = new Float64Array(LETTERS).fill(Number.NaN);
+    for (const slot of bank.left) centre[slot.letter] = slot.y0 + slot.h / 2;
+    for (const slot of bank.right) centre[slot.letter] = slot.y0 + slot.h / 2;
+    let paid = 0;
+    for (let i = 0; i < n - 1; i++) {
+      paid += frame.steps[i] > 0 ? 1 : -1;
+      const y = centre[seq[i + 1]];
+      if (!Number.isFinite(y)) continue;
+      // Clamped because the picture has only the width between the two columns:
+      // no path over the 37 categories leaves [0, cost], all 2,645 of them, but
+      // one that did would otherwise be drawn off the side.
+      const t = Math.min(1, Math.max(0, paid / frame.cost));
+      out.push({ x: lx + (rx - lx) * t, y: padY + y - band.h / 2 });
+    }
+  }
+  out.push({ x: rx, y: padY + band.b });
+  return out;
+}
+
 /** The units of imbalance the first `k` augmentations have cleared.
    @param {{push: number}[]} frames @param {number} k @returns {number} */
 export function shipped(frames, k) {

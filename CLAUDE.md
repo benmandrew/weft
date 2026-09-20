@@ -477,6 +477,48 @@ the frame do not.
   the full `ALPHA` 0.5. `KNEE` is 40, and `FALL` 0.5 is a guess the way `FALL`
   in `word-bundle.js` and `ALPHA_FALL` in `letter-graph.js` are: there is no
   browser here to look in, and `make serve` is where to find out.
+- A band was one sweep from the surplus letter it leaves to the deficit letter
+  it reaches, saying nothing about the arcs in between. The band the readout
+  names, the lit one, is routed through the letters its path walked:
+  `balance-bank.js`'s `route`, one point a letter, placed across the span by
+  how many arcs the path has paid for by the time it gets there. A reverse step
+  recovers a word an earlier path discarded, so it takes that count back down
+  and its leg runs right to left, against every other stroke in the picture.
+  Direction is the whole of how a recovery shows, being the one channel that
+  costs no ink: the reversing paths are the thin ones, animal's 13 at a median
+  push of 2 against 3 across all 144, about 0.96 px on a 426 px span, so
+  anything drawn at weight would make 3.3% of the shipping the loudest thing on
+  the picture. Only the lit band. 57 of animal's 144 paths take more than one
+  arc, and routing all of them would put three crossings in the middle where
+  there is one; the readout already speaks for the step it stands at alone.
+- Both ends stay on the band's own slice, so the tiling is untouched. An
+  interior letter is passed through rather than shipped from, so the line
+  crosses the middle of its slot and takes no slice of it, and a letter that
+  banks nowhere, being balanced, is dropped rather than given an invented
+  height, 4% of food's interior letters and none of animal's. `route` has no
+  DOM in it, and `balance-flow.js`'s `ribbon` draws the plain sweep and the
+  routed line both, so the two cannot drift; `route` costs 0.3 µs, once a draw.
+  The census is worth recording: 204 of the 2,645 augmentations over the 37
+  categories carry a reverse step, 7.7%, and almost every one carries exactly
+  one, 208 reverse steps against 4,149 in all. insect, reptile and toy have
+  none, and the dominant shape is surplus → deficit ⇠ surplus → deficit, 148 of
+  the 204. No path takes the running arc count outside [0, cost], all 2,645 of
+  them, so the clamp in `route` is a guard rather than something the corpus
+  needs. The readout's path line is unchanged, having already printed `→` in
+  the accent colour and `⇠` muted.
+- `LIT` 0.95 was never the problem. The ink under the lit band comes to 0.26 on
+  animal and 0.38 on furniture, so the fill is already three times its own
+  ground. What the fill has nothing to work on is the band itself: the element
+  opens at the balanced step, and successive shortest paths leave the smallest
+  pushes for last, so the band lit on arrival is the thinnest one there is, 0.96
+  px on animal and 0.56 px on food against a 426 px span. An alpha has nothing
+  to raise on half a pixel. So `LIT_EDGE`, 1.5 px, strokes the lit band's
+  outline once the fill is down, in the band's own ink at the alpha it was
+  filled at. It is in pixels rather than in units of imbalance, since what it
+  carries is which band the readout means and not how much that band shipped;
+  the fill keeps every bit of that and the stroke rides its outline. The join is
+  round, since the reverse leg turns back on itself and a mitre there is a spike
+  pointing out of the picture.
 - No hit testing, no hover, no search box, no crumb line and no column beside
   the picture at any width: the rail and the readout under it are the whole of
   what would go there, and the figure is already wide rather than square. So
@@ -891,6 +933,34 @@ survived the first pass: a vacuous tiling assertion on a list where every slot
 held one band, `shipped` reading as a count of frames where every push was one,
 and the sleep claim resting on a run that finished on its own inside the hold.
 The changes above are what answered them.
+
+Six more hold `route`: a one-arc path routes to two points, so the plain sweep
+is left alone; a reversing path routes to a point a letter; both ends stay on
+the band's own slice; every leg runs the way its arc is signed and at least one
+runs right to left; every interior letter is crossed at the middle of its slot,
+with both columns walked so a lookup built over one of them alone would show;
+and a balanced letter is dropped. At the element, the lit band draws two cubics
+a leg where every band below it draws two. The fixture is `RWORDS`, 14 words
+balancing in 5 paths, cut so the path below the last one is multi-arc and banks
+every letter it walks, without which the count reads the same whether the lit
+band alone is routed or all of them are. `check_web.mjs`'s canvas stub records
+the points given to `moveTo`, `lineTo` and `bezierCurveTo`, where it counted the
+cubics and dropped the rest. That is what holds every band to opening and
+closing on its own slice, the openings running down the surplus column in letter
+order and the closings down the deficit column, and holds the ribbon's two edges
+to being the band's own height apart. A ribbon written by shared code fails
+identically on every band, which a count cannot see. Every one was
+mutation-tested. The one mutation that survives is a cubic's control points
+moved off the leg's midline, which changes the bow alone and is what `make
+serve` is for.
+
+Four more hold the lit band's edge: one stroke a draw, on the band the readout
+names, in that band's own ink, and at a width above zero with a round join. A
+stroke on every band would light none of them, and a stroke in another colour
+would stop saying which letter the words left. The stub records the nib, the
+`lineWidth` and `lineJoin` a stroke went down at, beside the ink it went down
+in, since a stroke at no width counts the same as one that shows. All four were
+mutation-tested.
 
 `make types` is `tsc --noEmit` over the JSDoc annotations in `web/`, a
 prerequisite of `check` rather than a line in its recipe for the same reason
