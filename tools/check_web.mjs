@@ -297,7 +297,13 @@ const fragment = () => {
   stage.children[1].className = "over";
   const crumb = new El("div", "crumb");
   crumb.append(new El("span", "head"), new El("span", "tail"));
-  frame.append(pick, find, stage, new El("div", "gloss"), crumb);
+  // <balance-flow>'s transport, which no disc reaches for: it is the one element
+  // here whose state a click moves rather than the pointer.
+  const rail = new El("div", "rail");
+  const keys = new El("div", "keys");
+  for (const k of ["first", "prev", "play", "next", "last"]) keys.append(new El("button", k));
+  rail.append(keys, new El("input", "scrub"));
+  frame.append(pick, find, stage, rail, new El("div", "gloss"), crumb);
   // <word-run> holds no frame at all: one line, and the rest of this is what
   // the discs reach for.
   const root = new El("div", "");
@@ -421,6 +427,8 @@ globalThis.postMessage = () => {};
 const BOX = 720;
 
 const MODULES = [
+  "balance-bank.js",
+  "balance-flow.js",
   "disc-colour.js",
   "disc-idle.js",
   "disc-index.js",
@@ -917,6 +925,7 @@ const {
   components: chainParts,
   hierholzer: chainWalk,
   longest: longestOn,
+  trace: chainTrace,
 } = await import(mod("word-longest.js"));
 
 /** Whatever stops `said` being playable from `pool`, or null. */
@@ -2693,6 +2702,337 @@ check(
   `the readout says "${nest._shadow.querySelector(".gloss").textContent}"`,
 );
 
+/* The balancing flow, kept rather than only solved. `trace` is the solve `chain`
+   already does with its working shown, so what is asserted is that the working
+   adds up to the answer: every path runs from a surplus letter to a deficit one,
+   the pushes clear exactly what was owed, and replaying every step leaves all 26
+   letters with as many words leaving as arriving. None of that shows in a chain,
+   which is why it is asserted here rather than through one. */
+const {
+  ALPHA: BANK_ALPHA,
+  bands,
+  banks,
+  KNEE: BANK_KNEE,
+  shipped,
+  thin: bankThin,
+  walk: bankWalk,
+} = await import(mod("balance-bank.js"));
+
+/** Whatever stops `tr` being an account of balancing `words`, or null. */
+const unbalanced = (words, tr) => {
+  const m = matrix(words).count;
+  const y = new Int32Array(26 * 26);
+  for (const f of tr.frames) {
+    if (!(tr.excess[f.from] > 0) || !(tr.excess[f.to] < 0))
+      return `a path runs ${f.from} to ${f.to}, which are not a surplus and a deficit`;
+    if (!(f.push > 0) || !(f.cost > 0)) return `a path pushed ${f.push} at a cost of ${f.cost}`;
+    const seq = bankWalk(f.steps);
+    if (seq[0] !== f.from || seq[seq.length - 1] !== f.to)
+      return `a path walks ${seq} where its frame says ${f.from} to ${f.to}`;
+    // The cost is what the path leaves discarded: one for every pair it takes a
+    // word from, less one for every pair it gives a word back to.
+    if (f.steps.reduce((n, s) => n + (s > 0 ? 1 : -1), 0) !== f.cost)
+      return `a path of ${f.steps.length} steps came back costing ${f.cost}`;
+    for (const s of f.steps) {
+      if (s > 0) y[s - 1] += f.push;
+      else y[-s - 1] -= f.push;
+    }
+  }
+  for (let i = 0; i < 26 * 26; i++)
+    if (y[i] < 0 || y[i] > m[i]) return `cell ${i} comes out discarding ${y[i]} of ${m[i]}`;
+  const left = Int32Array.from(tr.excess);
+  for (let u = 0; u < 26; u++)
+    for (let v = 0; v < 26; v++) {
+      const q = y[u * 26 + v];
+      if (q) {
+        left[u] -= q;
+        left[v] += q;
+      }
+    }
+  if (tr.settled && left.some(x => x !== 0)) return `${[...left]} is still owing`;
+  let paid = 0;
+  for (const f of tr.frames) paid += f.push * f.cost;
+  if (paid !== tr.paid) return `the paths cost ${paid} where the trace says ${tr.paid}`;
+  return null;
+};
+
+const TR = chainTrace(WORDS);
+check(TR.settled, "the balancing flow on the test words did not settle");
+check(TR.frames.length >= 2, `the test words balance in ${TR.frames.length} augmentations`);
+check(unbalanced(WORDS, TR) === null, `the trace is no account of it — ${unbalanced(WORDS, TR)}`);
+check(
+  shipped(TR.frames, TR.frames.length) === TR.need,
+  `${shipped(TR.frames, TR.frames.length)} units shipped against ${TR.need} owed`,
+);
+check(shipped(TR.frames, 0) === 0, "nothing run had already shipped something");
+/* Tracing must not move an answer. FREE was taken before any of this ran. */
+check(longestChain(WORDS).words.length === FREE, "tracing the flow moved the chain it comes from");
+{
+  let total = 0;
+  const m = matrix(WORDS).count;
+  for (let i = 0; i < 26 * 26; i++) total += m[i];
+  check(
+    total - TR.paid <= longestChain(WORDS).bound,
+    `the circuit keeps ${total - TR.paid}, past the chain's own bound`,
+  );
+}
+check(chainTrace([]).frames.length === 0, "an empty category traced an augmentation");
+
+/* The list the geometry below is cut for. WORDS balances in three paths of one
+   unit each, one path a letter, which cannot tell a slot that fills up from one
+   that never advances or a push from the count of pushes. Here A ships three
+   times, F receives three times, and A to B carries two words, so one push is
+   worth more than one band. */
+const BWORDS = ["ab", "axb", "ac", "ad", "ef", "gf", "hf"];
+const BTR = chainTrace(BWORDS);
+check(BTR.settled && BTR.need === 7, `the built list owes ${BTR.need} units, not 7`);
+check(unbalanced(BWORDS, BTR) === null, `the built list traced badly — ${unbalanced(BWORDS, BTR)}`);
+check(
+  shipped(BTR.frames, BTR.frames.length) === BTR.need,
+  `${shipped(BTR.frames, BTR.frames.length)} shipped against ${BTR.need} owed`,
+);
+check(
+  BTR.frames.some(f => f.push > 1),
+  "no path moved more than one word, so a push cannot be told from a count of them",
+);
+
+/* And over lists nobody wrote down, which is where a step signed the wrong way
+   would show: it would still ship the right total and walk the wrong graph. */
+let traced = 0;
+for (let trial = 0; trial < 60; trial++) {
+  const alphabet = "abcdef".slice(0, 2 + roll(4));
+  const list = new Set();
+  for (let i = 0, n = 4 + roll(10); i < n; i++) {
+    let word = "";
+    for (let j = 0, len = 2 + roll(3); j < len; j++) word += alphabet[roll(alphabet.length)];
+    list.add(word);
+  }
+  const words = [...list];
+  const got = chainTrace(words);
+  traced += got.frames.length;
+  const wrong = unbalanced(words, got);
+  if (wrong !== null) {
+    check(false, `a random list traced badly — ${wrong}: ${words}`);
+    break;
+  }
+}
+check(traced > 0, "60 random lists balanced without a single augmentation");
+
+/* The two columns on their own. A unit of imbalance has to be worth the same
+   height on both sides — the ends of a band would not line up otherwise — and
+   the column cut into the most slots is the one that fills the span. */
+const BANK = banks(BTR.excess, 600, 6);
+check(BANK.need === BTR.need, `the bank was cut for ${BANK.need} units against ${BTR.need}`);
+check(BANK.left.length > 0 && BANK.right.length > 0, "a bank came back with nothing on one side");
+{
+  const per = [...BANK.left, ...BANK.right].map(s => s.h / s.units);
+  check(
+    Math.max(...per) - Math.min(...per) < 1e-9,
+    `a unit is worth ${Math.min(...per)} to ${Math.max(...per)} pixels`,
+  );
+  const tall = BANK.left.length >= BANK.right.length ? BANK.left : BANK.right;
+  const short = tall === BANK.left ? BANK.right : BANK.left;
+  const fills = tall[tall.length - 1];
+  check(
+    Math.abs(fills.y0 + fills.h - 600) < 1e-9,
+    `the taller column ends at ${fills.y0 + fills.h} of the 600 it was given`,
+  );
+  const ends = short[short.length - 1];
+  check(ends.y0 + ends.h <= 600 + 1e-9, `the shorter column ran to ${ends.y0 + ends.h}`);
+}
+check(banks(new Int32Array(26), 600, 6).need === 0, "a balanced category owed something");
+
+/* The bands, which are the whole of what a step draws. Each slot is tiled by the
+   bands that touch it, in the order the solver found them: no gap, no overlap,
+   and the last of them ending where the slot does. A band past its slot is a
+   picture saying a letter shipped more than it ever had. */
+const LAID = bands(BTR.frames, BANK, BTR.frames.length);
+check(LAID.length === BTR.frames.length, `${BTR.frames.length} paths laid ${LAID.length} bands`);
+check(bands(BTR.frames, BANK, 0).length === 0, "nothing run laid a band down");
+check(bands(BTR.frames, BANK, 1).length === 1, "one augmentation laid more than one band");
+check(
+  BANK.left.some(slot => LAID.filter(b => b.from === slot.letter).length > 2),
+  "no slot holds more than two bands, so the tiling below is nothing to hold",
+);
+{
+  let wrong = null;
+  for (const [side, end, at] of [
+    [BANK.left, "from", "a"],
+    [BANK.right, "to", "b"],
+  ]) {
+    for (const slot of side) {
+      let y = slot.y0;
+      for (const b of LAID.filter(one => one[end] === slot.letter)) {
+        if (Math.abs(b[at] - y) > 1e-9) wrong = `a band opens at ${b[at]} where ${y} was free`;
+        y += b.h;
+      }
+      if (Math.abs(y - (slot.y0 + slot.h)) > 1e-9)
+        wrong = `${slot.letter}'s bands fill to ${y} of a slot ending at ${slot.y0 + slot.h}`;
+    }
+  }
+  check(wrong === null, `the bands do not tile their slots — ${wrong}`);
+}
+
+/* A step is signed, and the sign is which way its pair is read. Unsigned, a
+   reverse step walks the wrong way and the path comes back naming letters the
+   frame does not. */
+check(bankWalk([2 * 26 + 19 + 1]).join(",") === "2,19", "a forward step is not read head to tail");
+check(
+  bankWalk([-(2 * 26 + 19 + 1)]).join(",") === "19,2",
+  "a reverse step is not read tail to head",
+);
+check(bankWalk([]).length === 0, "an empty path walked somewhere");
+check(bankThin(BANK_ALPHA, BANK_KNEE) === BANK_ALPHA, "a stack at the knee was thinned");
+check(bankThin(BANK_ALPHA, BANK_KNEE * 4) < BANK_ALPHA, "four times the knee was not thinned");
+check(bankThin(BANK_ALPHA, BANK_KNEE * 4) > 0, "a large category was thinned to nothing");
+
+/* <balance-flow>. The transport is the whole of its state — the bands drawn are
+   the ones below the step it stands at, and the line under them names the last
+   of those — so what is driven here is the keys and the scrub. */
+const BalanceFlow = REGISTRY.get("balance-flow");
+check(BalanceFlow !== undefined, "balance-flow never reached the registry");
+
+const bf = new BalanceFlow();
+bf.connectedCallback();
+bf.setAttribute("fit", "");
+const bShadow = bf._shadow;
+const bStage = bShadow.querySelector(".stage");
+bStage._rect = { width: BOX + 300, height: BOX };
+const bBase = bShadow.querySelector(".base");
+const bGloss = bShadow.querySelector(".gloss");
+const bScrub = bShadow.querySelector(".scrub");
+for (const k of Object.keys(drew)) drew[k] = 0;
+bf.data = { category: "test", words: BWORDS };
+
+check(
+  bf.frames === BTR.frames.length,
+  `the element found ${bf.frames} paths, not ${BTR.frames.length}`,
+);
+check(bf.step === bf.frames, `the element opened at step ${bf.step} of ${bf.frames}`);
+check(
+  bf.stats.need === BTR.need && bf.stats.paid === BTR.paid,
+  `the element's figures are ${bf.stats.need}/${bf.stats.paid}, not ${BTR.need}/${BTR.paid}`,
+);
+/* Two cubics a band and one rectangle a slot, which is how a band drawn twice or
+   a slot drawn for a letter that owes nothing would show. */
+check(bBase.drew.curve === bf.frames * 2, `${bf.frames} bands drew ${bBase.drew.curve} cubics`);
+check(
+  bBase.drew.fillRect === BANK.left.length + BANK.right.length,
+  `${bBase.drew.fillRect} bank rectangles for ${BANK.left.length + BANK.right.length} slots`,
+);
+check(
+  bGloss.innerHTML.includes("<b>balanced</b>") &&
+    bGloss.innerHTML.includes(`<b>${BTR.paid.toLocaleString("en-GB")}</b>`),
+  `the balanced readout says "${bGloss.innerHTML}"`,
+);
+
+bf.seek(0);
+check(bf.step === 0 && bScrub.value === "0", `seek(0) left the element at ${bf.step}`);
+check(
+  bGloss.innerHTML.includes("nothing shipped yet"),
+  `at nothing run it says "${bGloss.innerHTML}"`,
+);
+bBase.drew.curve = 0;
+bf.seek(0);
+check(bBase.drew.curve === 0, "nothing run still drew a band");
+bf.seek(1);
+check(bBase.drew.curve === 2, `one path drew ${bBase.drew.curve / 2} bands`);
+{
+  /* The line names the augmentation the picture just laid, which is what catches
+     a readout describing the step about to run instead. */
+  const f = BTR.frames[0];
+  const from = String.fromCharCode(65 + f.from),
+    to = String.fromCharCode(65 + f.to);
+  check(
+    bGloss.innerHTML.includes(`<b>${from} → ${to}</b>`),
+    `after one step the readout says "${bGloss.innerHTML}"`,
+  );
+  check(
+    bGloss.innerHTML.includes(`push ${f.push} · cost ${f.cost}`),
+    `the path line says "${bGloss.innerHTML}"`,
+  );
+}
+
+/* The event a host binds to, which names letters rather than indices. */
+let stepSaid = null;
+bf.addEventListener("balance-step", e => {
+  stepSaid = e.detail;
+});
+bf.seek(2);
+check(stepSaid?.step === 2, `the element said it was at ${stepSaid?.step} after seeking to 2`);
+check(
+  stepSaid?.shipped === shipped(BTR.frames, 2),
+  `it said ${stepSaid?.shipped} shipped where the trace says ${shipped(BTR.frames, 2)}`,
+);
+check(
+  stepSaid?.from === String.fromCharCode(65 + BTR.frames[1].from),
+  `the step names ${stepSaid?.from} where the trace leaves ${BTR.frames[1].from}`,
+);
+bf.seek(-5);
+check(bf.step === 0, `seeking before the start left the element at ${bf.step}`);
+bf.seek(bf.frames + 5);
+check(bf.step === bf.frames, `seeking past the end left the element at ${bf.step}`);
+
+/* The keys, driven as a browser drives them: the rail is why the shared fragment
+   gained one. */
+const bKey = cls => fire(bShadow.querySelector(cls), "click", {});
+bKey(".first");
+check(bf.step === 0, `the first key left the element at ${bf.step}`);
+bKey(".next");
+check(bf.step === 1, `the next key left the element at ${bf.step}`);
+bKey(".prev");
+check(bf.step === 0, `the prev key left the element at ${bf.step}`);
+bKey(".last");
+check(bf.step === bf.frames, `the last key left the element at ${bf.step}`);
+bScrub.value = "1";
+fire(bScrub, "input", {});
+check(bf.step === 1, `the scrub set to 1 left the element at ${bf.step}`);
+
+/* Play rewinds rather than sitting at the balanced end, and the same key stops
+   it. Nothing here is timed: a timer left running holds the process open, which
+   is the other reason to assert that it stops. */
+check(!bf.playing, "the element was playing before anything asked it to");
+bKey(".last");
+bKey(".play");
+check(bf.playing && bf.step === 0, `play from the balanced end left it at ${bf.step}`);
+bKey(".play");
+check(!bf.playing, "the play key did not stop a run it had started");
+
+/* It gives its canvas back a screen away, and stops playing with it: a run
+   nobody can see is a timer spending frames on nothing. Coming back does not
+   start it again.
+
+   Driven on a list of twenty paths, so the run cannot reach its end inside the
+   hold below and finish of its own accord — which is what the claim would
+   otherwise be resting on rather than on the sleep. */
+const BLONG = [];
+for (let v = 1; v <= 20; v++) BLONG.push(`a${String.fromCharCode(97 + v)}`);
+bf.data = { category: "long", words: BLONG };
+check(bf.frames === 20, `the long list balances in ${bf.frames} augmentations, not 20`);
+const bBig = bBase.width;
+check(bBig > 0, "the element had no pixels to give back");
+bKey(".first");
+bKey(".play");
+check(bf.playing, "the play key did not start a run");
+await away();
+check(bBase.width === 0, `an element a screen away kept a ${bBase.width}px canvas`);
+check(!bf.playing, "an element a screen away went on playing");
+nearScreen(true);
+check(bBase.width === bBig, `coming back left the canvas at ${bBase.width} of ${bBig}`);
+check(!bf.playing, "coming back into view started a run of its own accord");
+
+/* A change of words is a fresh solve and a fresh transport. */
+const BOTHER = ["ant", "toad", "newt", "tern", "nan"];
+bf.data = { category: "other", words: BOTHER };
+check(
+  bf.frames === chainTrace(BOTHER).frames.length && bf.frames > 0,
+  `a change of category left ${bf.frames} augmentations`,
+);
+check(bf.step === bf.frames, `a change of category opened at ${bf.step} of ${bf.frames}`);
+bKey(".play");
+bf.disconnectedCallback();
+check(!bf.playing, "a disconnected element left its run going");
+
 /* embed.html names its modules, elements and data files by hand where web-dist
    finds the modules by glob, so the glob's guarantee stops at the directory's
    edge: a module renamed here would be copied and left unreferenced. */
@@ -2711,7 +3051,7 @@ for (const [, src] of page.matchAll(/(?:src|names-src|glosses-src)="([^"]+)"/g))
 }
 /* Each element stands alone on that page, so a host can lift one section out.
    A section whose module is loaded elsewhere could not be lifted on its own. */
-for (const tag of ["hypernym-disc", "word-disc", "letter-disc"]) {
+for (const tag of ["hypernym-disc", "word-disc", "letter-disc", "balance-flow"]) {
   check(page.includes(`<${tag}`), `embed.html carries no <${tag}>`);
   check(
     page.includes(`src="${tag}.js"`),
@@ -2752,7 +3092,7 @@ for (const mod of brought)
   );
 /* It writes `src`, so both discs have to be watching that attribute or the
    choice would load nothing. */
-for (const tag of ["word-disc.js", "letter-disc.js"]) {
+for (const tag of ["word-disc.js", "letter-disc.js", "balance-flow.js"]) {
   const text = readFileSync(new URL(`../web/${tag}`, import.meta.url), "utf8");
   check(
     /observedAttributes\s*=\s*\[[^\]]*"src"/.test(text),

@@ -49,6 +49,18 @@ function excess(m) {
   return e;
 }
 
+/** One augmenting path of the balancing flow: how many words it discards, what
+   each of them costs, the surplus letter it leaves and the deficit letter it
+   reaches, and the letter pairs it moved between the two. A step is `cell + 1`
+   where it discards one more word of that pair and `-(cell + 1)` where it
+   recovers one, since cell 0 has no sign of its own.
+   @typedef {object} Augmentation
+   @property {number} push
+   @property {number} cost
+   @property {number} from
+   @property {number} to
+   @property {number[]} steps */
+
 /* Min-cost max-flow by successive shortest paths, SPFA finding each one. Held
    as flat parallel arrays with the reverse arc at `e ^ 1`, which is what lets a
    path be walked backwards without storing it. */
@@ -62,6 +74,19 @@ class Flow {
     this.cap = new Int32Array(2 * edges);
     this.cost = new Int32Array(2 * edges);
     this.used = 0;
+    /** The letter pair each arc moves, for a run that was asked to say what it
+       did. Null until `label` is called, so an ordinary solve allocates none of
+       it and the traced one pays 704 ints.
+       @type {Int32Array | null} */
+    this.cell = null;
+  }
+
+  /** Name the letter pair arc `e` moves. The reverse arc shares the name, since
+     `e ^ 1` moves the same pair the other way.
+     @param {number} e @param {number} cell @returns {void} */
+  label(e, cell) {
+    if (!this.cell) this.cell = new Int32Array(this.to.length >> 1).fill(-1);
+    this.cell[e >> 1] = cell;
   }
 
   /** @param {number} u @param {number} v @param {number} cap @param {number} cost
@@ -82,9 +107,12 @@ class Flow {
     return e;
   }
 
-  /** @param {number} source @param {number} sink
+  /** `log`, where a caller hands one in, collects a frame per augmenting path.
+      Recording reads the path the push has already been applied along, so it
+      changes nothing about which path is found or what it costs.
+      @param {number} source @param {number} sink @param {Augmentation[]} [log]
       @returns {{ flow: number, paid: number }} */
-  run(source, sink) {
+  run(source, sink, log) {
     const { n, head, to, next, cap, cost } = this;
     const dist = new Int32Array(n),
       prev = new Int32Array(n),
@@ -132,18 +160,48 @@ class Flow {
         cap[prev[v]] -= push;
         cap[prev[v] ^ 1] += push;
       }
+      if (log) log.push(augmentation(this, source, sink, prev, push, dist[sink]));
       flow += push;
       paid += push * dist[sink];
     }
   }
 }
 
+/** The path just pushed along, as the letter pairs it moved and the two letters
+   it ran between. `prev[v]` is the arc into v, so walking back from the sink is
+   the path in reverse; the nodes come out [sink, deficit, …, surplus], and the
+   source and sink arcs carry no pair, which is what leaves the letters alone in
+   `steps`.
+   @param {Flow} flow @param {number} source @param {number} sink
+   @param {Int32Array} prev @param {number} push @param {number} cost
+   @returns {Augmentation} */
+function augmentation(flow, source, sink, prev, push, cost) {
+  const { to, cell } = flow;
+  /** @type {number[]} */
+  const steps = [];
+  /** @type {number[]} */
+  const nodes = [];
+  for (let v = sink; v !== source; v = to[prev[v] ^ 1]) {
+    const e = prev[v];
+    const pair = cell ? cell[e >> 1] : -1;
+    // An even arc discards one more word of its pair and an odd one recovers
+    // one. The cell is shifted by one because cell 0 has no sign of its own.
+    if (pair >= 0) steps.push((e & 1) === 0 ? pair + 1 : -(pair + 1));
+    nodes.push(v);
+  }
+  steps.reverse();
+  return { push, cost, from: nodes[nodes.length - 1], to: nodes[1], steps };
+}
+
 /** The cheapest discards `y` that leave every letter balanced, or null where no
    such set exists. A unit of flow along u -> v is one word of that pair thrown
    away, so the cost counts discards and `m - y` is a set of arcs some closed
    circuit can walk.
-   @param {Int32Array} m @returns {{ y: Int32Array, cost: number } | null} */
-function balanced(m) {
+   `log`, where a caller hands one in, comes back holding the augmenting paths
+   that got there, in the order they were found.
+   @param {Int32Array} m @param {Augmentation[]} [log]
+   @returns {{ y: Int32Array, cost: number } | null} */
+function balanced(m, log) {
   const e = excess(m);
   const source = LETTERS,
     sink = LETTERS + 1;
@@ -153,7 +211,11 @@ function balanced(m) {
     for (let v = 0; v < LETTERS; v++) {
       if (u === v) continue;
       const count = m[u * LETTERS + v];
-      if (count) arc[u * LETTERS + v] = flow.add(u, v, count, 1);
+      if (count) {
+        const cell = u * LETTERS + v;
+        arc[cell] = flow.add(u, v, count, 1);
+        if (log) flow.label(arc[cell], cell);
+      }
     }
   }
   let need = 0;
@@ -163,7 +225,7 @@ function balanced(m) {
       need += e[v];
     } else if (e[v] < 0) flow.add(v, sink, -e[v], 0);
   }
-  const pushed = flow.run(source, sink);
+  const pushed = flow.run(source, sink, log);
   if (pushed.flow !== need) return null;
   const y = new Int32Array(CELLS);
   // An arc's flow is what its reverse residual has picked up.
@@ -557,4 +619,31 @@ export function chain(words, opening) {
   const out = first.concat(name(letters, held));
   const whole = bound + first.length;
   return { words: out, bound: whole, certified: out.length === whole };
+}
+
+/** The balancing flow as it runs rather than as it ends: what each letter opens
+   out of balance by, how much of that has to be shipped, what the balanced
+   answer costs in words, and one frame per augmenting path in the order they
+   were found. `settled` is false where the surplus could not all reach a
+   deficit, which leaves the frames a partial account rather than a wrong one.
+   @typedef {object} Trace
+   @property {Int32Array} excess
+   @property {number} need
+   @property {number} paid
+   @property {boolean} settled
+   @property {Augmentation[]} frames */
+
+/** The solve `chain` already does, with the working shown. Nothing here moves
+   an answer — the trace is read off the paths the flow takes anyway — so
+   graph.py needs no counterpart and tools/chains.json holds nothing about it.
+   @param {Iterable<string>} words @returns {Trace} */
+export function trace(words) {
+  const m = Int32Array.from(matrix(words).count);
+  const e = excess(m);
+  let need = 0;
+  for (let v = 0; v < LETTERS; v++) if (e[v] > 0) need += e[v];
+  /** @type {Augmentation[]} */
+  const frames = [];
+  const got = balanced(m, frames);
+  return { excess: e, need, paid: got ? got.cost : 0, settled: got !== null, frames };
 }

@@ -1,7 +1,7 @@
 """Serve `web/` with a file watcher that reloads the browser on save.
 
-`/` is the nested-arc harness, `/words.html` the word chain one and
-`/letters.html` the letter graph.
+`/` is the nested-arc harness, `/words.html` the word chain one,
+`/letters.html` the letter graph and `/balance.html` the balancing flow.
 
 `web/` is served at `/` and `out/` at `/out/`, so a page reaches the exported
 tree at `/out/wordnet-tree.json` and a category at `/out/words-animal.json`

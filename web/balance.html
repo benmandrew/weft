@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>balancing flow — test harness</title>
+<style>
+:root{
+  --ground:#0c1112; --panel:#141b1c; --ink:#e7eded; --muted:#90a1a1;
+  --faint:#33413f; --live:#59b491;
+  --rule:rgba(231,237,237,.11);
+  --sat:.55; --val:.88;
+  --display:"Iowan Old Style",Palatino,Georgia,serif;
+  --body:"Avenir Next",Avenir,"Helvetica Neue",system-ui,sans-serif;
+  --data:Menlo,"SF Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:light){:root{
+  --ground:#eef1f0; --panel:#fbfcfc; --ink:#131a1b; --muted:#5d6d6e;
+  --faint:#b3c0bf; --live:#2c7359;
+  --rule:rgba(19,26,27,.10);
+  --sat:.62; --val:.60;
+}}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);margin:0;
+     font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+html,body{height:100%}
+body{overflow:hidden}
+.wrap{max-width:1160px;height:100%;margin:0 auto;padding:12px 20px 14px;
+      display:flex;flex-direction:column}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;
+       border-bottom:1px solid var(--rule);padding-bottom:8px;margin-bottom:12px}
+h1{font-family:var(--display);font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
+header .live{margin-left:auto;font-family:var(--data);font-size:11px;color:var(--muted);
+  display:inline-flex;align-items:center;gap:6px}
+header .live::before{content:"";width:7px;height:7px;border-radius:50%;
+  background:var(--faint);transition:background .2s}
+header .live.on::before{background:var(--live)}
+
+main{flex:1;min-height:0;display:flex;justify-content:center}
+balance-flow{
+  width:100%;
+  --disc-ground:var(--ground); --disc-panel:var(--panel); --disc-ink:var(--ink);
+  --disc-muted:var(--muted); --disc-accent:var(--live);
+  --disc-sat:var(--sat); --disc-val:var(--val);
+  --disc-font:var(--body); --disc-mono:var(--data);
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>balancing flow</h1>
+    <span class="live" id="live">waiting for the watcher</span>
+  </header>
+
+  <main>
+    <balance-flow id="flow" fit
+                  src="/out/words-animal.json"
+                  index-src="/out/words-index.json"></balance-flow>
+  </main>
+</div>
+
+<script type="module">
+// The picker is the element's, which is what index-src turns on. It reads the
+// same category file the two discs read and solves the balancing flow out of
+// it, so a page carrying all three still fetches one file.
+//
+// This is where the FALL guess in balance-bank.js gets looked at: a category of
+// a few hundred augmentations either reads as bands or floods the middle, and
+// there is no browser in `make check` to tell which.
+import "/balance-flow.js";
+</script>
+</body>
+</html>

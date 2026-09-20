@@ -33,7 +33,7 @@ All four commands share the filters that decide which words a category yields, a
 
 `make -j` renders every category, one file each. `make clean` removes the output directory, `OUT=` moves it, and `CONFIG=` names a config file.
 
-`make web-dist` gathers everything a page needs to run any of the three browser elements into one flat directory, `out/web-dist` unless `DIST=` names another: the modules, the exported WordNet tree, one file per category, and `embed.html`, a page holding one section per disc that asks for its data beside itself. The directory can be copied whole and served from anywhere, and each section carries its own script, settings and height, so one can be lifted out without the others.
+`make web-dist` gathers everything a page needs to run any of the four browser elements into one flat directory, `out/web-dist` unless `DIST=` names another: the modules, the exported WordNet tree, one file per category, and `embed.html`, a page holding one section per element that asks for its data beside itself. The directory can be copied whole and served from anywhere, and each section carries its own script, settings and height, so one can be lifted out without the others.
 
 ## Outputs
 
@@ -53,11 +53,11 @@ That line counts perfect play, and `<word-run>` names it. Given the id of a disc
 
 It fetches nothing of its own, reading the words and the chain off the disc it follows, so a page carrying both still asks for one category file. `/words.html` and `/embed.html` each carry one under the disc.
 
-The element takes one category file and draws every word in it, with a `limit` attribute to cap that at a count, where `build` draws 110. Every chord the printed figure draws sits under the playable disc at any word count. A page that also names an index of the categories gets a picker above the search box and changes category itself; `/words.html` under `make serve` is where to try it. A page embedding a single category names one file and gets no picker, which is what `/embed.html` does, carrying one control of its own above the two discs that sets the category for both.
+The element takes one category file and draws every word in it, with a `limit` attribute to cap that at a count, where `build` draws 110. Every chord the printed figure draws sits under the playable disc at any word count. A page that also names an index of the categories gets a picker above the search box and changes category itself; `/words.html` under `make serve` is where to try it. A page embedding a single category names one file and gets no picker, which is what `/embed.html` does, carrying one control of its own that sets the category for the three elements reading a category file.
 
 Where the window is wide enough for a column beside the disc, every word that could be played next is listed there in alphabetical order, and clicking one plays it. The search suggestions take that column while you are typing.
 
-`make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves the harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet, `/words.html` the word chain, `/letters.html` the letter graph, and `/embed.html` all three.
+`make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves the harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet, `/words.html` the word chain, `/letters.html` the letter graph, `/balance.html` the balancing flow, and `/embed.html` all four.
 
 ## The letter graph itself
 
@@ -94,6 +94,20 @@ Every candidate opening on another letter is dropped before the scan. The closed
 Certification is harder to come by under a constraint. Across 2,189 constrained solves over the 37 categories, 75% came back certified, where 32 of the 37 categories certify when the opening is free. A forced opening can strand play in a small component, and the relaxation's bound goes loose there where the free one did not. furniture shows all three outcomes on a category whose overall best is 9 words: opening on *crib* still reaches 9, opening on *bookcase* reaches 2 against a bound of 5 that nothing attains, and opening on *bunk* reaches 1 and is certified, since no word in the category starts with K. A missing certificate says less than it sounds like it does: mineral certifies on 1% of its openings, and exhaustive search over 60 of them found the solver's chain optimal in 59.
 
 The solver is written twice, in `src/weft/graph.py` and in `web/word-longest.js`, held to one another by seventeen frozen cases in `tools/chains.json`. The two produce byte-identical chains on all 37 categories, Python taking 8 ms on the largest category and JavaScript 0.8 ms. Constrained, they disagreed on none of those 2,189 solves and produced no illegal chain, and a further 2,314 solves on random word lists were checked against exhaustive search, all of them reaching the true optimum. `<word-disc>` reads the browser half, which is where the figures under the playable disc come from.
+
+## Watching it balance
+
+The arithmetic above runs as a sequence, and `<balance-flow>` draws it running. It draws the transshipment, the solve that decides how few words have to be discarded before every letter has as many words leaving it as arriving. Surplus letters are banked down the left column at their excess and deficit letters down the right at theirs, and each *augmenting path* the solver walks comes out as one band across the middle, as wide as the words that path discards.
+
+The solve is the one `<word-disc>` already prices play with. `trace` reads the augmenting paths off that solve rather than running a second one, so nothing drawn here is a different answer from the figures under the playable disc. It takes 0.46 ms on animal, against the chain solve's own 0.64.
+
+The element carries a transport rather than a pointer, since what it has to show is a sequence: first, previous, play, next and last, with a slider to scrub by hand. The whole run is given a budget of about nine seconds rather than each step a fixed rate, held between 60 and 160 ms a step, so animal's 144 augmentations come out at 62 ms each and furniture's 36 at the ceiling. It opens on the balanced state rather than on nothing run, so a page nobody touches shows the whole transport, and play rewinds first where it stands at that end.
+
+The line under the picture names where it stands. At nothing run it reads *26 letters open 778 words out of balance, cleared in 144 augmentations*; in between it names the step, the surplus letter that step leaves, the deficit letter it reaches and how much of what was owed has been shipped; at the end, *balanced after 144 augmentations · 945 words discarded to close the circuit*. Under that sits the path the step walked, letter by letter, with the arcs between them. A forward arc discards one more word of its pair and a reverse arc recovers a word an earlier step discarded, which is what lets a later path undo part of an earlier one at no more than it costs.
+
+One scale serves both columns, so a unit of imbalance is the same height wherever it is read and a band comes out the same width at both of its ends. A band takes the hue of the letter it leaves and the deficit column is left uncoloured, since colouring where a band lands would say the two letters were one letter's ink. The bands in one letter's slot tile it in the order the solver found them. There is no hit testing and no hover, where both discs answer the pointer, because this picture asks nothing of it.
+
+It reads the same `words-<category>.json` that `<word-disc>` and `<letter-disc>` read, so a page carrying all three fetches one file, and it takes `src` and `index-src` exactly as `<letter-disc>` does, so naming an index gives it the same picker and `embed.html`'s one control reaches it unchanged. animal's 1,582 words leave 26 letters open and 778 words out of balance, cleared in 144 augmentations for 945 words discarded, where furniture's 79 words leave 16 letters open and 47 out of balance, cleared in 36 for 75 discarded. food takes the most augmentations of the 37 categories, at 156. All 37 settle. `/balance.html` under `make serve` is where to watch one run.
 
 ## Configuration
 

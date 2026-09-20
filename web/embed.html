@@ -87,6 +87,16 @@ letter-disc{
   --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
   --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
 }
+/* Shorter than the discs: this one is a wide figure rather than a square, and
+   the rail and the readout take their height out of what is named here. */
+balance-flow{
+  display:block; width:100%; height:min(58vh,500px);
+  --disc-ground:#0c1112; --disc-panel:#141b1c; --disc-ink:#e7eded;
+  --disc-muted:#90a1a1; --disc-accent:#59b491;
+  --disc-sat:.55; --disc-val:.88;
+  --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
+  --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
+}
 /* Written out once per element rather than as one selector naming all three,
    so a host lifting a section takes rules that mention only what it lifted. */
 @media (prefers-color-scheme:light){
@@ -105,6 +115,11 @@ letter-disc{
     --disc-accent:#2c7359; --disc-edge:rgba(19,26,27,.10);
   }
   letter-disc{
+    --disc-ground:#eef1f0; --disc-panel:#fbfcfc; --disc-ink:#131a1b;
+    --disc-muted:#5d6d6e; --disc-accent:#2c7359;
+    --disc-sat:.62; --disc-val:.60;
+  }
+  balance-flow{
     --disc-ground:#eef1f0; --disc-panel:#fbfcfc; --disc-ink:#131a1b;
     --disc-muted:#5d6d6e; --disc-accent:#2c7359;
     --disc-sat:.62; --disc-val:.60;
@@ -131,8 +146,8 @@ letter-disc{
                    glosses-src="wordnet-glosses.txt"></hypernym-disc>
   </section>
 
-  <!-- The category the two discs below read, as one control rather than the
-       picker each element grows from an `index-src` of its own: two pickers for
+  <!-- The category the three elements below read, as one control rather than
+       the picker each grows from an `index-src` of its own: three pickers for
        one choice is the page saying the discs are unrelated when they are
        reading the same file. Its own section all the same, and it writes to
        whatever it finds rather than to anything it requires, so lifting it out
@@ -149,9 +164,9 @@ letter-disc{
       import { href, label } from "./disc-index.js";
       const INDEX = "words-index.json";
       const pick = document.getElementById("embed-category");
-      /* Whatever of the two is still on the page. A section lifted out is one
+      /* Whatever of the three is still on the page. A section lifted out is one
          fewer element to write to rather than an error. */
-      const discs = () => document.querySelectorAll("word-disc, letter-disc");
+      const discs = () => document.querySelectorAll("word-disc, letter-disc, balance-flow");
       /* This script runs where it sits, which is above both discs, so the
          document has to finish before either can be found or read. */
       if (document.readyState === "loading")
@@ -199,6 +214,17 @@ letter-disc{
     <h2>letter-disc</h2>
     <script type="module" src="letter-disc.js"></script>
     <letter-disc fit src="words-animal.json"></letter-disc>
+  </section>
+
+  <!-- The arithmetic under the chain the word disc prices, read off the same
+       file again: a word is an arc between two letters, so a chain can only
+       keep the words left once every letter has as many leaving it as arriving,
+       and each band here is one augmenting path of the flow that gets there.
+       Its own transport, since what it has to show is a sequence. -->
+  <section>
+    <h2>balance-flow</h2>
+    <script type="module" src="balance-flow.js"></script>
+    <balance-flow fit src="words-animal.json"></balance-flow>
   </section>
 </div>
 </body>

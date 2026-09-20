@@ -425,6 +425,101 @@ for it.
   word-disc section carries two scripts and two elements. Each still carries
   its own tokens, so the pair lifts out together.
 
+## `<balance-flow>`
+
+Its own section rather than a fourth subsection above: it has a canvas and is
+not a disc, so some of the shared rules under `## The three discs` hold for it
+and the rest do not. `disc-ratio.js`'s `ratio` and its `MAX_AREA` budget,
+`disc-idle.js`'s sleep and its `HOLD`, `fit` needing the host to give it a box,
+the refit when `document.fonts.ready` settles and `disc-colour.js` all hold.
+Hit testing, the hub, the 218 px column rule and the resize observer watching
+the frame do not.
+
+- It draws the min-cost transshipment `web/word-longest.js` solves on the way
+  to the longest chain. Surplus letters bank down the left column at their
+  excess, deficit letters down the right at theirs, and each augmenting path is
+  a band between them, as wide as the words it discards. It is the third thing
+  reading `words-<category>.json`, after `<word-disc>` and `<letter-disc>`.
+- `trace(words)` is the solve `chain` already does with its working shown. It
+  reads the augmenting paths off `balanced()` rather than running a second
+  solve, so it moves no answer — which is why `graph.py` needs no counterpart
+  and `tools/chains.json` holds nothing about it. It returns `{excess, need,
+  paid, settled, frames}`, `frames` being one `Augmentation` each: `{push,
+  cost, from, to, steps}`.
+- `Flow.run` takes an optional `log`, `Flow.label(e, cell)` names the letter
+  pair an arc moves, and `Flow.cell` is null until `label` is called, so an
+  ordinary solve allocates none of it and the traced one pays 704 ints. A step
+  in `steps` is signed: `cell + 1` where the path discards one more word of
+  that pair and `-(cell + 1)` where it recovers one, since cell 0 has no sign
+  of its own. A reverse step is what lets a later path undo part of an earlier
+  one for less than starting again would cost.
+- No worker. `trace` is 0.46 ms on animal against `chain`'s own 0.64, and the
+  144 augmentations it comes back with are laid out and drawn in one pass, so a
+  scrub is a redraw rather than a solve.
+- One scale across both columns, so a unit of imbalance is the same height
+  wherever it is read and a band comes out the same width at both of its ends.
+  The two columns always carry the same units, every word that leaves a letter
+  arriving at one, so what differs is how many slots they are cut into, and the
+  column with the most of them fills the span exactly.
+- The slot gap is `SLOT_GAP` 0.012 of the span capped at `GAP_MAX` 4 px. A
+  column can be cut into as many as 26 slots, and at a share alone the 25 gaps
+  between animal's take a sixth of the height from the slots themselves.
+- Bands tile the slot they touch in the order the solver found them, so the
+  last of them ends exactly where the slot does. A band past its slot would be
+  a picture saying a letter shipped more than it ever had.
+- The deficit column is left uncoloured, drawn in the muted token: a band takes
+  the hue of the letter it leaves, so colouring where it lands as well would
+  say the two were the same letter's ink. The hue is `palette.py`'s letter
+  wheel through `disc-colour.js`'s `hsv`, which both discs colour with too.
+- The last band laid is drawn at `LIT` 0.95 and the rest at `thin(ALPHA,
+  frames)`, `balance-bank.js`'s version of `letter-graph.js`'s `fade`, over the
+  bands rather than the pairs. animal's 144 come out at 0.26, furniture's 36 at
+  the full `ALPHA` 0.5. `KNEE` is 40, and `FALL` 0.5 is a guess the way `FALL`
+  in `word-bundle.js` and `ALPHA_FALL` in `letter-graph.js` are: there is no
+  browser here to look in, and `make serve` is where to find out.
+- No hit testing, no hover, no search box, no crumb line and no column beside
+  the picture at any width: the rail and the readout under it are the whole of
+  what would go there, and the figure is already wide rather than square. So
+  the `ResizeObserver` watches the stage alone, where the three discs watch the
+  frame as well.
+- Its own transport, since what it has to show is a sequence: first, prev,
+  play, next, last and a scrub. The run is given a budget rather than the step a
+  fixed rate, `RUN_MS` 9,000 held between `STEP_MIN` 60 and `STEP_MAX` 160 ms,
+  so animal's 144 augmentations come out at 62 ms each and furniture's 36 at
+  the 160 ms ceiling.
+- It opens at the balanced state rather than at nothing run, so a page nobody
+  touches still shows the whole transport rather than an empty pair of columns.
+  Play rewinds first where it stands at that end.
+- `seek(k)` is the public way in, clamping to `[0, frames]`, and it emits
+  `balance-step` only where the step turns over. The bands drawn are the ones
+  below `#step` and the readout names the last of them, so the line and the
+  marked band can never be of different steps.
+- `disc-idle.js`'s `watch` gives the canvas back a screen away, and playing
+  stops with it, since a run nobody can see is a timer spending frames on
+  nothing. There is one canvas and nothing held beside it, the bands being
+  drawn straight onto it. Waking does not resume: what was playing was left
+  behind, and a picture that starts moving as it comes into view is not what
+  the reader asked for.
+- `src` and `index-src` are `<letter-disc>`'s, reading the same category file
+  through `disc-index.js`, so `embed.html`'s one control reaches it unchanged
+  and a page carrying all three still fetches one word file.
+- It is clean under `tsc`, so it stays out of `tsconfig.json`'s exclude list,
+  unlike `hypernym-disc.js`, `word-disc.js` and `letter-disc.js`.
+- The readout is three states off `#step`: at nothing run, "26 letters open 778
+  words out of balance, cleared in 144 augmentations"; in between, "step k of
+  n · A → B · X of Y shipped"; at the end, "balanced after 144 augmentations ·
+  945 words discarded to close the circuit". Under it sits the path the step
+  walked, `push P · cost C · A → B ⇠ C`, with forward arrows in the accent
+  colour and reverse ones muted.
+- The events are `balance-step {step, frames, push, cost, from, to, shipped,
+  need}` and `balance-render {category, words, frames, need, paid, settled,
+  solveMs, drawMs}`.
+- animal is 1,582 words, 26 letters open, 778 words out of balance, 144
+  augmentations and 945 discarded; its biggest single push is 32 words and its
+  longest path 5 arcs. furniture is 79 words, 16 letters open, 47 out of
+  balance, 36 augmentations and 75 discarded. food has the most augmentations
+  at 156, and all 37 categories settle.
+
 ## The longest chain
 
 - `graph.longest_chain(words)` and `web/word-longest.js`'s `chain(words)` are
@@ -516,12 +611,15 @@ for it.
   `furniture-boxed` the constrained bound going loose where the free one did
   not, and `bird-opened` an opening at scale, 116 words certified.
 - `web/word-longest.js` has no DOM in it, exporting `chain`, `longest`,
-  `buckets`, `components` and `hierholzer`. It imports `matrix` and `LETTERS`
+  `buckets`, `components`, `hierholzer` and `trace`. `trace(words)` is the same
+  solve with its augmenting paths recorded, read off `balanced()` rather than
+  solved a second time, so it moves no answer and `graph.py` has no counterpart
+  to it; `<balance-flow>` is what draws them. It imports `matrix` and `LETTERS`
   from `letter-graph.js` rather than counting the matrix a third time, so
-  `<word-disc>`, its one reader, pulls `letter-graph.js` transitively and a page
-  carrying that element alone fetches one module more than it used to;
-  `embed.html` already loads it for `<letter-disc>`. What the element prints off
-  it is in `### <word-disc>`.
+  `<word-disc>` pulls `letter-graph.js` transitively and a page carrying that
+  element alone fetches one module more than it used to; `embed.html` already
+  loads it for `<letter-disc>`. What the element prints off it is in
+  `### <word-disc>`.
 - `buckets` stores word text exactly as it came in and never rewrites it, so a
   multiword entry like "polar bear" comes back out of a chain spelled the way the
   category spells it.
@@ -555,25 +653,29 @@ for it.
   a prerequisite alongside the modules, since a directory's timestamp is the
   only thing that catches a module deleted upstream. Flat works because the
   modules import each other by relative path and the worker resolves through
-  `import.meta.url`.
-- `embed.html` is the one page it ships: one `<section>` per disc in ordinary
-  document flow, each carrying its own script, data attributes, height and
-  custom properties, so any one can be lifted out without bringing the others.
+  `import.meta.url`. `balance-flow.js` and `balance-bank.js` are staged by that
+  glob with nothing to add by hand, and `balance.html` is a harness served at
+  `/balance.html` rather than a page that ships.
+- `embed.html` is the one page it ships: one `<section>` per element, the three
+  discs and a fourth for `<balance-flow>`, in ordinary document flow, each
+  carrying its own script, data attributes, height and custom
+  properties, so any one can be lifted out without bringing the others.
   Nothing positions one relative to another. It asks for its data beside itself
   where the three harnesses ask for `/out/…`, which is why `tools/serve.py`'s
   `translate_path` falls back to `out/` for a top-level name not in `web/`.
-- One `<select>` above the word disc sets the category for both `<word-disc>`
-  and `<letter-disc>`, where the picker each grows from an `index-src` of its
-  own would give the page two: two pickers for one choice is the page saying
-  the discs are unrelated when they are reading the same file. `<word-run>`
-  follows the word disc, so it changes with them and the control writes nothing
-  to it. It is a `<section>` with its own script like the rest, and it writes to
-  whatever `document.querySelectorAll("word-disc, letter-disc")` finds rather
-  than to anything it requires, so lifting it out leaves the discs on the
-  category they name themselves and lifting a disc out leaves it driving
-  whichever is left. It waits on `DOMContentLoaded` where the document is still
-  loading, since the script sits above both discs and neither can be found or
-  read before the page has finished parsing. It writes `src`, which both discs
+- One `<select>` above the word disc sets the category for `<word-disc>`,
+  `<letter-disc>` and `<balance-flow>`, where the picker each grows from an
+  `index-src` of its own would give the page three: three pickers for one
+  choice is the page saying the three are unrelated when they are reading the
+  same file. `<word-run>` follows the word disc, so it changes with them and
+  the control writes nothing to it. It is a `<section>` with its own script
+  like the rest, and it writes to whatever
+  `document.querySelectorAll("word-disc, letter-disc, balance-flow")` finds
+  rather than to anything it requires, so lifting it out leaves the three on the
+  category they name themselves and lifting one out leaves it driving
+  whichever are left. It waits on `DOMContentLoaded` where the document is
+  still loading, since the script sits above all three and none can be found or
+  read before the page has finished parsing. It writes `src`, which all three
   already observe, so the page needs no other way in to them; `disc-index.js`'s
   `href` does the path arithmetic and its `label` writes the option text with
   the word count. The index is `words-index.json`, which `web-dist` already
@@ -626,6 +728,9 @@ for it.
     web/letter-disc.js             the letter graph as a chord diagram
     web/letter-graph.js            its matrix, ring, ribbons and hits, no DOM
     web/letters.html               its harness, with the same picker
+    web/balance-flow.js            the transshipment as it runs
+    web/balance-bank.js            its two columns and their bands, no DOM
+    web/balance.html               its harness
     web/disc-colour.js             TAU, hsv and the chord cubic, all three discs
     web/disc-label.js              the hub's text: fit, band, baseline, halo
     web/disc-index.js              where a category's words sit beside the index
@@ -747,6 +852,46 @@ word set resolves the run over the new words with nothing played, which is what
 run stops following and lets go of its listeners. `embed.html` is read for the
 tenth, that its `for` names an id that page carries.
 
+`check_web.mjs`'s shared `fragment()` gained a rail, a `.keys` div of five
+buttons and a `.scrub` input, since `<balance-flow>` is the one element there
+whose state a click moves rather than the pointer.
+
+`unbalanced(words, tr)` is the whole of what holds `trace`: it replays every
+frame and returns the first thing wrong. Every path must run from a surplus
+letter to a deficit one, its walk's two ends must be the letters its frame
+names, its cost must be the forward steps less the reverse ones, no cell may
+come out discarding more words than it holds, the pushes must clear exactly
+what was owed, and the costs must sum to what the trace says. None of that
+shows in a chain, which is why it is asserted directly. It runs on the harness
+word list, on `["ab", "axb", "ac", "ad", "ef", "gf", "hf"]` and on 60 random
+lists. The hand-cut list is there because the harness list balances in three
+paths of one unit each, one path a letter, which cannot tell a slot that fills
+up from one that never advances, or a push from the count of pushes; on the
+built list A ships three times, F receives three times, and A to B carries two
+words. Tracing must also move no answer, so the free chain's length is taken
+before any of it runs and asserted unchanged, and the circuit's kept words must
+not pass the chain's own bound.
+
+Five assertions hold the geometry on its own: a unit of imbalance is worth the
+same pixels on both sides, the taller column ends exactly at the span and the
+shorter does not overrun it, the bands tile their slots with no gap and no
+overlap, a forward step reads head to tail and a reverse one tail to head, and
+`thin` is flat at the knee and below `ALPHA` above it. Nine more hold the
+element: it opens at the balanced step, draws two cubics a band and one
+rectangle a slot, the readout names the augmentation just laid rather than the
+one about to run, each of the five keys and the scrub moves the step,
+`balance-step` names letters rather than indices, play rewinds from the
+balanced end and the same key stops it, a sleep gives the canvas back and stops
+the run while a wake does not start it again, a change of words is a fresh
+solve and a fresh transport, and a disconnected element stops its run. The
+sleep claim is driven on a twenty-path word list, so the run cannot reach its
+end inside the hold and finish of its own accord, which is what the claim would
+otherwise be resting on. Every one of these was mutation-tested, and three
+survived the first pass: a vacuous tiling assertion on a list where every slot
+held one band, `shipped` reading as a count of frames where every push was one,
+and the sleep claim resting on a run that finished on its own inside the hold.
+The changes above are what answered them.
+
 `make types` is `tsc --noEmit` over the JSDoc annotations in `web/`, a
 prerequisite of `check` rather than a line in its recipe for the same reason
 `make web` is: tsc is the other part that needs node. Nothing is compiled and no
@@ -773,7 +918,8 @@ selector's id is on the page; the page names `words-index.json`; its inline
 script imports at least one module, and every `from "./…js"` in it resolves to
 a module `web/` has; and `word-disc.js` and `letter-disc.js` both declare `src`
 in `observedAttributes`, since the control reaches them through that attribute
-and nothing else.
+and nothing else. That block's two loops gained `balance-flow` and
+`balance-flow.js`.
 
 Pylance reads `pyrightconfig.json`, which pins standard mode, Python 3.12 and
 `src/` on the path, and the tree is clean under it. The pyright CLI is not in
