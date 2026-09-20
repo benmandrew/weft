@@ -188,6 +188,24 @@ export function route(frame, band, bank, lx, rx, padY) {
   return out;
 }
 
+/** The steps the scrub wants marked: the ones whose path recovers a word an
+   earlier path discarded. A step is the count of augmentations run, so frame `i`
+   is the band lit at step `i + 1`, and that is where the mark belongs — on the
+   step that puts the reversing path under the reader rather than on the one
+   before it.
+
+   Worth marking because they are rare and worth finding: 204 of the 2,645
+   augmentations over the 37 categories carry a reverse step, 7.7%, and animal's
+   13 sit anywhere among its 144. Scrubbing for them is otherwise reading the
+   path line 144 times.
+   @param {{steps: number[]}[]} frames @returns {number[]} */
+export function reverses(frames) {
+  /** @type {number[]} */
+  const out = [];
+  for (const [i, f] of frames.entries()) if (f.steps.some(s => s < 0)) out.push(i + 1);
+  return out;
+}
+
 /** The units of imbalance the first `k` augmentations have cleared.
    @param {{push: number}[]} frames @param {number} k @returns {number} */
 export function shipped(frames, k) {

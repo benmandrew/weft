@@ -553,6 +553,28 @@ the frame do not.
   945 words discarded to close the circuit". Under it sits the path the step
   walked, `push P · cost C · A → B ⇠ C`, with forward arrows in the accent
   colour and reverse ones muted.
+- A reverse step showed in the readout's path line as a muted `⇠` and in the
+  lit band's leg running right to left, and neither of those finds one:
+  scrubbing for them means reading the path line 144 times. So
+  `balance-bank.js`'s `reverses(frames)` returns the steps to mark on the
+  scrub. A step is the count of augmentations run, so frame `i` is the band lit
+  at step `i + 1` and the mark belongs there rather than on the step before it.
+  204 of the 2,645 augmentations carry a reverse step, 7.7%; animal has 13 of
+  its 144, food 18 and plant 20. animal's 13 are not spread out, being steps
+  88-98 and 143-144, and the closest pair sit 3.38 px apart on a 500 px track,
+  so a run of them reads as a band rather than as separate ticks.
+- The element draws the scrub's thumb rather than leaving it to
+  `accent-color`, since a mark has to line up with the thumb's travel and that
+  travel is the thumb's own width, which is the user agent's to pick otherwise.
+  The width is `--_thumb`, 13 px, and one number places both. A mark sits at
+  `calc(var(--_thumb) / 2 + (100% - var(--_thumb)) * k/n)`, the thumb
+  travelling from half a thumb in to half a thumb short of the far end. The
+  track is the wrapper's `::before` rather than the input's own, since the
+  input paints over the marks and an opaque track would bury them. The marks
+  are `aria-hidden`, take no pointer events, and are 2 px by 10 px in the ink
+  token. `#ticks()` rebuilds them from `#build()` with `replaceChildren`, so a
+  change of category replaces rather than appends; it is `#ticks` and not
+  `#mark` because `#mark` is already the category picker's.
 - The events are `balance-step {step, frames, push, cost, from, to, shipped,
   need}` and `balance-render {category, words, frames, need, paid, settled,
   solveMs, drawMs}`.
@@ -961,6 +983,19 @@ would stop saying which letter the words left. The stub records the nib, the
 `lineWidth` and `lineJoin` a stroke went down at, beside the ink it went down
 in, since a stroke at no width counts the same as one that shows. All four were
 mutation-tested.
+
+Four more hold `reverses`: the routed fixture's marks are exactly its reversing
+steps, which marking a step early, marking every step and marking the forward
+arcs instead all fail; the fixture marks at least one step, so the element
+claim below is not vacuous; an empty trace marks nothing; and a path of forward
+arcs alone is not marked. Four more hold the marks at the element: the count of
+them equals the count of reversing steps, each sits at its step's fraction of
+the travel, the placement names both halves of that travel, half a thumb in and
+the span less a whole thumb, which is what catches a mark placed along the
+whole track and one not offset by half a thumb, and a change of word set to a
+list whose paths recover nothing leaves no marks behind. `check_web.mjs`'s
+shared `fragment()` gained the `.slide` wrapper and the `.marks` div. All eight
+were mutation-tested.
 
 `make types` is `tsc --noEmit` over the JSDoc annotations in `web/`, a
 prerequisite of `check` rather than a line in its recipe for the same reason

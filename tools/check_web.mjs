@@ -323,7 +323,9 @@ const fragment = () => {
   const rail = new El("div", "rail");
   const keys = new El("div", "keys");
   for (const k of ["first", "prev", "play", "next", "last"]) keys.append(new El("button", k));
-  rail.append(keys, new El("input", "scrub"));
+  const slide = new El("div", "slide");
+  slide.append(new El("div", "marks"), new El("input", "scrub"));
+  rail.append(keys, slide);
   frame.append(pick, find, stage, rail, new El("div", "gloss"), crumb);
   // <word-run> holds no frame at all: one line, and the rest of this is what
   // the discs reach for.
@@ -2734,6 +2736,7 @@ const {
   bands,
   banks,
   KNEE: BANK_KNEE,
+  reverses,
   route,
   shipped,
   thin: bankThin,
@@ -2990,6 +2993,23 @@ check(RLAID.length === RTR.frames.length, "a routed band was dropped for want of
   check(through.length === 2, `a letter banking nowhere took ${through.length - 2} points`);
 }
 
+/* The steps the scrub marks. A mark stands on the step that puts the reversing
+   path under the reader, which is one past the frame's own index: reading it off
+   the frame would leave every mark a step early, and on a 144-step scrub a step
+   is 3.5 px. */
+{
+  const at = reverses(RTR.frames);
+  const want = RTR.frames.flatMap((f, i) => (f.steps.some(s => s < 0) ? [i + 1] : []));
+  check(at.join(",") === want.join(","), `the marks are ${at} against ${want}`);
+  check(at.length > 0, "the routed list marks nothing, so the element claim below is vacuous");
+  check(
+    at.every(k => RTR.frames[k - 1].steps.some(s => s < 0)),
+    "a mark stands on a step whose path recovers nothing",
+  );
+  check(reverses([]).length === 0, "an empty trace marked a step");
+  check(reverses([{ steps: [1, 2] }]).length === 0, "a path of forward arcs alone was marked");
+}
+
 /* <balance-flow>. The transport is the whole of its state — the bands drawn are
    the ones below the step it stands at, and the line under them names the last
    of those — so what is driven here is the keys and the scrub. */
@@ -3177,6 +3197,46 @@ bf.data = { category: "routed", words: RWORDS };
       );
     }
   }
+}
+
+/* And the marks on the scrub, one a reversing step, placed along the thumb's own
+   travel. A mark at a plain percentage of the track would sit half a thumb out
+   at one end and half a thumb in at the other, which at 144 steps is two steps
+   of error. */
+{
+  const marks = bShadow.querySelector(".marks");
+  const at = reverses(RTR.frames);
+  check(
+    marks.children.length === at.length,
+    `${at.length} reversing steps drew ${marks.children.length} marks`,
+  );
+  const put = marks.children.map(one => {
+    const got = /\*\s*([0-9.]+)\)$/.exec(one.style.left);
+    return got ? Number(got[1]) : Number.NaN;
+  });
+  check(
+    put.every((x, i) => Math.abs(x - at[i] / RTR.frames.length) < 1e-9),
+    `the marks sit at ${put} of the travel, against ${at.map(k => k / RTR.frames.length)}`,
+  );
+  /* The travel, both halves of it: a mark opens half a thumb in from the end,
+     and its span is the track less a whole thumb. Either half alone still names
+     --_thumb and still lands a mark two steps out at one end. */
+  check(
+    marks.children.every(
+      one =>
+        one.style.left.includes("var(--_thumb) / 2") &&
+        one.style.left.includes("100% - var(--_thumb)"),
+    ),
+    `a mark is placed at "${marks.children[0]?.style.left}" rather than along the thumb's travel`,
+  );
+  // A word set with nothing to mark leaves none behind, which is what a
+  // rebuild that appends rather than replaces would show.
+  bf.data = { category: "plain", words: BWORDS };
+  check(
+    bShadow.querySelector(".marks").children.length === 0,
+    "a list whose paths recover nothing still carries marks",
+  );
+  bf.data = { category: "routed", words: RWORDS };
 }
 
 /* It gives its canvas back a screen away, and stops playing with it: a run

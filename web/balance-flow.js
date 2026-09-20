@@ -32,7 +32,7 @@
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
-import { ALPHA, banks, bands, route, shipped, thin, walk } from "./balance-bank.js";
+import { ALPHA, banks, bands, reverses, route, shipped, thin, walk } from "./balance-bank.js";
 import { hsv } from "./disc-colour.js";
 import { watch } from "./disc-idle.js";
 import { href, label as catLabel } from "./disc-index.js";
@@ -160,8 +160,38 @@ TPL.innerHTML = `
     padding:6px 9px;min-width:30px;cursor:pointer}
   .keys button:hover{border-color:var(--_muted)}
   .keys button:focus-visible{outline:2px solid var(--_accent);outline-offset:1px}
-  .scrub{flex:1;min-width:0;height:20px;accent-color:var(--_accent)}
+  /* The scrub is drawn rather than left to accent-color, because the marks
+     under it have to sit where the thumb will: a range's thumb travels from half
+     its own width to half a width short of the far end, and that width is the
+     UA's to pick. Naming it as --_thumb is what lets one number place both.
+     The track is the slide's own ::before rather than the input's, since the
+     input paints over the marks and an opaque track would bury them. */
+  .slide{position:relative;flex:1;min-width:0;display:flex;align-items:center;
+    --_thumb:13px}
+  .slide::before{content:"";position:absolute;left:0;right:0;top:50%;height:4px;
+    margin-top:-2px;border-radius:2px;background:var(--_edge)}
+  .scrub{position:relative;width:100%;height:20px;margin:0;cursor:pointer;
+    appearance:none;-webkit-appearance:none;background:transparent}
+  .scrub::-webkit-slider-runnable-track{height:4px;background:transparent}
+  .scrub::-moz-range-track{height:4px;background:transparent}
+  .scrub::-webkit-slider-thumb{-webkit-appearance:none;
+    width:var(--_thumb);height:var(--_thumb);border:none;border-radius:50%;
+    background:var(--_accent);margin-top:calc((4px - var(--_thumb)) / 2)}
+  .scrub::-moz-range-thumb{width:var(--_thumb);height:var(--_thumb);border:none;
+    border-radius:50%;background:var(--_accent)}
+  .scrub:disabled{cursor:default}
+  .scrub:disabled::-webkit-slider-thumb{background:var(--_muted)}
+  .scrub:disabled::-moz-range-thumb{background:var(--_muted)}
   .scrub:focus-visible{outline:2px solid var(--_accent);outline-offset:2px}
+  /* One tick a step whose path recovers a word. They come in runs rather than
+     singly — animal's 13 are 88 to 98 and 143 to 144 — and at 144 steps on a
+     500 px track a run is ticks 3.38 px apart, so it reads as a band, which is
+     what it is. In the ink colour rather than the muted one the readout draws
+     a reverse arrow in: the arrow is a reading of the path and these are a map
+     of where to look. */
+  .marks{position:absolute;inset:0;pointer-events:none}
+  .marks span{position:absolute;top:50%;width:2px;height:10px;margin-top:-5px;
+    border-radius:1px;background:var(--_ink);transform:translateX(-50%)}
   :host([readout="off"]) .gloss{display:none}
   /* Held to a height whatever it holds, so the picture above it cannot move
      under the pointer as the readout changes length. */
@@ -185,8 +215,11 @@ TPL.innerHTML = `
       <button class="next" type="button" aria-label="next step">&gt;</button>
       <button class="last" type="button" aria-label="last step">&gt;|</button>
     </div>
-    <input class="scrub" type="range" min="0" max="0" value="0" step="1"
-           aria-label="augmentation">
+    <div class="slide">
+      <div class="marks" aria-hidden="true"></div>
+      <input class="scrub" type="range" min="0" max="0" value="0" step="1"
+             aria-label="augmentation">
+    </div>
   </div>
   <div class="gloss"></div>
 </div>`;
@@ -201,6 +234,7 @@ class BalanceFlow extends HTMLElement {
   /** @type {HTMLSelectElement} */ #catEl;
   /** @type {HTMLElement} */ #stage;
   /** @type {HTMLInputElement} */ #scrub;
+  /** @type {HTMLElement} */ #marksEl;
   /** @type {HTMLElement} */ #playEl;
   /** @type {ResizeObserver | null} */ #ro = null;
   /** @type {{disconnect: () => void} | null} */ #idle = null;
@@ -252,6 +286,7 @@ class BalanceFlow extends HTMLElement {
     this.#catEl = /** @type {HTMLSelectElement} */ (find(".cat"));
     this.#stage = /** @type {HTMLElement} */ (find(".stage"));
     this.#scrub = /** @type {HTMLInputElement} */ (find(".scrub"));
+    this.#marksEl = /** @type {HTMLElement} */ (find(".marks"));
     this.#playEl = /** @type {HTMLElement} */ (find(".play"));
   }
 
@@ -431,7 +466,25 @@ class BalanceFlow extends HTMLElement {
     this.#scrub.max = String(this.#frames.length);
     this.#scrub.value = String(this.#step);
     this.#scrub.disabled = this.#frames.length === 0;
+    this.#ticks();
     if (this.#pw) this.#draw();
+  }
+
+  /* A tick on the scrub for every step whose path recovers a word, since those
+     are what a reader would otherwise find by scrubbing and reading the path
+     line 144 times. Placed along the thumb's own travel rather than along the
+     track, so a tick sits under the thumb that lands on it.
+     @returns {void} */
+  #ticks() {
+    const n = this.#frames.length;
+    const at = n > 0 ? reverses(this.#frames) : [];
+    this.#marksEl.replaceChildren(
+      ...at.map(k => {
+        const tick = document.createElement("span");
+        tick.style.left = `calc(var(--_thumb) / 2 + (100% - var(--_thumb)) * ${k / n})`;
+        return tick;
+      }),
+    );
   }
 
   /* Zoom moves devicePixelRatio and leaves the CSS box alone, so a sized
