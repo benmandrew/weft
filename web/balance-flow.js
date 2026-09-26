@@ -35,6 +35,7 @@
 import { ALPHA, banks, bands, reverses, route, shipped, thin, walk } from "./balance-bank.js";
 import { hsv } from "./disc-colour.js";
 import { watch } from "./disc-idle.js";
+import { halo, HALO, HALO_MIN } from "./disc-label.js";
 import { href, label as catLabel } from "./disc-index.js";
 import { ratio } from "./disc-ratio.js";
 import { LETTERS } from "./letter-graph.js";
@@ -74,6 +75,23 @@ const LIT = 0.95;
    because what it carries is which band the readout means rather than how much
    that band shipped, and the fill keeps every bit of that. */
 const LIT_EDGE = 1.5;
+
+/* And the letters that band turns on, which `route` already puts a point at.
+   The bend is drawn; without a name beside it the reader can see the line double
+   back and has to count arcs along the readout's path line to say which letter
+   it turned on. At this share of the column labels' type, since a turn annotates
+   one step where a column label names a bank for the whole run and at one size
+   the two read as a third column. The gap is above the band's top edge, in units
+   of that type. */
+const TURN_PT = 0.8,
+  TURN_GAP = 0.35;
+
+/* The column labels' type at this width, which the turn glyphs take their size
+   from, so the two cannot drift apart. */
+/** @param {number} w @returns {number} */
+function labelPx(w) {
+  return Math.max(8, Math.min(15, w * 0.022));
+}
 
 /* One band, as a ribbon `h` tall along `pts`: the top edge through them and the
    bottom edge back through them offset by h, every leg a cubic whose control
@@ -690,15 +708,20 @@ class BalanceFlow extends HTMLElement {
        sweep, and their two points are written in place rather than allocated
        144 times a redraw. */
     const plain = [
-      { x: lx, y: 0 },
-      { x: rx, y: 0 },
+      { x: lx, y: 0, letter: 0 },
+      { x: rx, y: 0, letter: 0 },
     ];
+    /** @type {import("./balance-bank.js").Point[] | null} */
+    let turns = null;
+    let litInk = "";
     for (const b of drawn) {
       const last = b.step === this.#step - 1;
       g.globalAlpha = last ? LIT : this.#alpha;
       g.fillStyle = this.#hue(b.from);
       if (last) {
-        ribbon(g, route(this.#frames[b.step], b, bank, lx, rx, padY), b.h, LIT_EDGE);
+        turns = route(this.#frames[b.step], b, bank, lx, rx, padY);
+        litInk = g.fillStyle;
+        ribbon(g, turns, b.h, LIT_EDGE);
       } else {
         plain[0].y = padY + b.a;
         plain[1].y = padY + b.b;
@@ -708,6 +731,9 @@ class BalanceFlow extends HTMLElement {
     g.globalAlpha = 1;
 
     this.#labels(g, bank, w, padY, colW, lx, rx);
+    // After the columns, so the turn glyphs sit over everything the picture holds
+    // rather than under a label the bands run behind.
+    if (turns) this.#turns(g, turns, labelPx(w), litInk);
     this.#drawMs = performance.now() - t0;
     this.#emit("balance-render", {
       category: this.#category,
@@ -729,7 +755,7 @@ class BalanceFlow extends HTMLElement {
      @param {number} w @param {number} padY @param {number} colW
      @param {number} lx @param {number} rx @returns {void} */
   #labels(g, bank, w, padY, colW, lx, rx) {
-    const px = Math.max(8, Math.min(15, w * 0.022));
+    const px = labelPx(w);
     const mono = this.#tok("--_mono", "monospace");
     const muted = this.#tok("--_muted", "#90a1a1");
     g.font = `500 ${px}px ${mono}`;
@@ -749,6 +775,43 @@ class BalanceFlow extends HTMLElement {
     g.textAlign = "center";
     g.fillText("surplus", lx - colW / 2, padY - px * 0.7);
     g.fillText("deficit", rx + colW / 2, padY - px * 0.7);
+  }
+
+  /* The letters the lit band's path turns on, named where it turns. Only the
+     interior points: the two ends open on their own slice of a slot rather than
+     at its centre, and the columns name them already.
+
+     Above the band rather than on the outside of each bend, so a glyph never
+     changes side and the rule is read once. There is room for it: adjacent turns
+     stand at least 59 px apart on the 355 px between the columns at a 682 px
+     width, and 118 px on animal and food, so a single glyph never meets its
+     neighbour however the line doubles back. In the band's own ink where the
+     columns are muted, so colour says which marks belong to the step the readout
+     names, over a halo in the ground, since the line crosses whatever bands the
+     picture already holds.
+
+     A letter that banks nowhere has no point on the line, so the picture can name
+     one letter fewer than the readout's path line does: 87 of the 1,504 interior
+     letters over the 37 categories, and none of animal's. Naming it would mean
+     inventing a height for a letter that owes nothing. */
+  /** @param {CanvasRenderingContext2D} g
+     @param {import("./balance-bank.js").Point[]} pts @param {number} px
+     @param {string} ink @returns {void} */
+  #turns(g, pts, px, ink) {
+    if (pts.length < 3) return;
+    const size = px * TURN_PT;
+    g.font = `500 ${size}px ${this.#tok("--_mono", "monospace")}`;
+    g.textAlign = "center";
+    g.textBaseline = "alphabetic";
+    const r = Math.max(HALO_MIN, size * HALO);
+    const ground = this.#tok("--_ground", "#0c1112");
+    for (let i = 1; i < pts.length - 1; i++) {
+      const name = this.#name(pts[i].letter);
+      const y = pts[i].y - size * TURN_GAP;
+      halo(g, [name], pts[i].x, y, 0, r, ground);
+      g.fillStyle = ink;
+      g.fillText(name, pts[i].x, y);
+    }
   }
 
   /** Call after the host changes theme by any means other than

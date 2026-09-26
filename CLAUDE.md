@@ -506,6 +506,46 @@ the frame do not.
   them, so the clamp in `route` is a guard rather than something the corpus
   needs. The readout's path line is unchanged, having already printed `→` in
   the accent colour and `⇠` muted.
+- The routed line bends where the path turned and said nothing about which
+  letter it turned on, so a reader counted arcs along the readout's path line to
+  find out. The lit band's interior turns now carry the letter as a glyph.
+  `Point` gained a `letter` field and `route` sets it on every point, `band.from`
+  on the first, `walk`'s letter on each interior one and `band.to` on the last.
+  It is carried rather than worked out again by counting along `walk`, since
+  `route` drops a letter that banks nowhere and a caller counting for itself
+  would name the wrong letter from the first drop onwards. The glyph sits above
+  the band's top edge at the turn's own x, `textAlign` centre and the baseline
+  `pt.y - size * TURN_GAP`, `TURN_GAP` being 0.35 of the type size. Always
+  above, never switching side by which way the bend turns, so the rule is read
+  once rather than worked out at every turn. There is room: adjacent turns stand
+  at least 59 px apart on the 355 px between the columns at a 682 px width, and
+  118 px on animal and food, so a single glyph never meets its neighbour however
+  the line doubles back. Only the interior points, the two ends opening on their
+  own slice of a slot rather than at its centre and the columns naming them
+  already.
+- The type is `TURN_PT`, 0.8, of the column labels' size, which is now
+  `labelPx(w)`, one function both the columns and the turns take their size
+  from. A turn annotates one step where a column label names a bank for the
+  whole run, and at one size the two read as a third column. `TURN_PT` is a
+  judgement and not a claim: the mutation that sets it to 1 survives the checks,
+  the way the cubic control points moved off the leg's midline does, and `make
+  serve` is where to settle it. The ink is the band's own hue where the columns
+  and the two headings are muted, so colour says which marks belong to the step
+  the readout names, and each glyph sits over `disc-label.js`'s `halo` in the
+  ground token, since the line crosses whatever bands the picture already holds;
+  `halo` took a one-line array and a line height of 0 with no change. They are
+  drawn after the column labels, so the glyphs sit over everything the picture
+  holds.
+- A letter that banks nowhere has no point on the line, so the picture can name
+  one letter fewer than the readout's path line does: 87 of the 1,504 interior
+  letters over the 37 categories, and none of animal's. Naming it would mean
+  inventing a height for a letter that owes nothing. The census is worth
+  recording: 914 of the 2,645 augmentations walk at least one interior letter,
+  1,504 interior letters in all and at most 6 on one path, animal 81 over its
+  144 augmentations, food 94 over 156 and furniture 20 over 36. A related limit
+  is now visible and was already there: the column labels drop a slot shorter
+  than the type, so at the 15 px a 682×520 box gives them only 15 of animal's 26
+  letters are named in its columns. That is not fixed here.
 - `LIT` 0.95 was never the problem. The ink under the lit band comes to 0.26 on
   animal and 0.38 on furniture, so the fill is already three times its own
   ground. What the fill has nothing to work on is the band itself: the element
@@ -996,6 +1036,20 @@ whole track and one not offset by half a thumb, and a change of word set to a
 list whose paths recover nothing leaves no marks behind. `check_web.mjs`'s
 shared `fragment()` gained the `.slide` wrapper and the `.marks` div. All eight
 were mutation-tested.
+
+Seven more hold the turn glyphs, every one mutation-tested. Two at the unit
+level: the routed points name the letters the path walked, and a drop with a
+banked letter after it leaves the surviving point naming the letter it stands on
+rather than the next one along, on a → b → c → d where b owes nothing. Five at
+the element: the glyphs are the lit path's interior letters in order, each
+stands over the point it names, each stands above that point by one lift
+throughout, each sits over `HALO_STEPS` copies in one other colour at one
+radius, and the whole picture's text goes down in three colours, the muted
+token, the ground and the lit band's ink, where a one-arc path lit names nothing
+and puts down one. That colour count is what catches a second band being named
+where counting the ink fills alone cannot, since another band may leave the same
+letter and share its hue. The loop resetting `bBase.text.fill` is what lets the
+counts be per step.
 
 `make types` is `tsc --noEmit` over the JSDoc annotations in `web/`, a
 prerequisite of `check` rather than a line in its recipe for the same reason

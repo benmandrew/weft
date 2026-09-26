@@ -2963,6 +2963,13 @@ check(RLAID.length === RTR.frames.length, "a routed band was dropped for want of
       wrong = `arc ${i} signed ${Math.sign(step)} runs ${back ? "back" : "on"}`;
   }
   check(wrong === null, `a leg runs against its arc — ${wrong}`);
+  /* Every point says which letter it stands on, which is what the element names
+     the turns off. Worked out again by counting along the walk it would be right
+     only until the first letter route drops. */
+  check(
+    line.map(p => p.letter).join(",") === seq.join(","),
+    `the routed points name ${line.map(p => p.letter)} against a walk of ${seq}`,
+  );
   check(
     line.some((p, i) => i > 0 && p.x < line[i - 1].x),
     "the reversing path came back with no leg running right to left",
@@ -2991,6 +2998,31 @@ check(RLAID.length === RTR.frames.length, "a routed band was dropped for want of
   const cell = (head, tail) => head * 26 + tail + 1;
   const through = route({ steps: [cell(0, 1), cell(1, 2)], cost: 2 }, band, bank, 100, 400, 20);
   check(through.length === 2, `a letter banking nowhere took ${through.length - 2} points`);
+}
+{
+  /* And a drop with a banked letter after it: a → b → c → d, where b owes
+     nothing and c banks. The point that survives has to name the letter it
+     stands on rather than the next one along, which is the whole reason a point
+     carries its letter instead of the element counting along the walk. */
+  const excess = new Int32Array(26);
+  excess[0] = 1;
+  excess[2] = 1;
+  excess[3] = -2;
+  const bank = banks(excess, 600, 6);
+  const band = bands([{ from: 0, to: 3, push: 1 }], bank, 1)[0];
+  const cell = (head, tail) => head * 26 + tail + 1;
+  const past = route(
+    { steps: [cell(0, 1), cell(1, 2), cell(2, 3)], cost: 3 },
+    band,
+    bank,
+    100,
+    400,
+    20,
+  );
+  check(
+    past.map(p => p.letter).join(",") === "0,2,3",
+    `a drop left the points naming ${past.map(p => p.letter)} against 0,2,3`,
+  );
 }
 
 /* The steps the scrub marks. A mark stands on the step that puts the reversing
@@ -3128,7 +3160,18 @@ check(!bf.playing, "the play key did not stop a run it had started");
    a claim about the plain sweep being left alone. */
 bf.data = { category: "routed", words: RWORDS };
 {
+  const { HALO_STEPS } = await import(mod("disc-label.js"));
   const legs = n => route(RTR.frames[n - 1], RLAID[n - 1], RBANK, 0, 1, 0).length - 1;
+  /* Which letters the element has to name: the ones the lit path walks between
+     its ends, less any that bank nowhere. Whether a letter banks is a property of
+     the excess rather than of the span, so RBANK answers for the element's own
+     bank as well. */
+  const banked = new Set([...RBANK.left, ...RBANK.right].map(one => one.letter));
+  const turnsOf = n =>
+    bankWalk(RTR.frames[n - 1].steps)
+      .slice(1, -1)
+      .filter(v => banked.has(v))
+      .map(v => String.fromCharCode(65 + v));
   const plain = RTR.frames.findIndex(f => f.steps.length === 1) + 1;
   check(legs(RTR.frames.length) > 1, "the lit path routes to one leg, so the counts are vacuous");
   check(legs(RTR.frames.length - 1) > 1, "the path below the last one routes to one leg");
@@ -3141,6 +3184,7 @@ bf.data = { category: "routed", words: RWORDS };
     bBase.inks.length = 0;
     bBase.nibs.length = 0;
     bBase.fills.length = 0;
+    bBase.text.fill.length = 0;
     bf.seek(at);
     check(
       bBase.drew.curve === (at - 1) * 2 + legs(at) * 2,
@@ -3181,6 +3225,66 @@ bf.data = { category: "routed", words: RWORDS };
         Math.abs(home.y - bBase.moves[bBase.moves.length - 1].y - tall) < 1e-9,
         `the lit band comes home ${(home.y - bBase.moves[bBase.moves.length - 1].y).toFixed(2)}px below where it opened, against ${tall.toFixed(2)}`,
       );
+    }
+    /* The letters that band turns on, named where it turns. The ink is the band's
+       own, so the turn glyphs are the only text on the picture in it: the columns
+       and the two headings are muted and the halo is the ground. A one-arc path
+       is the plain sweep and names nothing, which is what holds the naming to the
+       lit band rather than to every band the picture holds, and the ends are left
+       to the columns. */
+    {
+      const ink = bBase.fills[bBase.fills.length - 1];
+      const at2 = bBase.text.fill.flatMap((one, i) => (one.c === ink ? [i] : []));
+      const named = at2.map(i => bBase.text.fill[i]);
+      const want = turnsOf(at);
+      if (at === RTR.frames.length) {
+        check(
+          want.length > 1,
+          `the lit path turns on ${want.length} letters, so the claims are thin`,
+        );
+      }
+      check(
+        named.map(one => one.t).join("") === want.join(""),
+        `${at} bands named ${named.map(one => one.t)} against turns of ${want}`,
+      );
+      /* And in three colours across the whole picture: the muted token the columns
+         and the two headings go down in, the ground the haloes clear, and the lit
+         band's own ink. A second band named would put its own hue in there as a
+         fourth, which the count of ink fills above cannot see where it happens to
+         leave the same letter as the lit one. */
+      const inks = new Set(bBase.text.fill.map(one => one.c));
+      check(
+        inks.size === (want.length ? 3 : 1),
+        `${at} bands put ${inks.size} colours of text on the picture, naming ${want.length} turns`,
+      );
+      // Over the point it stands on, and above the band's own top edge by one
+      // lift throughout: a glyph that changed side by the bend it sits on would
+      // be a rule the reader has to work out for every turn.
+      const near = bBase.curves.slice(-2 * legs(at), -legs(at)).slice(0, -1);
+      check(
+        named.length === near.length && named.every((one, i) => one.x === near[i].x),
+        `a turn is named at ${named.map(one => one.x.toFixed(1))} against points at ${near.map(one => one.x.toFixed(1))}`,
+      );
+      const lift = named.map((one, i) => near[i].y - one.y);
+      check(
+        lift.every(up => up > 0 && Math.abs(up - lift[0]) < 1e-9),
+        `the glyphs sit ${lift.map(up => up.toFixed(2))} above their turns`,
+      );
+      /* And each over a halo, since the line crosses whatever bands the picture
+         already holds. HALO_STEPS copies of the same glyph in one other colour,
+         every one of them the ring's radius off the ink: a halo in the ink's own
+         colour would thicken the glyph rather than clear the ground behind it,
+         and one at no radius would not be there at all. */
+      for (const [k, i] of at2.entries()) {
+        const ring = bBase.text.fill.slice(i - HALO_STEPS, i);
+        const off = ring.map(one => Math.hypot(one.x - named[k].x, one.y - named[k].y));
+        check(
+          ring.length === HALO_STEPS &&
+            ring.every(one => one.t === named[k].t && one.c !== ink && one.c === ring[0].c) &&
+            off.every(r => r > 0 && Math.abs(r - off[0]) < 1e-9),
+          `the glyph ${named[k].t} went down over ${ring.length} copies at ${off.map(r => r.toFixed(2))}`,
+        );
+      }
     }
     for (const [end, at2, said] of [
       ["from", bBase.moves, "open"],

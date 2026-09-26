@@ -129,10 +129,15 @@ export function walk(steps) {
   return seq;
 }
 
-/** One point on the line a band walks, in the picture's own pixels.
+/** One point on the line a band walks, in the picture's own pixels, and the
+   letter it stands on. The letter is carried rather than worked out again from
+   the frame's steps: `route` drops a letter that banks nowhere, so a caller
+   counting along `walk`'s sequence would name the wrong letter from the first
+   drop onwards.
    @typedef {object} Point
    @property {number} x
-   @property {number} y */
+   @property {number} y
+   @property {number} letter */
 
 /** The line one augmentation's path walks, rather than the sweep that hides it.
    A band is otherwise drawn from the surplus it leaves straight to the deficit
@@ -165,7 +170,7 @@ export function walk(steps) {
    @returns {Point[]} */
 export function route(frame, band, bank, lx, rx, padY) {
   /** @type {Point[]} */
-  const out = [{ x: lx, y: padY + band.a }];
+  const out = [{ x: lx, y: padY + band.a, letter: band.from }];
   const n = frame.steps.length;
   if (n > 1 && frame.cost > 0) {
     const seq = walk(frame.steps);
@@ -181,10 +186,10 @@ export function route(frame, band, bank, lx, rx, padY) {
       // no path over the 37 categories leaves [0, cost], all 2,645 of them, but
       // one that did would otherwise be drawn off the side.
       const t = Math.min(1, Math.max(0, paid / frame.cost));
-      out.push({ x: lx + (rx - lx) * t, y: padY + y - band.h / 2 });
+      out.push({ x: lx + (rx - lx) * t, y: padY + y - band.h / 2, letter: seq[i + 1] });
     }
   }
-  out.push({ x: rx, y: padY + band.b });
+  out.push({ x: rx, y: padY + band.b, letter: band.to });
   return out;
 }
 
