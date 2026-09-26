@@ -165,7 +165,11 @@ TPL.innerHTML = `
   :host([fit]) .stage{flex:1;min-height:0;width:100%;aspect-ratio:auto}
   .pick{margin-bottom:8px}
   .pick[hidden]{display:none}
-  .pick select{width:100%;font-family:var(--_font);font-size:12.5px;line-height:1.5;
+  /* Capped at the far end of the three discs' column, minmax(200px,280px), and
+     left where it falls: this figure grows no column, so a select at the full
+     width of a wide picture reads as a banner rather than as one control. */
+  .pick select{width:100%;max-width:280px;
+    font-family:var(--_font);font-size:12.5px;line-height:1.5;
     color:var(--_ink);background:var(--_panel);border:1px solid var(--_edge);
     border-radius:2px;padding:5px 9px}
   .pick select:focus-visible{outline:2px solid var(--_accent);outline-offset:-1px}
