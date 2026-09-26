@@ -1,128 +1,87 @@
 # weft
 
-`weft` draws WordNet as circular diagrams. Three of them sit on the one corpus. The first is the *hypernym* taxonomy, every synset nested inside the synset it is a kind of, 82,115 of them as nested arcs. The second is the word chain game on a category's word list, where each word starts with the letter the previous one ended on: *cat*, *tiger*, *rat*, *toad*. The third is the 26-letter graph under that same category, drawn as a chord diagram.
+`weft` draws WordNet as circular diagrams: the *hypernym* taxonomy as nested arcs, the word chain game on one category's word list, and the 26-letter graph under that category as a chord diagram. In the chain game each word starts with the letter the previous one ended on, as in *cat*, *tiger*, *rat*, *toad*. A word is therefore an edge from its first letter to its last, so the game lives on a 26-node graph whatever the size of the vocabulary.
 
-The word chain disc is the one the command line renders, to `out/<category>.svg`, and all three are drawn in the browser. The name is the *weft*, the thread a weaver crosses through the warp, which is what a disc full of chords looks like.
-
-A word runs from its first letter to its last, so every word is an edge between two of 26 letters and the whole game lives on a 26-node graph however large the vocabulary gets. The word-level graph is the *line graph* of that small one, its nodes the edges of the letter graph, joined wherever one word's last letter is another's first.
-
-A spring layout is useless here. Every word ending in A links to every word starting with A, and the resulting edge density defeats any force model, so the word view uses fixed positions instead and groups words into wedges by first letter.
+The command line renders the word chain disc to a file, and the browser draws all three as *custom elements*.
 
 ## Setup
 
-The project uses a Nix flake. `direnv allow` activates it on entering the directory, and `nix develop` gives the same shell by hand. Python and its packages (nltk, networkx, matplotlib, numpy, pyvis, wordfreq) come from nixpkgs, so there is no virtualenv, no pip, and no lockfile beyond `flake.lock`.
-
-The shellHook puts `src/` on `PYTHONPATH` and symlinks the WordNet corpus out of the nix store, so `python -m weft` works from the project root and nothing is fetched over the network at runtime.
-
-`make check` runs everything that has to pass: ruff, mypy in strict mode over `src/weft` and `tools`, the two checks that hold the config file and its schema together, Biome linting and formatting the browser modules and the node tools, a `nodejs` pass that loads the browser modules as a browser would and draws a synthetic tree with them, and TypeScript reading the JSDoc types the browser modules carry, which compiles nothing and emits nothing.
+The project uses a Nix flake. `direnv allow` activates it on entering the directory, and `nix develop` gives the same shell by hand. Python, its packages and the WordNet corpus all come from nixpkgs, so there is no virtualenv, no pip and no download at runtime, and `python -m weft` runs from the project root.
 
 ## Commands
 
 ```
 python -m weft categories       # the 37 categories, with word counts
-python -m weft stats animal     # the letter analysis
+python -m weft stats animal     # the letter analysis and the longest chain
 python -m weft words animal     # the word list with Zipf frequencies
-python -m weft build animal     # render the word graph
+python -m weft build animal     # render the word disc to out/animal.svg
 ```
 
-`build` writes `out/<category>.svg` and takes `--format svg|png` (default `svg`), `--out DIR` (default `out`), `--theme light|dark`, which overrides the config file's `theme` and stands at dark with neither, and `--limit N`, the words in the disc, 110 unless the config file moves it, or 0 for every word the category has. The label size is solved rather than set: the canvas grows until adjacent labels clear each other, and past the 30 inches it is capped at the type shrinks instead.
+`build` writes `out/<category>.svg`, the words in wedges by first letter. Its flags:
 
-`stats` takes one flag of its own, `--opening WORD`, which pins the chain it reports to a first word. The longest chain section below is what that changes.
+- `--format svg|png`, default `svg`. Scalable Vector Graphics (SVG) zooms, and its glyphs are embedded as outlines, so it renders identically without the fonts installed.
+- `--out DIR`, default `out`.
+- `--theme light|dark`, overriding the config file's `theme`, and dark when neither sets it.
+- `--limit N`, the words drawn: the 110 commonest by default, every word at 0. The canvas grows until adjacent labels clear each other, and past 30 inches the type shrinks instead.
 
-All four commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance`, `--max-rank` and `--multiword`, which keeps entries like *polar bear* and chains them on their outer letters. A flag beats the config file for one run, so `--no-multiword` turns off a file that switched it on. Every command takes `--no-cache` and `--config FILE`.
+`stats` prints the longest chain the category allows and says whether it is provably the longest. `--opening WORD` pins its first word, matched lowercased. A word the category lacks is refused with the nearest word it has, or with a pointer at `weft words <category>` when nothing is near.
 
-`make -j` renders every category, one file each. `make clean` removes the output directory, `OUT=` moves it, and `CONFIG=` names a config file.
-
-`make web-dist` gathers everything a page needs to run any of the four browser elements into one flat directory, `out/web-dist` unless `DIST=` names another: the modules, the exported WordNet tree, one file per category, and `embed.html`, a page holding one section per element that asks for its data beside itself. The directory can be copied whole and served from anywhere, and each section carries its own script, settings and height, so one can be lifted out without the others.
-
-## Outputs
-
-`build` writes one file, `out/<category>.svg`: the word graph in wedges by first letter, the 110 commonest words by default. `stats` prints the letter analysis and `words` prints the list.
-
-Scalable Vector Graphics (SVG) is the default because the disc zooms, so a label too small to read on screen is one gesture away, and `--format png` renders a raster instead. Glyphs are embedded as outlines rather than named, so the figure renders identically on a machine with none of Iowan Old Style, Avenir or Menlo installed.
-
-## Playing it in the browser
-
-The rendered disc shows every legal move at once, and `<word-disc>`, a *custom element*, makes those moves playable. Picking a word lights up every word that can follow it, one whole wedge of the disc, since the words that can follow *cat* are exactly the words starting with T. Picking one of those carries the chain on, and the line under the disc is the chain so far, each step clickable to wind play back to it. The category is printed beside the chain as a label, and clicking it winds play all the way back, which is how you open on a different first word.
-
-The centre of the disc names whatever the pointer is on, and clicking it takes one step back on the empty ground between the chords. The *fan*, the chords drawn from one word to every word that can follow it, is the one set of chords on the disc that is a set of moves. Where a chain is being played the fan is drawn from the word play stands on, and that is the fan the middle of the disc answers on. Before a first word is picked no chain stands, so pointing at a word on the rim draws that word's fan, and the middle answers on it too. Move the pointer off the rim and in among the chords, and the fan stays where it is, so a chord can be followed inwards and clicked. The word the chord lands on is the word named, and clicking opens play on it. The fan is held rather than followed, the word it is drawn from being fixed the moment the pointer crosses in and let go of when the pointer comes back out. Without that, a chord naming the word it lands on would redraw the fan from that word and take the chord out from under the pointer. The resting bundle, every chord the disc draws at rest, takes no click, each of its chords standing for a pair of words rather than a move. The fan reaches only part of the middle, running from one word to one wedge, so its chords bow to about the same depth and sweep a lens rather than the whole interior. On animal at a 300-pixel ring of words, crab's 139 chords cross the 135-pixel middle in a band 26 degrees wide and come no nearer the centre than 116 pixels, so the dead centre holds no move and stays the way back, which is what clicking it does. A search box reaches a word by name. The line above the chain names the current word with its last letter marked, since that letter is what the next word must start with, and counts the words that could follow it, or says that none can, which is the end of the round. A word already played is not a move, and keeps a warning colour wherever it appears.
-
-That line also prices perfect play. Before a first word is picked it names how long the category's longest chain runs; on the word play stands on it says how many more words perfect play still reaches; and on a legal move under the pointer, how many playing that move would leave. The count of replies cannot say any of it, since a letter with many replies can still be the shorter road: in animal, opening on *crab* keeps the whole 640-word chain, where *bear* after it leaves 637 and so costs a word. A `hint="off"` attribute turns the figures off, and the solve behind them with it.
-
-That line counts perfect play, and `<word-run>` names it. Given the id of a disc to follow, `<word-run for="disc">`, it prints the words already played and then the longest continuation over the words still left, so animal at rest reads *640 words │ crab › boa › anaconda › alpaca › 632 more › zebra › avocet › teju › ungulate*. A chain that long will not fit on a line, so the first four words and the last four are kept, at the two ends of the line rather than packed at its left, and the count of the hidden ones stands between them as a step like any other; a run of nine words or fewer is printed entire, since hiding one word behind a count reads worse than the word does. The words already played take the accent colour and the projected ones the ink colour, so the join between what has happened and what could sits in the colour rather than in a label.
-
-It fetches nothing of its own, reading the words and the chain off the disc it follows, so a page carrying both still asks for one category file. `/words.html` and `/embed.html` each carry one under the disc.
-
-The element takes one category file and draws every word in it, with a `limit` attribute to cap that at a count, where `build` draws 110. Every chord the printed figure draws sits under the playable disc at any word count. A page that also names an index of the categories gets a picker above the search box and changes category itself; `/words.html` under `make serve` is where to try it. A page embedding a single category names one file and gets no picker, which is what `/embed.html` does, carrying one control of its own that sets the category for the three elements reading a category file.
-
-Where the window is wide enough for a column beside the disc, every word that could be played next is listed there in alphabetical order, and clicking one plays it. The search suggestions take that column while you are typing.
-
-`make words` writes the data the element reads, one JavaScript Object Notation (JSON) file per category. `make serve` serves the harnesses with a watcher that reloads on save: `/` is the nested-arc view of WordNet, `/words.html` the word chain, `/letters.html` the letter graph, `/balance.html` the balancing flow, and `/embed.html` all four.
-
-## The letter graph itself
-
-Every word is an edge between two letters, so under a category's word list sits a graph of 26 nodes and the letter pairs some word bridges. `<letter-disc>` draws that one: the letters around a ring, an arc for every populated pair, and each arc as wide as the logarithm of the words on it, so a pair spanned by a single word is still visible beside the busiest pair in the category.
-
-Each letter's place on the ring is split in two, the half words leave from and the half they arrive at, so an arc runs from the bright side of one letter to the dim side of another and reads as directed without an arrowhead. A letter's share of the ring is its share of the traffic, so an arc's width means the same number of words wherever on the figure it is read, and the split point says whether a letter is somewhere play sets out from or somewhere it arrives.
-
-Pointing at an arc lights it and dims everything else, and pointing at a letter lights every arc touching it. The line under the disc names the words on the arc rather than counting them, which is where this disc and the playable one meet. Clicking a letter drills into it, and clicking an arc drills into the letter it leaves, since that is the letter play sets out from; the middle then names that letter, and clicking the middle goes back out to every arc the category has. An arc between letters half the ring apart bows close to the centre, and it answers the pointer and a click there as it does anywhere else along its length. The middle takes a click only on the empty ground between the arcs, which is where the *↑ all* hint is drawn.
-
-It reads the same category file `<word-disc>` reads, so a page carrying both fetches one file for the pair, and naming an index gives it the same picker. `/letters.html` under `make serve` is where to try it.
-
-## The longest chain
-
-A round ends when the current word's last letter starts nothing that is still unplayed, so the question a category invites is how far play can run when every word is chosen perfectly and none is repeated. `weft` answers that exactly. animal chains 640 of its 1,582 words, and for 32 of the 37 categories the answer arrives with a proof that no longer chain exists.
-
-Nothing here searches for that chain. With words as vertices the question is the longest path through a graph of 1,582 nodes and 96,470 edges, for which no efficient exact algorithm is known. With letters as vertices it turns small: a word is an arc from its first letter to its last, so a chain is a *trail*, an arc-disjoint walk on 26 vertices, and keeping as many words as possible is discarding as few as possible.
-
-Discarding as few as possible is a min-cost *transshipment* on those 26 nodes, the supply at each letter being its outgoing words minus its incoming, the capacities the word counts and the cost one per word dropped. Every cost is non-negative and the constraint matrix is *totally unimodular*, so the answer comes back whole-numbered with no integer solver anywhere. Words sharing a letter pair are interchangeable, so they aggregate into one arc of capacity n rather than n arcs of capacity one.
-
-A chain has an opening and an ending, and moving one unit of supply at each end is the whole of what separates it from a closed circuit, so its cost is the balanced answer plus the shortest residual path from the ending letter back to the opening one. 26 runs of Dijkstra's algorithm price all 676 openings and endings off a single balanced solve, with a 677th candidate for the circuit that opens and ends on the same letter.
-
-What the relaxation ignores is whether the arcs it keeps form one connected run, so what it returns is an upper bound. A *union-find* pass settles that. Where the kept arcs are connected the bound is attained and the chain is provably the longest there is; where they are not, the largest component is kept and the rest is solved again at full capacity, and the gap is reported rather than hidden.
-
-Five categories finish with a gap: fabric chains 61 words against a bound of 63, furniture 9 against 10, instrument 10 against 11, mineral 18 against 19, and river 64 against 65. Exhaustive search over the letter multidigraph proves furniture's 9, instrument's 10 and mineral's 18 are the true maxima, so in those three the bound is loose by one rather than the chain being short.
-
-`python -m weft stats <category>` prints the chain with its verdict: `longest chain: 640 words, crab … ungulate — provably the longest there is` for animal, and `longest chain: 9 words, crib … rolodex — against an upper bound of 10 nothing reached` for furniture.
-
-The same machinery answers a narrower question, and it is the one a player actually has. Nobody stands at the start of a category; they stand on a word, with a letter already fixed, wanting to know how far play can still run from there. That is the whole-category question with one letter pinned. Spend the opening word, solve from the letter it ends on, and put the word back on the front of whatever comes back, so the count and the bound both cover the chain including that word.
-
-`python -m weft stats <category> --opening WORD` asks it, and the flag sits on that command alone, the other three printing no chain. The word is matched lowercased, so `--opening CRIB` works, and the report takes it into the heading: furniture's line above becomes `longest chain from crib: 9 words, crib … rolodex — against an upper bound of 10 nothing reached`, where `--opening desk` reads `longest chain from desk: 1 word, desk — provably the longest there is`. A word the category does not yield is refused, answered with the nearest word `difflib` finds, or with the category's word count and a pointer at `weft words <category>` when nothing is near. Reporting the unpinned chain under a pinned heading would be a wrong answer printed confidently.
-
-Every candidate opening on another letter is dropped before the scan. The closed circuit is the one candidate a fixed letter cannot rule out, since a closed walk can be rotated to begin on any letter it touches, so it stands or falls on whether it touches this one. The bound is then computed over the candidates that survive, which is what lets a chain forced through a poor opening still report whether it is the longest that opening allows.
-
-Certification is harder to come by under a constraint. Across 2,189 constrained solves over the 37 categories, 75% came back certified, where 32 of the 37 categories certify when the opening is free. A forced opening can strand play in a small component, and the relaxation's bound goes loose there where the free one did not. furniture shows all three outcomes on a category whose overall best is 9 words: opening on *crib* still reaches 9, opening on *bookcase* reaches 2 against a bound of 5 that nothing attains, and opening on *bunk* reaches 1 and is certified, since no word in the category starts with K. A missing certificate says less than it sounds like it does: mineral certifies on 1% of its openings, and exhaustive search over 60 of them found the solver's chain optimal in 59.
-
-The solver is written twice, in `src/weft/graph.py` and in `web/word-longest.js`, held to one another by seventeen frozen cases in `tools/chains.json`. The two produce byte-identical chains on all 37 categories, Python taking 8 ms on the largest category and JavaScript 0.8 ms. Constrained, they disagreed on none of those 2,189 solves and produced no illegal chain, and a further 2,314 solves on random word lists were checked against exhaustive search, all of them reaching the true optimum. `<word-disc>` reads the browser half, which is where the figures under the playable disc come from.
-
-## Watching it balance
-
-The arithmetic above runs as a sequence, and `<balance-flow>` draws it running. It draws the transshipment, the solve that decides how few words have to be discarded before every letter has as many words leaving it as arriving. Surplus letters are banked down the left column at their excess and deficit letters down the right at theirs, and each *augmenting path* the solver walks comes out as one band across the middle, as wide as the words that path discards.
-
-The solve is the one `<word-disc>` already prices play with. `trace` reads the augmenting paths off that solve rather than running a second one, so nothing drawn here is a different answer from the figures under the playable disc. It takes 0.46 ms on animal, against the chain solve's own 0.64.
-
-The element carries a transport rather than a pointer, since what it has to show is a sequence: first, previous, play, next and last, with a slider to scrub by hand. The whole run is given a budget of about nine seconds rather than each step a fixed rate, held between 60 and 160 ms a step, so animal's 144 augmentations come out at 62 ms each and furniture's 36 at the ceiling. It opens on the balanced state rather than on nothing run, so a page nobody touches shows the whole transport, and play rewinds first where it stands at that end.
-
-The line under the picture names where it stands. At nothing run it reads *26 letters open 778 words out of balance, cleared in 144 augmentations*; in between it names the step, the surplus letter that step leaves, the deficit letter it reaches and how much of what was owed has been shipped; at the end, *balanced after 144 augmentations · 945 words discarded to close the circuit*. Under that sits the path the step walked, letter by letter, with the arcs between them. A forward arc discards one more word of its pair and a reverse arc recovers a word an earlier step discarded, which is what lets a later path undo part of an earlier one at no more than it costs.
-
-A band runs from the surplus letter its path leaves to the deficit letter it reaches, and the path between those two ends may walk several letters on the way. The step the line names is drawn through those letters rather than as one sweep, so the arcs it walked can be read off the picture: a forward arc discards one more word of its pair and runs left to right, and a reverse arc recovers a word an earlier step discarded and runs right to left, against the grain of everything else there. Direction is the only thing that marks it, which is deliberate, since the paths that double back are the thin ones and a heavier mark would make the rarest thing on the picture the loudest; only the named step is drawn this way. That step is also drawn at full strength with an edge stroked around it, since the paths the solver leaves for last are the ones moving the least and the step a reader arrives on can stand under a pixel tall, where an edge is the one mark that does not shrink with it.
-
-A bend in that line says the path turned and not which letter it turned on, which left a reader counting arcs along the line under the picture to find out. So each turn now carries its letter, set above the band at the turn itself and in the band's own colour where the columns and their two headings are muted, so the marks belonging to the named step are the coloured ones. Each letter sits over a halo in the ground colour, since the line crosses whatever bands the picture already holds, and the type is a little smaller than the column labels: a turn annotates one step where a column label names a bank for the whole run, and at one size the two read as a third column. There is room for them. Adjacent turns stand at least 59 pixels apart on the 355 pixels between the columns at a 682-pixel width, and 118 on animal and food, so one letter never meets its neighbour however the line doubles back. Only the letters in the middle of a path are named, the two ends of a band opening on their own slice of a slot the columns name already. A letter a path walks through while owing nothing has no point on the line and so no letter drawn for it, 87 of the 1,504 interior letters across the 37 categories and none of animal's, since drawing one would mean inventing a height for a letter that ships nothing. 914 of the 2,645 augmentations walk at least one letter in the middle, at most six on any one path, animal 81 over its 144 steps and food 94 over its 156.
-
-Finding a step that doubles back takes some doing. A reverse arc is rare: 204 of the 2,645 augmentations across the 37 categories carry one, 7.7%, and animal has 13 of its 144. Short of stepping through the run and reading the line under the picture 144 times, nothing points at them. So the slider carries a mark at every step whose path recovers a word, and dragging the handle onto one lands on that step. They come in runs rather than singly, animal's 13 standing at steps 88 to 98 and at the last two, with the closest pair 3.38 pixels apart on a 500-pixel track, so a run of them reads as one band along the slider rather than as separate ticks. The handle itself is drawn by the element rather than left to the browser, since a mark has to line up with the ground the handle travels over, and that ground is the track less one handle's width, which the browser would otherwise pick for itself.
-
-One scale serves both columns, so a unit of imbalance is the same height wherever it is read and a band comes out the same width at both of its ends. A band takes the hue of the letter it leaves and the deficit column is left uncoloured, since colouring where a band lands would say the two letters were one letter's ink. The bands in one letter's slot tile it in the order the solver found them. There is no hit testing and no hover, where both discs answer the pointer, because this picture asks nothing of it.
-
-It reads the same `words-<category>.json` that `<word-disc>` and `<letter-disc>` read, so a page carrying all three fetches one file, and it takes `src` and `index-src` exactly as `<letter-disc>` does, so naming an index gives it the same picker and `embed.html`'s one control reaches it unchanged. animal's 1,582 words leave 26 letters open and 778 words out of balance, cleared in 144 augmentations for 945 words discarded, where furniture's 79 words leave 16 letters open and 47 out of balance, cleared in 36 for 75 discarded. food takes the most augmentations of the 37 categories, at 156. All 37 settle. `/balance.html` under `make serve` is where to watch one run.
+All four commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance` and `--max-rank`. `--multiword` keeps entries such as *polar bear*, chained on their outer letters. Every command takes `--no-cache` and `--config FILE`, and a flag beats the config file for one run, so `--no-multiword` turns off a file that switched it on.
 
 ## Configuration
 
-Every command loads `./weft.toml` when that file exists and uses the built-in defaults otherwise, and `--config FILE` names another, which has to exist. The file is Tom's Obvious Minimal Language (TOML), with a bare `theme` key and three tables: `[geometry]` for the disc's measurements, `[palette]` for the letter colours and `[selection]` for the eight settings that decide which words a category yields and how many of them the disc draws. Every key is optional, anything absent keeps its default, and a flag beats the file for one run. Each setting is documented in `schemas/weft.schema.json`, which the file names on its first line, so an editor explains and completes the settings as they are typed. Validation refuses rather than ignores: an unknown key or an out-of-range value stops the build, answered with the closest name from `difflib`.
+Every command loads `./weft.toml` when it exists, or the file `--config` names, which must exist. The file is Tom's Obvious Minimal Language (TOML), with a bare `theme` key and three tables. `[geometry]` holds the disc's measurements, `[palette]` the letter colours, and `[selection]` the eight settings that decide which words a category yields and how many the disc draws. Every key is optional. `schemas/weft.schema.json` documents each setting, and the file names it on its first line so an editor completes keys as they are typed. An unknown key or an out-of-range value stops the command, which suggests the closest valid name.
+
+## Make targets
+
+- `make check` runs the linters, type checkers and tests for the Python and the browser modules alike, and must pass before a commit.
+- `make -j` renders every category, one SVG each. `OUT=` moves the output directory, `CONFIG=` names a config file, and `make clean` removes the output.
+- `make words` writes one JavaScript Object Notation (JSON) file per category for the browser elements.
+- `make serve` serves the harnesses and reloads on save. `/` is the nested-arc view, `/words.html` the word chain, `/letters.html` the letter graph, `/balance.html` the balancing flow, and `/embed.html` all four.
+- `make web-dist` gathers the modules, the exported WordNet tree, the category files and `embed.html` into one flat directory, `out/web-dist` unless `DIST=` names another, which can be copied whole and served from anywhere.
+
+## Browser elements
+
+`<word-disc>`, `<letter-disc>` and `<balance-flow>` each read one `words-<category>.json`, named by `src`, so a page carrying all three fetches one file. An `index-src` naming the category index adds a category picker.
+
+### `<word-disc>`
+
+The playable form of `build`'s disc, drawing every word in the file unless a `limit` attribute caps the count.
+
+Clicking a word lights the words that can follow it, one whole wedge, since the words that follow *cat* are those starting with T. Clicking one of those carries the chain on. Pointing at a word draws its *fan* of chords to those followers, which holds still as the pointer moves inwards, so a chord can be followed and clicked. A search box reaches a word by name, and a wide window adds a column listing every legal move.
+
+The line under the disc is the chain so far, and clicking a step winds play back to it. Clicking the category label clears the chain, which is how to open on a different first word. Clicking the empty centre takes one step back. A word already played is not a move and keeps a warning colour.
+
+The line above the chain names the current word, marks its last letter and counts the replies. It also prices perfect play: the category's longest chain at rest, how far perfect play still runs from the current word, and what a move under the pointer would leave. `hint="off"` turns those figures off, and the solve behind them.
+
+### `<word-run>`
+
+`<word-run for="disc">` follows the `<word-disc>` with that id and prints its chain, the played words in the accent colour and then the longest continuation over the words left. A long run keeps its first four and last four words, with the count of hidden ones between them. It fetches nothing, reading the words off its disc.
+
+### `<letter-disc>`
+
+The letters sit round a ring with an arc for every letter pair some word bridges, each as wide as the logarithm of its word count. Each letter's slot is split into the half words leave from and the half they arrive at, so an arc reads as directed.
+
+Pointing at an arc lights it, pointing at a letter lights every arc touching it, and the line under the disc names the words on the arc. Clicking a letter drills into it, and clicking an arc drills into the letter it leaves. Clicking the middle goes back out. It takes `src` and `index-src`.
+
+### `<balance-flow>`
+
+It animates the min-cost *transshipment* inside the longest-chain solve, which finds the fewest words to discard so that every letter has as many words leaving it as arriving. Surplus letters bank down the left column and deficit letters down the right, and each step of the solve is a band between them, as wide as the words it discards.
+
+The transport has first, previous, play, next and last buttons and a slider to scrub. It opens at the balanced end, and play rewinds first from there. The line under the picture names the current step, which is drawn through the letters its path turned on, each labelled. A leg running right to left recovers a word an earlier step discarded, and the slider marks each such step. It takes `src` and `index-src`, and ignores the pointer.
+
+### `<hypernym-disc>`
+
+The nested-arc view at `/`, each *synset* drawn inside the synset it is a kind of. `make web-dist` stages the tree it reads.
+
+### Embedding
+
+`embed.html` holds one self-contained section per element, each with its own script, attributes and height, so one lifts out alone. It asks for its data beside itself, and one category control sets `src` on the three elements that read a category file.
 
 ## Categories
 
 animal, bird, body-part, building, city, clothing, colour, country, disease, dog, drink, drug, element, fabric, fish, flower, food, fruit, furniture, game, insect, instrument, job, language, mammal, metal, mineral, plant, reptile, river, sport, tool, toy, tree, vegetable, vehicle, weapon.
 
-A category can be topped up by hand. `EXTRA_WORDS` in `src/weft/lexicon.py` maps a category to words added on top of the WordNet closure, for the ones a lexical database misses: *grey* is a lemma of no colour synset, so the colour category offers *gray* alone until somebody writes the other spelling down. The table ships empty. Such a word bypasses the filters, having been chosen rather than survived them, and it carries its real wordfreq frequency, so a rare addition sorts to the tail of the list and needs a larger `--limit` to be drawn.
+`EXTRA_WORDS` in `src/weft/lexicon.py` tops a category up by hand with words WordNet misses, such as *grey*, and ships empty.
 
 The 26-node graph was fixed before any word list existed, and a category only decides which of its edges are populated and how heavily. Everything the tool draws is a way of asking which letters are worth steering an opponent towards.
