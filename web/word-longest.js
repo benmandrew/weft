@@ -433,8 +433,11 @@ function solveOn(m, start) {
 
   // Every start and end option priced off that one solve. A chain from s to t
   // moves supply by a unit at each end, so it costs the balanced answer plus
-  // the shortest residual path t -> s; 26 Dijkstras cover all 676 pairs, and a
-  // 677th candidate is the closed circuit, which starts and ends nowhere.
+  // the shortest residual path t -> s; 26 Dijkstras cover the 26 * 25 pairs of
+  // distinct letters, and one more candidate is the closed circuit, which starts
+  // and ends nowhere. A chain whose two ends are the same letter costs exactly
+  // the balanced answer, so the diagonal is that circuit and the `s !== t` guard
+  // below skips it rather than pricing it 26 times over.
   //
   // An opening letter drops every candidate that opens elsewhere. The circuit
   // survives whatever the letter is, since a closed walk can be rotated to open
