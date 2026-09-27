@@ -15,6 +15,8 @@
  * work, so a resize redraws rather than blitting a picture already built.
  *
  * Attributes: src, index-src (words-index.json, which turns the picker on),
+ *             tree (the id of a <hypernym-disc>, whose node the picker then
+ *             offers as a category; see disc-picker.js),
  *             readout="off", fit
  * Properties: data, stats, letter, arc. Methods: show(letter), repaint().
  * Events: letter-hover {kind:"arc",from,to,words}
@@ -25,7 +27,7 @@
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
 import { hsv, TAU } from "./disc-colour.js";
-import { href, label as catLabel } from "./disc-index.js";
+import { Picker } from "./disc-picker.js";
 import { band, baseline, fit, halo, HALO, HALO_MIN } from "./disc-label.js";
 import { watch } from "./disc-idle.js";
 import { ratio } from "./disc-ratio.js";
@@ -125,7 +127,7 @@ TPL.innerHTML = `
 </div>`;
 
 class LetterDisc extends HTMLElement {
-  static observedAttributes = ["src", "index-src"];
+  static observedAttributes = ["src", "index-src", "tree"];
 
   #sr;
   #base;
@@ -155,7 +157,7 @@ class LetterDisc extends HTMLElement {
   #on = -1;
   #ready = false;
   #loadedSrc = null;
-  #indexSrc = null;
+  #picker;
 
   #cx = 0;
   #cy = 0;
@@ -187,12 +189,30 @@ class LetterDisc extends HTMLElement {
     this.#frame = this.#sr.querySelector(".frame");
     this.#pickEl = this.#sr.querySelector(".pick");
     this.#catEl = this.#sr.querySelector(".cat");
+    this.#picker = new Picker(this, this.#pickEl, this.#catEl, {
+      open: src => {
+        // Opened even where it is the file already held, since the tree's
+        // words may be drawn over it.
+        this.#loadedSrc = null;
+        if (this.getAttribute("src") === src) this.#load();
+        else this.setAttribute("src", src);
+      },
+      apply: d => {
+        this.data = d;
+      },
+      ready: () => this.#ready,
+      category: () => this.#category,
+      fail: msg => {
+        // Where the words arrived from `src`, only the picker is missing, which
+        // is not worth taking the readout for.
+        if (!this.#ready) this.#say(msg);
+      },
+    });
   }
 
   connectedCallback() {
     this.#over.addEventListener("pointermove", this.#onMove);
     this.#over.addEventListener("pointerleave", this.#onLeave);
-    this.#catEl.addEventListener("change", this.#onCat);
     this.#ro = new ResizeObserver(() => this.#fit());
     /* Watch the stage, whose box sizes the canvases, and the frame too: the
        stacked stage's box does not move when the frame is dragged wider, so
@@ -208,10 +228,11 @@ class LetterDisc extends HTMLElement {
       if (this.#box) this.repaint();
     });
     if (!this.#ready) this.#load();
-    this.#loadIndex();
+    this.#picker.connect();
     this.#idle = watch(this, this.#sleep, this.#wake);
   }
   disconnectedCallback() {
+    this.#picker.disconnect();
     this.#ro?.disconnect();
     this.#idle?.disconnect();
     this.#idle = null;
@@ -222,7 +243,8 @@ class LetterDisc extends HTMLElement {
   attributeChangedCallback(n, was, now) {
     if (was === now) return;
     if (n === "src") this.#load();
-    if (n === "index-src") this.#loadIndex();
+    if (n === "index-src") this.#picker.index();
+    if (n === "tree") this.#picker.tree();
   }
   #onScheme = () => this.repaint();
 
@@ -232,7 +254,11 @@ class LetterDisc extends HTMLElement {
       if (src) {
         if (src === this.#loadedSrc) return;
         this.#loadedSrc = src;
-        this.data = await (await fetch(src)).json();
+        this.#picker.release();
+        const d = await (await fetch(src)).json();
+        // The reader chose the tree's node while the file was on its way.
+        if (this.#picker.following) return;
+        this.data = d;
       } else {
         if (this.#ready) return;
         const inline = this.querySelector('script[type="application/json"]');
@@ -244,55 +270,10 @@ class LetterDisc extends HTMLElement {
     }
   }
 
-  /* The picker, built only where the host names an index: a page embedding one
-     category names one file and needs no control at all. */
-  async #loadIndex() {
-    const src = this.getAttribute("index-src");
-    if (!src || src === this.#indexSrc) return;
-    this.#indexSrc = src;
-    let rows;
-    try {
-      rows = await (await fetch(src)).json();
-    } catch (err) {
-      // Where the words arrived from `src`, only the picker is missing, which
-      // is not worth taking the readout for.
-      if (!this.#ready) {
-        this.#say(`<b>Could not load the categories.</b> ${err.message}`);
-      }
-      return;
-    }
-    if (!Array.isArray(rows) || !rows.length) return;
-    this.#catEl.replaceChildren(
-      ...rows.map(row => {
-        const o = document.createElement("option");
-        o.value = row.name;
-        o.textContent = catLabel(row);
-        return o;
-      }),
-    );
-    this.#pickEl.hidden = rows.length < 2;
-    this.#mark();
-    // An index alone opens the first category rather than a blank disc.
-    // #load has already run by now, so a src written by hand still wins.
-    if (!this.#ready && !this.getAttribute("src")) {
-      this.setAttribute("src", href(this.#indexSrc, rows[0].name));
-    }
-  }
-
-  /* The picker follows the words rather than leading them, so it moves with a
-     src the host set as well as with its own change event. */
-  #mark() {
-    if (this.#catEl.value !== this.#category) this.#catEl.value = this.#category;
-  }
-
-  #onCat = () => {
-    this.setAttribute("src", href(this.#indexSrc, this.#catEl.value));
-  };
-
   set data(d) {
     if (!d?.words) return;
     this.#category = d.category ?? "";
-    this.#mark();
+    this.#picker.mark(this.#category);
     this.#words = Array.from(d.words);
     this.#build();
     this.#ready = true;

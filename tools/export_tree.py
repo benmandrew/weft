@@ -124,9 +124,12 @@ def _preorder(parents: dict[str, list[str]], key: Callable[[str], Key]) -> list[
     return laid_out
 
 
-def build() -> tuple[list[str], list[int], list[str]]:
-    """The names, the parent indices and the glosses, in the order the contract
-    requires."""
+def layout() -> tuple[list[Synset], dict[str, list[str]], list[str]]:
+    """Every noun synset, its hypernyms, and the synset names in export order.
+
+    `export_table.py` indexes its word table by position in this order, so the
+    two exporters share this function rather than each deriving the order.
+    """
     wordnet = _wordnet()
     synsets: list[Synset] = list(wordnet.all_synsets("n"))
     parents = _parents(synsets)
@@ -135,6 +138,13 @@ def build() -> tuple[list[str], list[int], list[str]]:
 
     # Sibling order is wedge order, so changing this key moves the layout.
     laid_out = _preorder(parents, lambda name: (rank[name], -size[name], name))
+    return synsets, parents, laid_out
+
+
+def build() -> tuple[list[str], list[int], list[str]]:
+    """The names, the parent indices and the glosses, in the order the contract
+    requires."""
+    synsets, parents, laid_out = layout()
     index = {name: i for i, name in enumerate(laid_out)}
     gloss = {synset.name(): _gloss(synset) for synset in synsets}
     return (

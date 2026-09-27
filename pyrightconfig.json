@@ -3,7 +3,8 @@
     "src/weft"
   ],
   "extraPaths": [
-    "src"
+    "src",
+    "tools"
   ],
   "pythonVersion": "3.12",
   "typeCheckingMode": "standard"

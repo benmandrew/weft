@@ -12,8 +12,16 @@
 /** @param {string | null | undefined} indexSrc @param {string} name
    @returns {string} */
 export function href(indexSrc, name) {
+  return beside(indexSrc, `words-${name}.json`);
+}
+
+/* Any other export by the same rule, which is how a picker finds the word
+   table without a second attribute naming it. */
+/** @param {string | null | undefined} indexSrc @param {string} file
+   @returns {string} */
+export function beside(indexSrc, file) {
   const src = indexSrc ?? "";
-  return `${src.slice(0, src.lastIndexOf("/") + 1)}words-${name}.json`;
+  return `${src.slice(0, src.lastIndexOf("/") + 1)}${file}`;
 }
 
 /* What a row of the index reads as in the picker. The count is what tells a

@@ -202,6 +202,50 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   on the arc. `#preview` never touches `#letter`, so a hover cannot move what a
   click landed on.
 
+### Derived categories
+
+- `tools/export_table.py` writes `out/wordnet-words.json`, one table from which
+  `web/word-source.js` derives the word list below any synset. A file per node
+  is ruled out, since 12,224 nodes have a playable word below them.
+- It works because every filter in `lexicon._resolve` and `_in_category` is a
+  fact about one (word, synset) pair or a sum over the pairs inside a category:
+  the member bit, the early bit (sense rank ≤ `max_rank`), the pair's
+  sense-tagged count, the word's tagged total and its Zipf. A new or changed
+  filter in `lexicon.py` is therefore a change to `export_table.py` and
+  `word-source.js` too. `tools/check_words.mjs` holds the derivation to all 37
+  `words-<category>.json` files, word for word and Zipf for Zipf, and fails
+  otherwise.
+- `max_rank` and `multiword` are fixed at export, since they decide which pairs
+  ship. The other `[selection]` settings travel in the table's `selection` and
+  the page applies them.
+- Word ids run in rank order (−Zipf, then spelling), the order the category
+  files hold, so a result sorted by id needs no Zipf sort.
+- The table is positional against `wordnet-tree.json`, as the names and glosses
+  are. It carries a 32-bit Fowler–Noll–Vo (FNV-1a) fingerprint of `par`, and
+  `WordTable` refuses a table written against another tree, since a mismatch
+  otherwise reads as plausible wrong words. `fingerprint()` in
+  `export_table.py` and `word-source.js` must agree.
+- The tree keeps only first hypernyms, so the rest ship as `extra` edges and
+  `ids()` closes over them to a fixpoint. `min_depth` counts those edges too, as
+  `lexicon._closure` does.
+- `lexicon.EXTRA_WORDS` is not in the table, since a hand-added word belongs to
+  a category's name rather than to a node. A derived list omits them, and
+  `check_words.mjs` leaves them out of the comparison.
+- `web/disc-picker.js`'s `Picker` is the one picker the three word elements
+  share, talking to its element through the `PickerHost` callbacks (`open`,
+  `apply`, `ready`, `category`, `fail`). `tree` names a `<hypernym-disc>` by id,
+  resolved through `getRootNode()` so an element in a shadow tree finds it.
+- `table()` in `word-source.js` fetches once per `src` and decodes once per tree
+  per page, however many elements follow. A failed fetch is not kept, so the
+  next ask retries. The table is fetched at the disc's first move or the
+  option's first choice, not on load: the first move is the reader using the
+  disc, and the counts are then ready when the picker opens.
+- The `#applying` flag is how `mark()` tells the picker's own words from words a
+  host handed over, so any `src` or `data` from the host ends following.
+- A node with no words below it is disabled in the select, and moving the disc
+  onto one while following leaves the element on what it had, since an empty
+  list is nothing to play.
+
 ## `<word-run>`
 
 - `for` resolves through `getRootNode()`, so a run in a shadow tree finds its
@@ -271,10 +315,15 @@ Of the disc rules, `ratio`, the sleep, `fit`, the fonts refit and
   `make clean` included. `CONFIG=` is both the argument and the prerequisite.
 - The three tree exports are one grouped target (`&:`) and the 38 word files
   another, so the corpus loads once per group rather than once per file.
+- The word table is its own target, `make table`. Its recipe runs
+  `check_words.mjs` and deletes the table if the check fails, so the next make
+  rewrites it rather than taking it as current. It is a prerequisite of `serve`
+  and ships in `web-dist`.
 - `make web-dist` stages every `web/*.js` by glob, `web/embed.html`, the three
-  exports and the 38 word files flat, so a consuming site copies the directory
-  instead of keeping a filename list in step. `web/.` is a prerequisite, since a
-  directory's timestamp is all that catches a deleted module.
+  exports, the 38 word files and the word table flat, so a consuming site copies
+  the directory instead of keeping a filename list in step. `web/.` is a
+  prerequisite, since a directory's timestamp is all that catches a deleted
+  module.
 - `embed.html` is the one page that ships: a `<section>` per element, each with
   its own script, data attributes, height and custom properties, so any one
   lifts out alone. It asks for data beside itself, which is why
@@ -311,6 +360,10 @@ no browser here to look in. `make serve` is where to find out.
 
 `<balance-flow>`'s column labels drop any slot shorter than the type, so a
 small box names only some letters.
+
+`<word-disc>` skips the chord bundle above `MAX_BUNDLE`, 200,000 chords.
+Following entity hands it 40,117 words and 74,068,990 chords, so a large node
+draws without the bundle.
 
 ## Checks
 
@@ -395,11 +448,15 @@ CLI is not in the flake.
     web/disc-ratio.js              the backing-store ratio and its budget, no DOM
     web/disc-idle.js               whether a disc is near enough to be worth pixels
     web/disc-lines.js              a text file's lines, kept as text and offsets
+    web/disc-picker.js             the category picker the word elements share
+    web/word-source.js             any synset's words, off the table, no DOM
     web/embed.html                 a section per disc, the one page web-dist ships
     tools/export_tree.py           writes the tree, its names and its glosses
     tools/export_words.py          writes a file per category and the index
+    tools/export_table.py          writes the table any synset's words come from
     tools/serve.py                 serves web/ and reloads it on save
     tools/check_web.mjs            loads and drives web/ as a browser does
+    tools/check_words.mjs          holds the table to the 37 category files
     tools/check_chain.py           the Python half of the chain cross-check
     tools/chains.json              the 17 frozen cases both halves answer
 

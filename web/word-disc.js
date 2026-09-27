@@ -25,6 +25,8 @@
  * the attribute the picker is not built at all.
  *
  * Attributes: src, index-src (words-index.json, which turns the picker on),
+ *             tree (the id of a <hypernym-disc>, whose node the picker then
+ *             offers as a category; see disc-picker.js),
  *             limit (0, every word the category has; a count caps it),
  *             readout="off", search="off", hint="off", fit
  * Properties: data, words, chain, stats. Methods: play(i), undo(), rewind(k),
@@ -36,7 +38,7 @@
  *          --disc-warn --disc-sat --disc-val --disc-font --disc-mono
  */
 import { hsv, TAU } from "./disc-colour.js";
-import { href, label as catLabel } from "./disc-index.js";
+import { Picker } from "./disc-picker.js";
 import { band, baseline, fit, halo, HALO, HALO_MIN, HUB_DROP } from "./disc-label.js";
 import { ratio } from "./disc-ratio.js";
 import { Search } from "./disc-search.js";
@@ -298,7 +300,7 @@ TPL.innerHTML = `
 </div>`;
 
 class WordDisc extends HTMLElement {
-  static observedAttributes = ["src", "index-src", "limit"];
+  static observedAttributes = ["src", "index-src", "tree", "limit"];
 
   #sr;
   #base;
@@ -348,7 +350,7 @@ class WordDisc extends HTMLElement {
   #failed = false;
   #ready = false;
   #loadedSrc = null;
-  #indexSrc = null;
+  #picker;
 
   /* The bundle, drawn once per word set and blitted per frame. Held in its own
      square rather than the frame's, so a resize scales the blit and only a
@@ -437,6 +439,26 @@ class WordDisc extends HTMLElement {
     this.#listEl = this.#movesEl.querySelector(".list");
     this.#pickEl = this.#sr.querySelector(".pick");
     this.#catEl = this.#sr.querySelector(".cat");
+    this.#picker = new Picker(this, this.#pickEl, this.#catEl, {
+      open: src => {
+        // Opened even where it is the file already held, since the tree's
+        // words may be drawn over it.
+        this.#loadedSrc = null;
+        if (this.getAttribute("src") === src) this.#load();
+        else this.setAttribute("src", src);
+      },
+      apply: d => {
+        this.data = d;
+      },
+      ready: () => this.#ready,
+      category: () => this.#category,
+      fail: msg => {
+        if (!this.#ready) {
+          this.#say(msg);
+          this.#failed = true;
+        }
+      },
+    });
   }
 
   connectedCallback() {
@@ -447,7 +469,6 @@ class WordDisc extends HTMLElement {
       const b = e.target.closest("button");
       if (b) this.rewind(+b.dataset.k + 1);
     });
-    this.#catEl.addEventListener("change", this.#onCat);
     this.#q.addEventListener("input", this.#onQuery);
     this.#q.addEventListener("keydown", this.#onFindKey);
     this.#q.addEventListener("blur", this.#closeFind);
@@ -507,10 +528,11 @@ class WordDisc extends HTMLElement {
     // #armFloor's and is not started here.
     if (this.#route === undefined) this.#openBundler();
     if (!this.#ready) this.#load();
-    this.#loadIndex();
+    this.#picker.connect();
     this.#idle = watch(this, this.#sleep, this.#wake);
   }
   disconnectedCallback() {
+    this.#picker.disconnect();
     this.#ro?.disconnect();
     this.#idle?.disconnect();
     this.#idle = null;
@@ -532,7 +554,8 @@ class WordDisc extends HTMLElement {
   attributeChangedCallback(n, was, now) {
     if (was === now) return;
     if (n === "src") this.#load();
-    if (n === "index-src") this.#loadIndex();
+    if (n === "index-src") this.#picker.index();
+    if (n === "tree") this.#picker.tree();
     // A different limit is a different word list, so the layout, the chain and
     // the bundle all go: a chain over words no longer drawn has nothing to
     // stand on.
@@ -546,7 +569,11 @@ class WordDisc extends HTMLElement {
       if (src) {
         if (src === this.#loadedSrc) return;
         this.#loadedSrc = src;
-        this.data = await (await fetch(src)).json();
+        this.#picker.release();
+        const d = await (await fetch(src)).json();
+        // The reader chose the tree's node while the file was on its way.
+        if (this.#picker.following) return;
+        this.data = d;
       } else {
         if (this.#ready) return;
         const inline = this.querySelector('script[type="application/json"]');
@@ -559,61 +586,10 @@ class WordDisc extends HTMLElement {
     }
   }
 
-  /* The picker, which exists only where the host names an index. Fetched
-     rather than derived, since the element is handed one word file and the
-     names of the others are nowhere in it. */
-  async #loadIndex() {
-    const src = this.getAttribute("index-src");
-    if (!src || src === this.#indexSrc) return;
-    this.#indexSrc = src;
-    let rows;
-    try {
-      rows = await (await fetch(src)).json();
-    } catch (err) {
-      /* The words may well have arrived from `src`, and then the disc is
-         playable and only the picker is missing, which is not worth taking
-         the readout for. It is worth it where the index was the way in. */
-      if (!this.#ready) {
-        this.#say(`<b>Could not load the categories.</b> ${err.message}`);
-        this.#failed = true;
-      }
-      return;
-    }
-    if (!Array.isArray(rows) || !rows.length) return;
-    this.#catEl.replaceChildren(
-      ...rows.map(row => {
-        const o = document.createElement("option");
-        o.value = row.name;
-        // The count, so the size of the category is known before the choice.
-        o.textContent = catLabel(row);
-        return o;
-      }),
-    );
-    // One category is not a choice.
-    this.#pickEl.hidden = rows.length < 2;
-    this.#mark();
-    /* An index alone opens on its first category rather than on a blank disc.
-       #load has run and found nothing by the time this resolves, so there is
-       nothing to race: a `src` written by hand is already loading or loaded. */
-    if (!this.#ready && !this.getAttribute("src")) {
-      this.setAttribute("src", href(this.#indexSrc, rows[0].name));
-    }
-  }
-
-  /* The picker follows the words rather than leading them, so it moves with a
-     `src` a host set by hand as well as with its own change event. */
-  #mark() {
-    if (this.#catEl.value !== this.#category) this.#catEl.value = this.#category;
-  }
-
-  #onCat = () => {
-    this.setAttribute("src", href(this.#indexSrc, this.#catEl.value));
-  };
-
   set data(d) {
     if (!d?.words) return;
     this.#category = d.category ?? "";
-    this.#mark();
+    this.#picker.mark(this.#category);
     this.#all = Array.from(d.words);
     // Without frequencies the file's own order stands, which is what a host
     // building a list by hand would mean by it.

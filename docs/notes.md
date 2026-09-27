@@ -108,6 +108,20 @@ The ink under the lit band comes to 0.26 on animal and 0.38 on furniture, so the
 
 Finding a reversing step by stepping through means reading the path line 144 times on animal, so the scrub carries a mark at every step whose path recovers a word. animal has 13 of its 144, food 18 and plant 20. animal's 13 are steps 88 to 98 and 143 to 144, and the closest pair stand 3.38 px apart on a 500 px track, so a run of them reads as one band along the slider rather than separate ticks. The element draws the thumb itself, because a mark has to line up with the thumb's travel, which is the track less the thumb's own width, and the browser would otherwise choose that width.
 
+## Derived categories
+
+The category picker can follow `<hypernym-disc>`, handing `<word-disc>`, `<letter-disc>` and `<balance-flow>` the words below whatever node the disc is on. A file per node was ruled out: 12,224 nodes have a playable word below them, and their lists would come to about 4.9 MB of JSON. So `tools/export_table.py` ships the facts every one of those lists is computed from, once, and `web/word-source.js` does the sums in the page.
+
+The *word table* holds 40,118 words, 65,938 (word, synset) pairs and 2,313 `extra` edges for the hypernyms the tree dropped. It is 987 KB raw, 279 KiB with gzip and 246 KiB with brotli. It is JSON because the live site serves JSON gzipped. A `LABEL` flag spells 30,508 of the 40,118 words from the synset labels in `wordnet-names.txt`, which a page holding the disc has already fetched, so only the other 9,610 travel as text.
+
+Pairs are pruned to those that can change an answer. A pair is kept if it is a member, if its word has sense-tagged counts and the pair carries one, or if its word has none and the pair is among its early senses. Pairs are grouped by synset in the tree's *preorder*, so a subtree's pairs are one contiguous run and taking a subtree in is a loop.
+
+Two choices went against a smaller file. Word ids run in rank order rather than in order of first appearance, which would save 27 KiB gzipped but cost the page a sort on every selection. The count array holds an entry for every pair, 16.5 KiB gzipped against 11.8 KiB for a sparse one, for the simpler decode.
+
+In Node the table decodes in 6–15 ms and the slowest of the 37 categories answers in 2.2–2.9 ms, both as `node tools/check_words.mjs` prints them. The root, entity, answers in 9.1 ms. The page keeps the last 12 answers, since a reader zooming in and back out asks for the same few nodes.
+
+Following entity in headless Chrome on an Apple silicon Mac, `<word-disc>` applies the 40,117 words in 207 ms with one *long task* of 186 ms, and skips the chord bundle, since 74,068,990 chords is past `MAX_BUNDLE`'s 200,000. `<letter-disc>` applies the same list in 25 ms and `<balance-flow>` in 22 ms, 11.5 ms of it the solve, and neither raises a long task.
+
 ## Corpus and data
 
 The 37 categories hold 13,212 words, 197 KB of JSON (JavaScript Object Notation) across the per-category files. A top-of-file import of nltk, wordfreq, networkx or matplotlib costs 100–300 ms on every invocation that does not use it, and nltk's multilingual sense-key mapping is two thirds of the corpus load. The exports come to 7.1 MB uncompressed, which is why the development server compresses them to match a deployed copy.

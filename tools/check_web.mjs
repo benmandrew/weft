@@ -82,6 +82,14 @@ class El {
     for (const kid of kids) if (kid instanceof El) kid._parent = this;
     this.children.push(...kids);
   }
+  prepend(...kids) {
+    for (const kid of kids) if (kid instanceof El) kid._parent = this;
+    this.children.unshift(...kids);
+  }
+  remove() {
+    if (this._parent) this._parent.children = this._parent.children.filter(k => k !== this);
+    this._parent = null;
+  }
   replaceChildren(...kids) {
     for (const kid of kids) if (kid instanceof El) kid._parent = this;
     this.children = kids;
@@ -458,6 +466,7 @@ const MODULES = [
   "disc-label.js",
   "disc-lines.js",
   "disc-paint.js",
+  "disc-picker.js",
   "disc-ratio.js",
   "disc-search.js",
   "disc-worker.js",
@@ -471,6 +480,7 @@ const MODULES = [
   "word-layout.js",
   "word-longest.js",
   "word-run.js",
+  "word-source.js",
 ];
 for (const name of MODULES) {
   try {
@@ -1924,6 +1934,111 @@ check(kept !== dropped && kept.width > 0, "the bundle drawn for the new word set
 disc.repaint();
 check(kept.width === 0, "the bundle a theme replaced kept its pixels");
 
+/* The word table (word-source.js), over a tree small enough to work by hand:
+
+     0 thing ─┬─ 1 plant ── 2 moss
+              ├─ 3 animal ── 4 Cat
+              └─ 5 stone
+
+   with two hypernyms the tree dropped, stone under moss and plant under Cat.
+   Sorted by parent, as export_table.py writes them, the moss edge comes first,
+   so reaching stone from animal takes the closure two passes. */
+const { WordTable, fingerprint } = await import(mod("word-source.js"));
+const W_PAR = [-1, 0, 1, 0, 3, 0];
+const W_NAMES = ["thing", "plant", "moss", "animal", "Cat", "stone"];
+/* Words by rank: cat animal rock plant moss tom tabby beast felid. tom and
+   tabby carry sense-tagged counts, so dominance decides them; felid and beast
+   carry none, so the early rule does. */
+const W_TABLE = {
+  format: 1,
+  nodes: W_PAR.length,
+  tree: fingerprint(W_PAR),
+  selection: {
+    min_zipf: 0,
+    min_dominance: 0.2,
+    max_rank: 2,
+    min_depth: 1,
+    target: 60,
+    zipf_floor: 0,
+    multiword: false,
+  },
+  zipf: [
+    [500, 1],
+    [450, 1],
+    [400, 1],
+    [350, 1],
+    [300, 1],
+    [250, 1],
+    [200, 1],
+    [100, 2],
+  ],
+  tagged: [0, 0, 0, 0, 0, 10, 10, 0, 0],
+  head: [3, 1, 2, 1, 5, 1],
+  // thing: tabby's untaken senses, felid early and not a member, beast both.
+  // Cat: tom and tabby a little, felid a member and not early, beast early
+  // and not a member.
+  word: [6, 8, 7, 3, 4, 5, 1, 0, 5, 6, 8, 7, 2],
+  flag: [0, 2, 3, 7, 7, 1, 7, 7, 1, 1, 1, 2, 3],
+  count: [9, 0, 0, 0, 0, 8, 0, 0, 2, 1, 0, 0, 0],
+  extra: [5, 2, 1, 4],
+  text: ["rock", "tom", "tabby", "beast", "felid"],
+  categories: {},
+};
+const wordTable = (/** @type {object} */ sel) =>
+  new WordTable({ ...W_TABLE, selection: { ...W_TABLE.selection, ...sel } }, W_PAR, W_NAMES);
+const said = (/** @type {{words: string[], zipf: number[]}} */ d) => d.words.join("|");
+
+const wt = wordTable({});
+check(wt.size === 9, `the table holds ${wt.size} words`);
+/* The label spells a word where the flag says so, lowercased as a word is;
+   the rest are spelt by the table, in word order. */
+check(wt.text(0) === "cat", `word 0 reads ${wt.text(0)}, not the Cat label lowercased`);
+check(wt.text(7) === "beast", `word 7 reads ${wt.text(7)}`);
+/* Below animal: Cat by the tree, plant and moss through the Cat edge, stone
+   through the moss edge on the second pass. animal itself is the root and is
+   left out at min_depth 1, tabby is 1 in 10 against a dominance of 0.2, felid
+   is not early and beast not a member. */
+const animal = wt.words(3);
+check(said(animal) === "cat|rock|plant|moss|tom", `animal reads ${said(animal)}`);
+check(animal.zipf.join("|") === "5|4|3.5|3|2.5", `animal's Zipf values are ${animal.zipf}`);
+check(wt.words(3) === animal, "a second ask for animal was worked out again");
+/* The Cat edge counts as a child, so at min_depth 2 plant goes with Cat. */
+const wtDeep = wordTable({ min_depth: 2 });
+check(
+  said(wtDeep.words(3)) === "rock|plant|moss|tom",
+  `animal at depth 2 reads ${said(wtDeep.words(3))}`,
+);
+check(said(wtDeep.words(4)) === "rock|moss|tom", `Cat at depth 2 reads ${said(wtDeep.words(4))}`);
+check(said(wt.words(5)) === "", `stone, holding only its own name, reads ${said(wt.words(5))}`);
+/* The slide: min_zipf keeps two, which meets a target of two and falls short
+   of three, where the commonest three are taken instead. */
+check(
+  said(wordTable({ min_zipf: 3.8, target: 2 }).words(3)) === "cat|rock",
+  "the target of 2 was not met from the common words",
+);
+check(
+  said(wordTable({ min_zipf: 3.8, target: 3 }).words(3)) === "cat|rock|plant",
+  "a target of 3 was not filled from below min_zipf",
+);
+/* The floor is the lower of itself and min_zipf, so it bites only under a
+   min_zipf above it, where the slide would otherwise reach tom. */
+check(
+  said(wordTable({ min_zipf: 3.8, zipf_floor: 2.8 }).words(3)) === "cat|rock|plant|moss",
+  "the Zipf floor let tom through",
+);
+/* A table is positional, so one written against another tree is refused
+   rather than read: stone moved under Cat. */
+let refused = "";
+try {
+  new WordTable(W_TABLE, [-1, 0, 1, 0, 3, 3], W_NAMES);
+} catch (e) {
+  refused = e.message;
+}
+check(
+  /another tree/.test(refused),
+  `a table over another tree was ${refused ? `refused: ${refused}` : "read"}`,
+);
+
 /* The category picker, which index-src turns on. Its one piece of arithmetic is
    where a category's words are: the index's own path with the last segment
    swapped. Get it wrong and it asks for a directory nobody has. */
@@ -1944,7 +2059,7 @@ const fetched = [];
 globalThis.fetch = async url => {
   fetched.push(url);
   if (!FILES.has(url)) throw new Error(`nothing at ${url}`);
-  return { json: async () => FILES.get(url) };
+  return { ok: true, json: async () => FILES.get(url) };
 };
 const settle = () => new Promise(r => setTimeout(r, 0));
 
@@ -2000,6 +2115,133 @@ check(picked.chain.length === 0, "the chain survived a change of category");
 picked.setAttribute("src", "/out/words-animal.json");
 await settle();
 check(cat.value === "animal", `a host-set src left the picker reading ${cat.value}`);
+
+/* `tree` adds one option ahead of the categories: the node a <hypernym-disc>
+   is on, its words taken from the table beside the index. The disc here is a
+   stand-in holding what the picker reads, over the word table's tree above. */
+FILES.set("/out/wordnet-words.json", W_TABLE);
+const hyper = document.createElement("hypernym-disc");
+hyper.setAttribute("id", "tree");
+hyper.data = { par: W_PAR, names: W_NAMES };
+hyper.index = 3;
+const moveTo = (/** @type {number} */ i) => {
+  hyper.index = i;
+  hyper.dispatchEvent({ type: "disc-zoom" });
+};
+const tableFetches = () => fetched.filter(u => u.endsWith("wordnet-words.json")).length;
+
+const follower = new WordDisc();
+follower.setAttribute("index-src", "/out/words-index.json");
+follower.setAttribute("tree", "tree");
+follower.connectedCallback();
+await settle();
+await settle();
+const fCat = follower._shadow.querySelector(".cat");
+const fOpt = () => fCat.children[0];
+check(
+  fCat.children.map(o => o.value).join("|") === "#tree|animal|bird",
+  `a picker naming a tree offers ${fCat.children.map(o => o.value)}`,
+);
+check(fCat.value === "animal", `the follow option was chosen before the reader chose it`);
+/* The table is not fetched until the disc is used, so the option names the
+   node and no count. */
+check(tableFetches() === 0, "the word table was fetched before anyone moved the disc");
+check(fOpt().textContent === "from the tree: animal", `the option reads "${fOpt().textContent}"`);
+moveTo(3);
+await settle();
+check(tableFetches() === 1, `the first move fetched the table ${tableFetches()} times`);
+check(
+  fOpt().textContent === "from the tree: animal (5)",
+  `with the table in, the option reads "${fOpt().textContent}"`,
+);
+
+/* Chosen, it draws the node, and follows the disc as it moves. */
+fCat.value = "#tree";
+fire(fCat, "change");
+await settle();
+check(said(follower) === "cat|rock|plant|moss|tom", `following animal drew ${said(follower)}`);
+check(fCat.value === "#tree", `following left the picker reading ${fCat.value}`);
+moveTo(4);
+await settle();
+check(said(follower) === "rock|plant|moss|tom", `the disc moved to Cat and drew ${said(follower)}`);
+check(
+  follower.stats.category === "Cat",
+  `following Cat drew the category ${follower.stats.category}`,
+);
+/* A node with nothing below leaves the element on what it had, and the
+   option on what is drawn. */
+moveTo(5);
+await settle();
+check(
+  said(follower) === "rock|plant|moss|tom",
+  `stone, which has no words, drew ${said(follower)}`,
+);
+check(
+  fOpt().textContent === "from the tree: Cat (4)",
+  `after stone the option reads "${fOpt().textContent}"`,
+);
+
+/* Another category ends following, and the disc moving no longer moves it. */
+fCat.value = "bird";
+fire(fCat, "change");
+await settle();
+await settle();
+moveTo(3);
+await settle();
+check(
+  said(follower) === BIRDS.join("|"),
+  `after choosing bird the disc moved it to ${said(follower)}`,
+);
+check(fCat.value === "bird", `after choosing bird the picker reads ${fCat.value}`);
+/* And a node with no words cannot be chosen at all. */
+moveTo(5);
+await settle();
+check(fOpt().disabled, "a node with no words below it can be chosen");
+moveTo(3);
+await settle();
+check(!fOpt().disabled, "a node with words below it cannot be chosen");
+
+/* A src the host sets is a category, so it ends following too. */
+fCat.value = "#tree";
+fire(fCat, "change");
+await settle();
+follower.setAttribute("src", "/out/words-animal.json");
+await settle();
+await settle();
+check(fCat.value === "animal", `a host src while following left the picker on ${fCat.value}`);
+moveTo(4);
+await settle();
+check(
+  follower.stats.category === "animal",
+  `a host src did not end following: ${follower.stats.category}`,
+);
+
+/* As are words the host hands over as data, which pass through no load. */
+fCat.value = "#tree";
+fire(fCat, "change");
+await settle();
+follower.data = { category: "bird", words: BIRDS, zipf: [3, 2, 1] };
+moveTo(4);
+await settle();
+check(fCat.value === "bird", `host data while following left the picker on ${fCat.value}`);
+check(
+  follower.stats.category === "bird",
+  `host data did not end following: ${follower.stats.category}`,
+);
+
+/* A second element following the same disc shares the fetch and the decode. */
+const second = new WordDisc();
+second.setAttribute("index-src", "/out/words-index.json");
+second.setAttribute("tree", "tree");
+second.connectedCallback();
+await settle();
+await settle();
+const sCat = second._shadow.querySelector(".cat");
+sCat.value = "#tree";
+fire(sCat, "change");
+await settle();
+check(said(second) === "rock|plant|moss|tom", `a second follower drew ${said(second)}`);
+check(tableFetches() === 1, `two followers fetched the table ${tableFetches()} times`);
 
 /* The stacked layout and back. The stage is observed because its box sizes the
    canvases and the frame because its shape decides the layout, and the two do not

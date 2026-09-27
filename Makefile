@@ -28,6 +28,10 @@ DATA := $(addprefix $(OUT)/,wordnet-tree.json wordnet-names.txt wordnet-glosses.
 # names rather than a directory, since web-dist stages everything side by side.
 WORDS := $(patsubst %,$(OUT)/words-%.json,$(CATEGORIES)) $(OUT)/words-index.json
 
+# The table word-source.js derives any synset's words from, for a page whose
+# picker follows a <hypernym-disc>.
+TABLE := $(OUT)/wordnet-words.json
+
 # Every module in web/, found by glob rather than named one by one, so a new
 # module reaches a consuming site by existing.
 MODULES := $(wildcard web/*.js)
@@ -39,7 +43,7 @@ EMBED := web/embed.html
 # The directory web-dist stages the modules and the data into. DIST= moves it.
 DIST ?= $(OUT)/web-dist
 
-.PHONY: all check clean list tree types words serve web web-dist
+.PHONY: all check clean list table tree types words serve web web-dist
 
 all: $(SVGS)
 
@@ -94,9 +98,18 @@ $(WORDS) &: tools/export_words.py $(SOURCES)
 
 words: $(WORDS)
 
+# Held to the category files as soon as it is written, since it reaches the
+# same 37 lists by another route. A table that disagrees is deleted, so the
+# next make writes it again rather than taking it as current.
+$(TABLE): tools/export_table.py tools/export_tree.py tools/check_words.mjs web/word-source.js $(SOURCES) $(DATA) $(WORDS)
+	@python tools/export_table.py --out $(OUT) $(if $(CONFIG),--config $(CONFIG))
+	@node tools/check_words.mjs $(OUT) || { rm -f $@; exit 1; }
+
+table: $(TABLE)
+
 # Serves web/ with a watcher that reloads the browser on save. ARGS= passes
 # flags through, as in `make serve ARGS='--port 9000 --open'`.
-serve: $(DATA) $(WORDS)
+serve: $(DATA) $(WORDS) $(TABLE)
 	@python tools/serve.py $(ARGS)
 
 # Everything a page needs to run any of the elements, flat in one directory, so
@@ -108,10 +121,10 @@ web-dist: $(DIST)
 # does not sit in there for good. web/. is a prerequisite because a directory's
 # timestamp moves when a file enters or leaves it, which is the only thing that
 # catches a deletion; the dot is what stops make reading the phony web above.
-$(DIST): $(MODULES) $(EMBED) $(DATA) $(WORDS) web/.
+$(DIST): $(MODULES) $(EMBED) $(DATA) $(WORDS) $(TABLE) web/.
 	@rm -rf $@
 	@mkdir -p $@
-	@cp $(MODULES) $(EMBED) $(DATA) $(WORDS) $@
+	@cp $(MODULES) $(EMBED) $(DATA) $(WORDS) $(TABLE) $@
 
 list:
 	@printf '%s\n' $(CATEGORIES)
