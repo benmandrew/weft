@@ -2589,26 +2589,19 @@ check(
   `the letter reads "${lGloss.innerHTML}"`,
 );
 
-/* A click on an arc drills to the letter it leaves; pointing never does, so a
-   hover cannot move what a click landed on. Calling show from #preview fails. */
+/* Pointing never drills and neither does a click, on an arc or a letter: only
+   show() moves the drill. Calling show from #preview fails. */
 check(ld.letter === "", `a hover drilled to ${ld.letter}`);
 fire(lOver, "click", ringPt(heavyEnd));
-check(ld.letter === "C", `clicking the C→T arc drilled to ${ld.letter}`);
-
-/* A letter only highlights, so clicking one leaves the drill where it was. */
+check(ld.letter === "", `clicking the C→T arc drilled to ${ld.letter}`);
 fire(lOver, "click", letterPt(tArc));
-check(ld.letter === "C", `clicking T's band drilled to ${ld.letter}`);
+check(ld.letter === "", `clicking T's band drilled to ${ld.letter}`);
 
-/* The long arcs are bowed through the middle, so the middle is asked before
-   the hub is. The stub answers no, which is what leaves the way out reachable
-   on the line below. */
+/* The long arcs are bowed through the middle, so a pointer there asks the
+   arcs rather than taking the hub as empty. */
 lOver.drew.inPath = 0;
 fire(lOver, "pointermove", { offsetX: lmid, offsetY: lmid });
 check(lOver.drew.inPath > 0, "the pointer in the middle never asked the arcs");
-/* And the hub is the way back out, which is the one thing clicking an arc
-   cannot do. */
-fire(lOver, "click", { offsetX: lmid, offsetY: lmid });
-check(ld.letter === "", `clicking the hub left the disc drilled into ${ld.letter}`);
 
 /* The hub, disc-label.js's halo and baseline rather than a second copy: nothing
    stroked, the ground copies of the ink's own call ringed at one radius about

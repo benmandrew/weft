@@ -26,7 +26,7 @@
  */
 import { hsv, TAU } from "./disc-colour.js";
 import { href, label as catLabel } from "./disc-index.js";
-import { band, baseline, fit, halo, HALO, HALO_MIN, HUB_DROP } from "./disc-label.js";
+import { band, baseline, fit, halo, HALO, HALO_MIN } from "./disc-label.js";
 import { watch } from "./disc-idle.js";
 import { ratio } from "./disc-ratio.js";
 import {
@@ -46,9 +46,6 @@ import {
 // marks it out, and the bottom rungs degrade a frame too small for the hub.
 const HUB_SIZES = [16, 14, 12, 10, 8],
   HUB_WEIGHT = 700;
-// The hub's "back" hint, and the room it takes from the name above it.
-const HINT_PX = 11,
-  HINT_H = 15;
 
 // The column beside the disc and its gutter, at the thresholds the other two
 // discs break to landscape at, so all three do it together.
@@ -107,8 +104,7 @@ TPL.innerHTML = `
   .pick select:focus-visible{outline:2px solid var(--_accent);outline-offset:-1px}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-  /* The arrow is the resting state; #onMove lifts it to a pointer over what
-     a click would take. */
+  /* The arrow throughout: pointing highlights and a click does nothing. */
   canvas.over{cursor:default;touch-action:none}
   :host([readout="off"]) .gloss{display:none}
   /* Held to a height whatever it holds, which stops the disc moving under the
@@ -150,11 +146,11 @@ class LetterDisc extends HTMLElement {
   #M = null;
   #L = null;
 
-  /* The letter a click has drilled into: what the hub names at rest and what
+  /* The letter show() has drilled into: what the hub names at rest and what
      the readout describes there. -1 is the whole category. */
   #letter = -1;
   /* What the pointer is on: 1 for a letter, 2 for an arc, 0 for nothing. A
-     hover moves this and never #letter, so it cannot shift a click. */
+     hover moves this and never #letter. */
   #kind = 0;
   #on = -1;
   #ready = false;
@@ -176,8 +172,6 @@ class LetterDisc extends HTMLElement {
   #toks = new Map();
   #fits = new Map();
   #bands = new Map();
-  #points = false;
-  #inHub = false;
   #box = null;
   #resized = -Infinity;
   #fitTimer = 0;
@@ -198,7 +192,6 @@ class LetterDisc extends HTMLElement {
   connectedCallback() {
     this.#over.addEventListener("pointermove", this.#onMove);
     this.#over.addEventListener("pointerleave", this.#onLeave);
-    this.#over.addEventListener("click", this.#onClick);
     this.#catEl.addEventListener("change", this.#onCat);
     this.#ro = new ResizeObserver(() => this.#fit());
     /* Watch the stage, whose box sizes the canvases, and the frame too: the
@@ -601,8 +594,7 @@ class LetterDisc extends HTMLElement {
      where the long arcs cross — so the text carries its own ground. */
   #hub(g) {
     const named = this.#named();
-    const way = this.#kind === 0 && this.#letter >= 0;
-    const { lines, lh, px } = this.#fitted(g, named.text, this.#rHub - 6 - (way ? HINT_H : 0));
+    const { lines, lh, px } = this.#fitted(g, named.text, this.#rHub - 6);
 
     g.textAlign = "center";
     // Alphabetic and placed by hand, because "middle" centres the em square
@@ -610,17 +602,10 @@ class LetterDisc extends HTMLElement {
     g.textBaseline = "alphabetic";
     // The band is off the face rather than the name, so all names share a
     // baseline.
-    const first = baseline(this.#cy, this.#band(g), lines.length, lh, way ? HINT_H / 2 : 0);
+    const first = baseline(this.#cy, this.#band(g), lines.length, lh);
     this.#ground(g, lines, first, lh, Math.max(HALO_MIN, px * HALO));
     g.fillStyle = named.ink;
     for (const [k, line] of lines.entries()) g.fillText(line, this.#cx, first + k * lh);
-
-    if (!way) return;
-    const y = first + (lines.length - 1) * lh + px * HUB_DROP + HINT_PX;
-    g.font = `${HUB_WEIGHT} ${HINT_PX}px ${this.#tok("--_mono", "monospace")}`;
-    this.#ground(g, ["↑ all"], y, 0, Math.max(HALO_MIN, HINT_PX * HALO));
-    g.fillStyle = this.#tok("--_accent", "#59b491");
-    g.fillText("↑ all", this.#cx, y);
   }
 
   /* disc-label.js's halo, against this element's own ground token. */
@@ -647,8 +632,7 @@ class LetterDisc extends HTMLElement {
 
      The hub is no bar. The long arcs are bowed through the middle and nothing
      is drawn behind the name, so an arc crossing the hub is as much under the
-     pointer as one anywhere else; the way out is what answers where no arc
-     does, which is where the hint that names it is drawn. */
+     pointer as one anywhere else. */
   #hit(px, py) {
     const dx = px - this.#cx,
       dy = py - this.#cy,
@@ -691,39 +675,15 @@ class LetterDisc extends HTMLElement {
   #onMove = ev => {
     const [px, py] = this.#at(ev);
     const [kind, on] = this.#hit(px, py);
-    // The hub answers last, so the cursor over an arc crossing it says what
-    // clicking would really do.
-    this.#inHub = kind === 0 && Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub;
-    this.#showCursor(kind);
     if (kind === this.#kind && on === this.#on) return;
     this.#preview(kind, on);
   };
   #onLeave = () => {
-    this.#inHub = false;
     this.#preview(0, -1);
-    this.#showCursor(0);
   };
-  #onClick = ev => {
-    const [px, py] = this.#at(ev);
-    const [kind, on] = this.#hit(px, py);
-    // A letter only highlights: the arcs are what a click follows.
-    if (kind === 2) return this.#drill(on);
-    // The hub is the way out, the one thing clicking an arc cannot do, and it
-    // is the empty middle rather than the whole circle.
-    if (Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub) this.show(-1);
-  };
-
-  /* The cursor says what a click would do, written only when it turns over,
-     since an inline style set per pointer event invalidates per event. */
-  #showCursor(kind) {
-    const on = this.#inHub ? this.#letter >= 0 : kind === 2;
-    if (on === this.#points) return;
-    this.#points = on;
-    this.#over.style.cursor = on ? "pointer" : "default";
-  }
 
   /* Everything pointing at a thing does and nothing else. It never touches
-     #letter, so a hover cannot move what a click drilled into. */
+     #letter, so a hover cannot move what show() drilled into. */
   #preview(kind, on) {
     this.#kind = kind;
     this.#on = on;
@@ -746,15 +706,8 @@ class LetterDisc extends HTMLElement {
     );
   }
 
-  /* A click on an arc drills, where a hover only highlights. It drills to the
-     letter the arc leaves, since that is where play sets out from. */
-  #drill(on) {
-    this.show(this.#L.edges[on].from);
-    this.#preview(2, on);
-  }
-
   /* The letter the disc is drilled into, as a letter or an index, and -1 for
-     the whole category. The public way in. */
+     the whole category. The only way in: a click on the disc does nothing. */
   show(letter) {
     if (!this.#L) return;
     const L = typeof letter === "string" ? letter.toLowerCase().charCodeAt(0) - 97 : letter;
