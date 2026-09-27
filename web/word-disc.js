@@ -106,12 +106,6 @@ const PULL = 0.32,
 // built and the fan on top is the thing to read. palette.Theme's edge_alpha.
 const EDGE_ALPHA = 0.2,
   BUNDLE_DIM = 0.22;
-/* Chords past which no bundle is drawn at all. The build is off this thread
-   and once per word set, so this is a guard against a word list nothing here
-   ships rather than a judgement about when a bundle stops reading as a picture:
-   it draws every category the tool has at no limit and refuses a list half
-   again as large. */
-const MAX_BUNDLE = 200000;
 
 // What the worker gets to answer in, timed from the first bundle the element
 // actually wants rather than from the worker's construction. It guards against
@@ -840,7 +834,7 @@ class WordDisc extends HTMLElement {
      bitmap goes on being blitted, stretched to the new radius, until a newer
      one arrives, which is why a rebuild has no blank in it. */
   #wantBundle() {
-    if (!this.#words.length || this.#chordCount > MAX_BUNDLE) return;
+    if (!this.#words.length) return;
     const px = square(this.#r, this.#dpr);
     const key = `${this.#gen}:${px}`;
     if (key === this.#cacheKey || key === this.#asked) return;

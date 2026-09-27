@@ -173,11 +173,19 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   `hint="off"` is read in JavaScript, not CSS, since it saves a solve.
 - The hub is one radius for what a click undoes and what a name must fit, so no
   part of a name sits where a click does nothing.
-- The resting bundle is a stroke per chord, since alpha must accumulate, held in
-  its own square capped at `MAX_PX`, derived from `MAX_AREA`, since a lower cap
-  blurs the bundle alone. It draws in `BANDS` of alternating direction with no
-  shuffle and no seed, so builds composite identically and a resize cannot
-  shimmer.
+- The resting bundle is a stroke per merged chord, since alpha must
+  accumulate, held in its own square capped at `MAX_PX`, derived from
+  `MAX_AREA`, since a lower cap blurs the bundle alone. It draws in `BANDS` of
+  alternating direction with no shuffle and no seed, so builds composite
+  identically and a resize cannot shimmer.
+- `points` merges words into `BINS` angle bins before drawing: a stroke joins
+  two bins and goes down at the alpha its `weight` in chords would stack to.
+  A letter's words ending in one letter are one contiguous run, all reaching
+  the whole of that letter's wedge, so the merge is exact to a bin. It bounds
+  the strokes whatever the word count, which is why there is no chord cap; a
+  cap also could not draw a dense set, whose per-chord alpha is under one
+  8-bit level. The bins are angular, so the picture does not move with the
+  square. `weight` subtracts the self-pairs, a word not following itself.
 - `word-bundle-worker.js` owns nothing between messages, so it is terminated on
   disconnect, unlike `disc-worker.js`. `#armFloor` starts the `WORKER_FLOOR`
   deadline at the first bundle wanted, since timing it from construction reads
@@ -360,10 +368,6 @@ no browser here to look in. `make serve` is where to find out.
 
 `<balance-flow>`'s column labels drop any slot shorter than the type, so a
 small box names only some letters.
-
-`<word-disc>` skips the chord bundle above `MAX_BUNDLE`, 200,000 chords.
-Following entity hands it 40,117 words and 74,068,990 chords, so a large node
-draws without the bundle.
 
 ## Checks
 

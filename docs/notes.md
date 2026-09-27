@@ -120,7 +120,13 @@ Two choices went against a smaller file. Word ids run in rank order rather than 
 
 In Node the table decodes in 6–15 ms and the slowest of the 37 categories answers in 2.2–2.9 ms, both as `node tools/check_words.mjs` prints them. The root, entity, answers in 9.1 ms. The page keeps the last 12 answers, since a reader zooming in and back out asks for the same few nodes.
 
-Following entity in headless Chrome on an Apple silicon Mac, `<word-disc>` applies the 40,117 words in 207 ms with one *long task* of 186 ms, and skips the chord bundle, since 74,068,990 chords is past `MAX_BUNDLE`'s 200,000. `<letter-disc>` applies the same list in 25 ms and `<balance-flow>` in 22 ms, 11.5 ms of it the solve, and neither raises a long task.
+Following entity in headless Chrome on an Apple silicon Mac, `<word-disc>` applies the 40,117 words in 207 ms with one *long task* of 186 ms. `<letter-disc>` applies the same list in 25 ms and `<balance-flow>` in 22 ms, 11.5 ms of it the solve, and neither raises a long task.
+
+### Merging the bundle
+
+Entity holds 74,068,990 chords, and until the merge `<word-disc>` refused any bundle over 200,000. More time would not have helped: `thin` gives each of entity's chords an alpha of 0.00044, which is 0.11 of one 8-bit level, so a canvas rounds every stroke to nothing. So `word-bundle.js` merges words into 2,400 angle bins and draws one stroke per pair of bins a wedge reaches, at the alpha its chords would stack to. A letter's words ending in one letter are a contiguous run of its wedge, which is what keeps the merge exact to a bin.
+
+The stroke count then follows the bins rather than the words. On a 1,536 px square, 2,400 bins are about two device pixels of rim, and the four largest nodes draw as 196,313 strokes at most (entity 192,843, abstraction 196,313, physical entity 179,580, object 173,951), against 15 to 74 million chords. In the same browser, entity's bundle lands 261 ms after the option is chosen, at a 1,280 px square, and hovering across it keeps to the frame rate with no long task. None of the 37 categories merges a single pair: animal's 1,582 words are the densest, and each still has a bin of its own, so every shipped category draws stroke for stroke as it did before.
 
 ## Corpus and data
 

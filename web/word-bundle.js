@@ -10,7 +10,7 @@
  * the build is once per word set rather than once per size.
  */
 
-import { bow } from "./disc-colour.js";
+import { bow, TAU } from "./disc-colour.js";
 import { MAX_AREA } from "./disc-ratio.js";
 
 // Where the ring sits in the square, short of the half so a stroke at the rim
@@ -85,18 +85,89 @@ export function thin(alpha, chords) {
    fine enough to interleave the busiest wedge. */
 export const BANDS = 64;
 
-/* Every chord, stroke by stroke. A stroke apiece rather than one path per
-   letter, since the alpha has to accumulate where curves overlap; batched into
-   one path a bundle composites once and reads flat. Each letter is cut into
-   BANDS slices sized to its own share, drawn alternately forwards and
-   backwards, so no letter sits over another throughout.
+/* The angle bins the bundle is merged over. Words nearer each other than a bin
+   put their chords on top of one another, so each bin is drawn as one point and
+   a stroke between two points stands for every chord between their words. A
+   letter's words ending in one letter are a contiguous run of its wedge and
+   all of them reach the whole of that letter's wedge, so the merge loses
+   nothing but where, inside a bin, a chord ends.
 
-   Nothing is shuffled and no seed is drawn: the order is fixed by the word set
-   alone, so two builds composite identically and a resize or a theme change
-   cannot make the picture shimmer. */
+   The count is angular rather than per pixel, so the picture is the same at
+   every square. 2,400 is about two device pixels of rim on a 1,536 square, and
+   bounds the strokes whatever the word count: entity's 40,117 words and 74
+   million chords draw as 192,843. Every one of the 37 categories, animal's
+   1,582 words included, puts each word in a bin of its own, so they draw
+   stroke for stroke as they did before the merge. */
+export const BINS = 2400;
+
+/** The words of one wedge in one bin. A source point also shares a last
+   letter, since that decides where its chords go.
+   @typedef {{ang: number, n: number, bin: number, tail: number}} Point */
+
+/** Every live letter's points: `to[L]` its wedge by bin, where chords arrive,
+   and `from[L]` the same split by last letter, where they leave. A point's
+   angle is the mean of its words', so a point of one word is that word.
+   @param {ArrayLike<number>} ang @param {number[][]} byHead
+   @param {ArrayLike<number>} tail @param {number[]} live
+   @returns {{from: Point[][], to: Point[][]}} */
+export function points(ang, byHead, tail, live) {
+  const width = TAU / BINS;
+  /** @type {Point[][]} */
+  const from = [];
+  /** @type {Point[][]} */
+  const to = [];
+  /** @type {(held: Map<number, Point>, key: number, i: number, bin: number) => void} */
+  const add = (held, key, i, bin) => {
+    const p = held.get(key);
+    if (p) {
+      p.ang += ang[i];
+      p.n++;
+    } else held.set(key, { ang: ang[i], n: 1, bin, tail: tail[i] });
+  };
+  for (const L of live) {
+    /** @type {Map<number, Point>} */
+    const dst = new Map();
+    /** @type {Map<number, Point>} */
+    const src = new Map();
+    for (const i of byHead[L]) {
+      const bin = Math.floor((((ang[i] % TAU) + TAU) % TAU) / width);
+      add(dst, bin, i, bin);
+      add(src, tail[i] * BINS + bin, i, bin);
+    }
+    // Summed above and divided once. Angles never wrap inside a bin, since the
+    // ring's seam is a bin boundary.
+    for (const p of dst.values()) p.ang /= p.n;
+    for (const p of src.values()) p.ang /= p.n;
+    to[L] = [...dst.values()];
+    from[L] = [...src.values()];
+  }
+  return { from, to };
+}
+
+/** How many chords a stroke from `s`, leaving letter `L`, to `t` stands for.
+   Every word of `s` reaches every word of `t`, less itself: where `s` hands
+   over its own letter, its words are among `t`'s when the two share a bin.
+   @param {number} L @param {Point} s @param {Point} t @returns {number} */
+export function weight(L, s, t) {
+  return s.n * t.n - (s.tail === L && s.bin === t.bin ? s.n : 0);
+}
+
+/* Every merged chord, stroke by stroke. A stroke apiece rather than one path
+   per letter, since the alpha has to accumulate where curves overlap; batched
+   into one path a bundle composites once and reads flat. A stroke standing for
+   `w` chords is laid at the alpha `w` strokes on top of each other would
+   reach, which is also what keeps a dense disc visible at all: entity's chord
+   alpha is a ninth of one 8-bit level, which a canvas rounds to nothing.
+
+   Each letter is cut into BANDS slices sized to its own share, drawn
+   alternately forwards and backwards, so no letter sits over another
+   throughout. Nothing is shuffled and no seed is drawn: the order is fixed by
+   the word set alone, so two builds composite identically and a resize or a
+   theme change cannot make the picture shimmer. */
 /** Everything a build needs, which is what crosses to the worker: `px` the
    square's side in device pixels, `ang` and `tail` indexed by word, `byHead[L]`
-   every word starting with L, and `colours` one per letter.
+   every word starting with L, `colours` one per letter, and `alpha` one
+   chord's.
    @typedef {object} Spec
    @property {number} px
    @property {Float64Array} ang
@@ -122,31 +193,39 @@ export function bundle(g, spec) {
   g.lineWidth = lineWidth;
   g.globalAlpha = alpha;
   let strokes = 0;
+  let laid = 1;
+  const { from, to } = points(ang, byHead, tail, live);
 
   /* A cursor per letter, carried across the bands: `at` is how far into the
-     letter's own words it has drawn and `to` how far into that word's
-     destinations, so a band resumes where the last one stopped and the chords
+     letter's own points it has drawn and `to` how far into that point's
+     destinations, so a band resumes where the last one stopped and the strokes
      are never listed out. */
   const cursors = live.map(L => {
     let n = 0;
-    for (const i of byHead[L]) n += byHead[tail[i]].length - (tail[i] === L ? 1 : 0);
+    for (const s of from[L]) for (const t of to[s.tail] ?? []) if (weight(L, s, t) > 0) n++;
     return { L, n, at: 0, to: 0, done: 0 };
   });
 
-  // One letter's next `want` chords, wherever the band before it left off.
+  // One letter's next `want` strokes, wherever the band before it left off.
   /** @type {(s: Cursor, want: number) => void} */
   const slice = (s, want) => {
-    const from = byHead[s.L];
-    while (want > 0 && s.at < from.length) {
-      const i = from[s.at];
-      const dst = byHead[tail[i]];
-      const x0 = c + Math.cos(ang[i]) * r,
-        y0 = c - Math.sin(ang[i]) * r;
+    const src = from[s.L];
+    while (want > 0 && s.at < src.length) {
+      const p = src[s.at];
+      const dst = to[p.tail] ?? [];
+      const x0 = c + Math.cos(p.ang) * r,
+        y0 = c - Math.sin(p.ang) * r;
       while (want > 0 && s.to < dst.length) {
-        const j = dst[s.to++];
-        if (j === i) continue;
+        const q = dst[s.to++];
+        const w = weight(s.L, p, q);
+        if (w <= 0) continue;
+        if (w !== laid) {
+          // One chord is the alpha as given, spelt out so it is not rounded.
+          g.globalAlpha = w === 1 ? alpha : 1 - (1 - alpha) ** w;
+          laid = w;
+        }
         g.beginPath();
-        curve(g, c, c, x0, y0, c + Math.cos(ang[j]) * r, c - Math.sin(ang[j]) * r, pull);
+        curve(g, c, c, x0, y0, c + Math.cos(q.ang) * r, c - Math.sin(q.ang) * r, pull);
         g.stroke();
         want--;
         s.done++;

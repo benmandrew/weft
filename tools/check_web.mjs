@@ -200,6 +200,8 @@ class Canvas extends El {
     // make a claim about z-order without rasterising; the same for fills.
     this.inks = [];
     this.nibs = [];
+    // And the alpha, which is how a merged stroke says what it stands for.
+    this.alphas = [];
     this.fills = [];
     // Where each path opened and where its far edge turned back. A band is one
     // path and its ribbon is written by shared code, so those two points are the
@@ -264,6 +266,7 @@ class Canvas extends El {
       stroke: () => {
         both("stroke");
         this.inks.push(this._g.strokeStyle);
+        this.alphas.push(this._g.globalAlpha);
         // The nib as well as the ink: a stroke at no width goes down invisibly
         // and counts the same, and a mitred join at a path that turns back on
         // itself is a spike rather than a corner.
@@ -1188,6 +1191,9 @@ const {
   KNEE,
   RING,
   MAX_PX,
+  BINS,
+  points: bundlePoints,
+  weight: bundleWeight,
   square,
   thin,
 } = await import(mod("word-bundle.js"));
@@ -1358,6 +1364,89 @@ for (let k = 1; k < inks.length; k++) if (inks[k] !== inks[k - 1]) changes++;
 check(
   changes <= BANDS * 26 && changes < inks.length / 4,
   `${changes} colour changes over ${inks.length} strokes, against a ceiling of ${BANDS * 26}`,
+);
+
+/* The merge. Both sets above give every word a bin of its own, so each drew
+   one stroke per chord. This one packs about three words to a bin, which is
+   where strokes stand for more than one chord. Four letters so every word is
+   distinct; the heads and tails cycle through all 26. */
+const MERGED = Array.from(
+  { length: 7000 },
+  (_, i) =>
+    ABC26[i % 26] +
+    ABC26[((i / 26) % 26) | 0] +
+    ABC26[((i / 676) % 26) | 0] +
+    ABC26[(i * 7 + 3) % 26],
+);
+const mergedL = wordLayout(MERGED);
+const mergedChords = wordChords(mergedL);
+const mergedPts = bundlePoints(mergedL.ang, mergedL.byHead, mergedL.tail, mergedL.live);
+/* Every chord is in some stroke once: dropping the self-pair correction
+   counts each word as following itself, and a bin split wrongly counts a pair
+   twice or not at all. */
+let weighed = 0,
+  pairsOn = 0,
+  heaviest = 0;
+for (const Lh of mergedL.live) {
+  for (const s of mergedPts.from[Lh]) {
+    for (const t of mergedPts.to[s.tail] ?? []) {
+      const w = bundleWeight(Lh, s, t);
+      if (w <= 0) continue;
+      weighed += w;
+      pairsOn++;
+      heaviest = Math.max(heaviest, w);
+    }
+  }
+}
+check(
+  weighed === mergedChords,
+  `the merged strokes stand for ${weighed} of ${mergedChords} chords`,
+);
+const mergedCanvas = new Canvas();
+const mergedAlpha = 0.01;
+const mergedStrokes = strokeBundle(mergedCanvas.getContext("2d"), {
+  px: 1536,
+  ang: mergedL.ang,
+  byHead: mergedL.byHead,
+  tail: mergedL.tail,
+  live: mergedL.live,
+  colours: Array.from({ length: 26 }, (_, i) => `L${i}`),
+  pull: 0.2,
+  alpha: mergedAlpha,
+  lineWidth: 1,
+});
+check(
+  mergedStrokes === pairsOn && mergedCanvas.drew.stroke === mergedStrokes,
+  `${mergedStrokes} strokes drawn for ${pairsOn} pairs of points`,
+);
+/* A merge that merges: a larger BINS, or bins keyed per word, leaves a stroke
+   per chord. */
+check(
+  mergedStrokes * 4 < mergedChords,
+  `${mergedChords} chords drew as ${mergedStrokes} strokes, which is barely a merge`,
+);
+/* A stroke of `w` chords goes down at the alpha `w` strokes would reach, so the
+   heaviest is the darkest and none is heavier than ink. */
+const mergedTop = mergedCanvas.alphas.reduce((a, b) => Math.max(a, b), 0);
+check(
+  Math.abs(mergedTop - (1 - (1 - mergedAlpha) ** heaviest)) < 1e-12,
+  `the heaviest stroke, ${heaviest} chords, went down at ${mergedTop}`,
+);
+check(
+  mergedCanvas.alphas.every(a => a >= mergedAlpha && a <= 1),
+  "a merged stroke went down lighter than one chord, or past full ink",
+);
+/* And a point is where its words are: never outside its bin. */
+const binWidth = (2 * Math.PI) / BINS;
+check(
+  mergedL.live.every(Lh =>
+    mergedPts.to[Lh].every(
+      p =>
+        Math.abs(p.ang - (p.bin + 0.5) * binWidth) <= binWidth / 2 + 1e-9 ||
+        Math.abs(p.ang + 2 * Math.PI - (p.bin + 0.5) * binWidth) <= binWidth / 2 + 1e-9,
+    ),
+  ),
+  "a point sits outside its bin",
 );
 
 /* And <word-disc> itself, built and driven: class-body faults surface only on
@@ -1857,13 +1946,22 @@ check(
 );
 disc.setAttribute("limit", "0");
 check(disc.stats.words === CROWD.length, `limit 0 drew ${disc.stats.words} of ${CROWD.length}`);
-/* A word set of well over 24,000 chords still gets a bundle, which is what
-   MAX_BUNDLE at 200,000 buys. */
+/* A word set of well over 24,000 chords gets a bundle. There is no cap on
+   chords: the merge bounds the strokes instead, and the disc of MERGED below
+   asserts it at nearly two million chords. */
 check(
   disc.stats.chords > 24000 && disc.stats.bundle,
   `900 words hold ${disc.stats.chords} chords and the bundle is ${disc.stats.bundle}`,
 );
 check(disc.stats.labelPx === 0, `900 words in a ${BOX}px square kept their labels`);
+/* And MERGED, 7,000 words and 1,884,616 chords, which the 200,000-chord cap
+   this replaced refused nine times over. */
+disc.data = { category: "merged", words: MERGED, zipf: MERGED.map(() => 1) };
+check(
+  disc.stats.chords > 1000000 && disc.stats.bundle,
+  `${disc.stats.words} words hold ${disc.stats.chords} chords and the bundle is ${disc.stats.bundle}`,
+);
+disc.data = { category: "crowd", words: CROWD, zipf: CROWD.map((_, i) => -i) };
 
 /* A resize does not rebuild it: a new radius inside the same size step is a
    scaled blit. The element is resized through its own observer, and the wait is
