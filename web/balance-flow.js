@@ -27,8 +27,8 @@
  * Properties: data, stats, step, frames. Methods: seek(k), play(), pause(),
  *             repaint().
  * Events: balance-step {step, frames, push, cost, from, to, shipped, need},
- *         balance-render {category, words, frames, need, paid, settled,
- *                         solveMs, drawMs}
+ *         balance-render {category, words, frames, reversed, need, paid,
+ *                         settled, solveMs, drawMs}
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
@@ -267,6 +267,9 @@ class BalanceFlow extends HTMLElement {
   /** @type {string[]} */ #words = [];
   /** @type {import("./word-longest.js").Trace | null} */ #trace = null;
   /** @type {import("./word-longest.js").Augmentation[]} */ #frames = [];
+  // How many of those recover a word, counted once with the scrub ticks rather
+  // than on every draw.
+  #reversed = 0;
 
   /* How many augmentations have run. The bands drawn are the ones below it, and
      the readout names the last of them, so the line and the marked band can
@@ -458,6 +461,7 @@ class BalanceFlow extends HTMLElement {
       category: this.#category,
       words: this.#words.length,
       frames: this.#frames.length,
+      reversed: this.#reversed,
       need: this.#trace?.need ?? 0,
       paid: this.#trace?.paid ?? 0,
       settled: this.#trace?.settled ?? false,
@@ -500,6 +504,7 @@ class BalanceFlow extends HTMLElement {
   #ticks() {
     const n = this.#frames.length;
     const at = n > 0 ? reverses(this.#frames) : [];
+    this.#reversed = at.length;
     this.#marksEl.replaceChildren(
       ...at.map(k => {
         const tick = document.createElement("span");
@@ -743,6 +748,7 @@ class BalanceFlow extends HTMLElement {
       category: this.#category,
       words: this.#words.length,
       frames: this.#frames.length,
+      reversed: this.#reversed,
       need: t.need,
       paid: t.paid,
       settled: t.settled,
