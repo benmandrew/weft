@@ -2589,14 +2589,15 @@ check(
   `the letter reads "${lGloss.innerHTML}"`,
 );
 
-/* A click drills and an arc drills to the letter it leaves; pointing never does,
-   so a hover cannot move what a click landed on. Calling show from #preview fails. */
+/* A click on an arc drills to the letter it leaves; pointing never does, so a
+   hover cannot move what a click landed on. Calling show from #preview fails. */
 check(ld.letter === "", `a hover drilled to ${ld.letter}`);
 fire(lOver, "click", ringPt(heavyEnd));
 check(ld.letter === "C", `clicking the C→T arc drilled to ${ld.letter}`);
 
+/* A letter only highlights, so clicking one leaves the drill where it was. */
 fire(lOver, "click", letterPt(tArc));
-check(ld.letter === "T", `clicking T's band drilled to ${ld.letter}`);
+check(ld.letter === "C", `clicking T's band drilled to ${ld.letter}`);
 
 /* The long arcs are bowed through the middle, so the middle is asked before
    the hub is. The stub answers no, which is what leaves the way out reachable

@@ -62,7 +62,7 @@ The line above the chain names the current word, marks its last letter and count
 
 The letters sit round a ring with an arc for every letter pair some word bridges, each as wide as the logarithm of its word count. Each letter's slot is split into the half words leave from and the half they arrive at, so an arc reads as directed.
 
-Pointing at an arc lights it, pointing at a letter lights every arc touching it, and the line under the disc names the words on the arc. Clicking a letter drills into it, and clicking an arc drills into the letter it leaves. Clicking the middle goes back out. It takes `src` and `index-src`.
+Pointing at an arc lights it, pointing at a letter lights every arc touching it, and the line under the disc names the words on the arc. Clicking an arc drills into the letter it leaves; clicking a letter does nothing. Clicking the middle goes back out. It takes `src` and `index-src`.
 
 ### `<balance-flow>`
 

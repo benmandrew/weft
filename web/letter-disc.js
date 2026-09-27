@@ -706,7 +706,8 @@ class LetterDisc extends HTMLElement {
   #onClick = ev => {
     const [px, py] = this.#at(ev);
     const [kind, on] = this.#hit(px, py);
-    if (kind) return this.#drill(kind, on);
+    // A letter only highlights: the arcs are what a click follows.
+    if (kind === 2) return this.#drill(on);
     // The hub is the way out, the one thing clicking an arc cannot do, and it
     // is the empty middle rather than the whole circle.
     if (Math.hypot(px - this.#cx, py - this.#cy) < this.#rHub) this.show(-1);
@@ -715,7 +716,7 @@ class LetterDisc extends HTMLElement {
   /* The cursor says what a click would do, written only when it turns over,
      since an inline style set per pointer event invalidates per event. */
   #showCursor(kind) {
-    const on = this.#inHub ? this.#letter >= 0 : kind > 0;
+    const on = this.#inHub ? this.#letter >= 0 : kind === 2;
     if (on === this.#points) return;
     this.#points = on;
     this.#over.style.cursor = on ? "pointer" : "default";
@@ -745,11 +746,11 @@ class LetterDisc extends HTMLElement {
     );
   }
 
-  /* A click drills, where a hover only highlights. An arc drills to the
-     letter it leaves, since that is where play sets out from. */
-  #drill(kind, on) {
-    this.show(kind === 2 ? this.#L.edges[on].from : on);
-    this.#preview(kind, on);
+  /* A click on an arc drills, where a hover only highlights. It drills to the
+     letter the arc leaves, since that is where play sets out from. */
+  #drill(on) {
+    this.show(this.#L.edges[on].from);
+    this.#preview(2, on);
   }
 
   /* The letter the disc is drilled into, as a letter or an index, and -1 for
