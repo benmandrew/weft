@@ -194,6 +194,12 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   look small to the collector: call it when a bundle is replaced, lands after
   the disc moved on, or on a word-set change. The bundle held over
   `disconnectedCallback` is kept on purpose, for reattachment.
+- `#measure()` estimates each word as the sum of its characters' advances, each
+  character measured once, and calls `measureText` only on the words within
+  `SLACK` of the widest estimate. Do not go back to measuring every word: on
+  entity that was 74 ms and left 28.5 MiB of Blink's shaped-text cache on the
+  heap until the disc next drew a smaller set. `SLACK` must stay above the
+  kerning spread, about 7.5% in Libertinus Serif.
 
 ### `<letter-disc>`
 

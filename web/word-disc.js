@@ -89,6 +89,14 @@ const MOVES_PAGE = 200,
 // needs is solved in word-layout.js, where it can be checked without a canvas.
 const WEDGE_PX = 15;
 
+// How far under the widest estimate a word may fall and still be measured
+// whole in #measure. Over entity in Libertinus Serif a word runs from 6.3%
+// narrower than its characters' sum (the fl ligature) to 1.7% wider (rv
+// kerned), so the widest word is always among those measured once this is
+// past 1 - 0.983/1.063, or 7.5%. At 10% entity measures 1 word whole, and none
+// of the 37 categories or of every 25th node measures more than 11.
+const SLACK = 0.1;
+
 // How far off a chord the pointer may sit and still be on it. The fan is drawn
 // a pixel wide, which is a line to look at rather than a line to hit.
 const HIT_PX = 5;
@@ -777,16 +785,47 @@ class WordDisc extends HTMLElement {
     this.#overlay();
   };
 
-  /* The widest word, in pixels per pixel of font size. Measured rather than
-     estimated from a character count, the labels being set in the host's
-     proportional face. Once per word set and per face. */
+  /* The widest word, in pixels per pixel of font size, the labels being set in
+     the host's proportional face. Once per word set and per face.
+
+     Measuring every word cost 74 ms of a 181 ms switch to entity's 40,117, so
+     each word is first estimated as the sum of its characters' advances, each
+     character measured once. Kerning and ligatures move a word off that sum,
+     so the words within SLACK of the widest estimate are measured whole, and
+     the answer is the widest of those. */
   #measure() {
     if (this.#widest || !this.#words.length) return;
     const g = this.#over.getContext("2d");
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.font = `100px ${this.#tok("--_font", "sans-serif")}`;
+    const words = this.#words;
+    // ASCII in a table, which covers every word an export writes, and anything
+    // a host hands over beyond it in a map.
+    const ascii = new Float64Array(128).fill(-1);
+    /** @type {Map<number, number>} */
+    const rest = new Map();
+    const est = new Float64Array(words.length);
+    let top = 0;
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      let sum = 0;
+      for (let k = 0; k < word.length; k++) {
+        const c = word.charCodeAt(k);
+        let a = c < 128 ? ascii[c] : (rest.get(c) ?? -1);
+        if (a < 0) {
+          a = g.measureText(word[k]).width;
+          if (c < 128) ascii[c] = a;
+          else rest.set(c, a);
+        }
+        sum += a;
+      }
+      est[i] = sum;
+      if (sum > top) top = sum;
+    }
+    const floor = top * (1 - SLACK);
     let w = 0;
-    for (const word of this.#words) w = Math.max(w, g.measureText(word).width);
+    for (let i = 0; i < words.length; i++)
+      if (est[i] >= floor) w = Math.max(w, g.measureText(words[i]).width);
     this.#widest = w / 100;
   }
 

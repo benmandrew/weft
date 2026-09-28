@@ -120,7 +120,11 @@ Two choices went against a smaller file. Word ids run in rank order rather than 
 
 In Node the table decodes in 6–15 ms and the slowest of the 37 categories answers in 2.2–2.9 ms, both as `node tools/check_words.mjs` prints them. The root, entity, answers in 9.1 ms. The page keeps the last 12 answers, since a reader zooming in and back out asks for the same few nodes.
 
-Following entity in headless Chrome on an Apple silicon Mac, `<word-disc>` applies the 40,117 words in 207 ms with one *long task* of 186 ms. `<letter-disc>` applies the same list in 25 ms and `<balance-flow>` in 22 ms, 11.5 ms of it the solve, and neither raises a long task.
+Following entity in headless Chrome on an Apple silicon Mac, with all three elements on the page, the switch took 181 ms at full speed and 763 ms under a 4× central processing unit (CPU) throttle. Of that, 74 ms and 297 ms went on `<word-disc>` calling `measureText` on each of the 40,117 words to find the widest, which sizes its label ring. The switch ran inside the handler that fired `disc-zoom`, so the disc's own redraw waited behind it, 172 ms to the next frame at 1× and 552 ms at 4×. `<letter-disc>` applies the same list in 25 ms and `<balance-flow>` in 22 ms, 11.5 ms of it the solve, and neither raises a *long task*.
+
+The measuring also cost memory. Blink caches the shaped text of every `measureText` call, and the 40,117 calls left 28.5 MiB of `blink::PlainTextNode` objects on the Oilpan heap. Blink's embedder heap went from 5.5 to 41 MiB and stayed there until `<word-disc>` next drew a smaller set, including while the disc was scrolled out of view.
+
+So `#measure()` now estimates each word as the sum of its characters' advances, measuring each character once, and calls `measureText` only on the words whose estimate is within `SLACK` of the widest. Kerning and ligatures move a word only a little. Over entity's words in Libertinus Serif a word runs from 6.3% narrower than its characters' sum (the fl ligature) to 1.7% wider (rv), so the widest word is certain to be measured once `SLACK` exceeds 1 − 0.983/1.063, about 7.5%. At the 10% it is set to, entity measures one word whole. Across the 37 categories and every 25th tree node, 352 word sets, none measured more than 11, and every result matched measuring every word. The embedder heap at entity is now 4.0 MiB, the same as plant.
 
 ### Merging the bundle
 
