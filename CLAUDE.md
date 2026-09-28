@@ -200,6 +200,12 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   entity that was 74 ms and left 28.5 MiB of Blink's shaped-text cache on the
   heap until the disc next drew a smaller set. `SLACK` must stay above the
   kerning spread, about 7.5% in Libertinus Serif.
+- `#draw` puts the opaque dots into one `Path2D` per colour, walked in ring order,
+  and skips a dot within a third of a pixel of the last one its path took. A
+  fill per dot was 31 ms of each entity draw. The dimmed dots of a game in play
+  keep a fill each, because overlapping they must darken each other. A single
+  path anti-aliases its edge once, so a packed ring comes out about a device
+  pixel thinner than the stacked fills made it.
 
 ### `<letter-disc>`
 

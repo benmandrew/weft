@@ -1043,33 +1043,68 @@ class WordDisc extends HTMLElement {
       g.stroke();
     }
 
-    // Four states, in the order they win: the word play stands on, a word
-    // already used, a move available, everything else.
-    for (let i = 0; i < this.#words.length; i++) {
-      const played = this.#chain.played(i),
-        can = live && this.#chain.legal(i);
-      let fill = this.#hue(this.#L.head[i]),
-        rad = 2,
-        alpha = 1;
-      if (i === end) {
-        fill = ink;
-        rad = 4;
-      } else if (played) {
-        fill = warn;
-        rad = 3;
-      } else if (can) {
-        rad = 3.4;
-      } else if (live) {
-        alpha = 0.3;
-        rad = 1.6;
+    // Four states, painted in the order they win: everything else, a move
+    // available, a word already used, the word play stands on. A dot per fill
+    // held entity's 40,117 words at 31 ms a draw, twice per category, so each
+    // opaque state is one path per colour, filled once. The dimmed dots keep a
+    // fill apiece: overlapping, each one darkens those beneath it, and one path
+    // would fill their union once at 0.3.
+    //
+    // Every dot sits on the one ring, so entity puts 16 of them on each pixel
+    // of it, and adding the arcs to the paths still cost 11 ms. Walked in ring
+    // order, an opaque dot within a third of a pixel of the last one its path
+    // took is skipped, which moves the edge of the band they make by under a
+    // hundredth of a pixel.
+    const hues = Array.from({ length: LETTERS }, (_, l) => this.#hue(l));
+    const lit = hues.map(() => new Path2D()),
+      used = new Path2D();
+    const litRad = live ? 3.4 : 2;
+    /** @param {Path2D | CanvasRenderingContext2D} p @param {number} i @param {number} rad */
+    const dot = (p, i, rad) => {
+      const x = this.#x(i),
+        y = this.#y(i);
+      p.moveTo(x + rad, y);
+      p.arc(x, y, rad, 0, TAU);
+    };
+    // The last angle each path took, the used dots' path after the letters'.
+    const last = new Float64Array(LETTERS + 1).fill(Number.POSITIVE_INFINITY);
+    const near = 1 / 3 / this.#r;
+    /** @param {number} slot @param {number} i */
+    const fresh = (slot, i) => {
+      const a = this.#L.ang[i];
+      if (Math.abs(a - last[slot]) < near) return false;
+      last[slot] = a;
+      return true;
+    };
+    g.globalAlpha = 0.3;
+    for (let k = 0; k < this.#words.length; k++) {
+      const i = this.#L.order[k];
+      if (i === end) continue;
+      if (this.#chain.played(i)) {
+        if (fresh(LETTERS, i)) dot(used, i, 3);
+      } else if (!live || this.#chain.legal(i)) {
+        const l = this.#L.head[i];
+        if (fresh(l, i)) dot(lit[l], i, litRad);
+      } else {
+        g.fillStyle = hues[this.#L.head[i]];
+        g.beginPath();
+        dot(g, i, 1.6);
+        g.fill();
       }
-      g.globalAlpha = alpha;
-      g.fillStyle = fill;
-      g.beginPath();
-      g.arc(this.#x(i), this.#y(i), rad, 0, TAU);
-      g.fill();
     }
     g.globalAlpha = 1;
+    for (let l = 0; l < LETTERS; l++) {
+      g.fillStyle = hues[l];
+      g.fill(lit[l]);
+    }
+    g.fillStyle = warn;
+    g.fill(used);
+    if (end >= 0) {
+      g.fillStyle = ink;
+      g.beginPath();
+      dot(g, end, 4);
+      g.fill();
+    }
 
     if (this.#labelPx) {
       g.font = `${this.#labelPx}px ${this.#tok("--_font", "sans-serif")}`;

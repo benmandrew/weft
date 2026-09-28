@@ -452,6 +452,15 @@ const zoom = to => {
   for (const m of [...MEDIA]) if (m.q.includes("dppx")) m.fn();
 };
 globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+// The dots are gathered into a path per colour; what a path holds is not
+// asserted, only how often the disc fills.
+globalThis.Path2D = class {
+  static arcs = 0;
+  moveTo() {}
+  arc() {
+    Path2D.arcs++;
+  }
+};
 globalThis.window = { devicePixelRatio: 2 };
 globalThis.self = globalThis;
 globalThis.postMessage = () => {};
@@ -2964,6 +2973,36 @@ check(
   lsolve(70).r > lsolve(80).r,
   `dropping the letters left the ring at ${lsolve(70).r} against ${lsolve(80).r} with them`,
 );
+
+/* The dots go down a path per colour rather than a fill apiece, and a dot on
+   top of the last one its path took is skipped, so 20,000 words on this ring
+   are drawn in a few dozen fills. Once a word is played the dimmed ones each
+   take a fill of their own, since overlapping they have to darken each other. */
+const packedWords = Array.from(
+  { length: 20000 },
+  (_, i) =>
+    String.fromCharCode(97 + (i % 26)) +
+    i.toString(36).replace(/\d/g, d => String.fromCharCode(103 + +d)),
+);
+const packed = new WordDisc();
+packed.connectedCallback();
+packed.data = { category: "crowd", words: packedWords, zipf: packedWords.map(() => 3) };
+for (const k of Object.keys(drew)) drew[k] = 0;
+Path2D.arcs = 0;
+packed.repaint();
+check(
+  Path2D.arcs > 0 && Path2D.arcs < packedWords.length / 2,
+  `${Path2D.arcs} dots went into paths for ${packedWords.length} words on one ring`,
+);
+check(drew.fill < 60, `${drew.fill} fills drew ${packedWords.length} words`);
+packed.play(0);
+for (const k of Object.keys(drew)) drew[k] = 0;
+packed.repaint();
+check(
+  drew.fill > packedWords.length / 2,
+  `${drew.fill} fills for ${packedWords.length} words, so the dimmed dots shared one`,
+);
+packed.disconnectedCallback();
 
 /* And <letter-disc> itself, driven: class-body faults surface only on
    construction, so the real element is built here. The points a pointer is moved
