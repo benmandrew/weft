@@ -12,6 +12,11 @@
  * moves the disc, until another category is chosen. The table is fetched the
  * first time the disc moves or the option is chosen, whichever comes first,
  * and once per page however many pickers follow the same disc.
+ *
+ * Hosts carrying the same `group` move together: a category the reader
+ * chooses in one picker is chosen in the others too, where they offer it. Only
+ * the reader's choice crosses; a src or data a host sets stays with its own
+ * element.
  */
 import { beside, href, label as catLabel } from "./disc-index.js";
 import { table } from "./word-source.js";
@@ -20,6 +25,10 @@ import { table } from "./word-source.js";
 // so this can never be one.
 export const FOLLOW = "#tree";
 export const TABLE = "wordnet-words.json";
+
+/** Every connected picker, which is where a group finds its members.
+   @type {Set<Picker>} */
+const LIVE = new Set();
 
 /** @typedef {{category: string, words: string[], zipf: number[]}} WordData */
 /** What the picker asks of the element it sits in.
@@ -78,11 +87,13 @@ export class Picker {
 
   connect() {
     this.#catEl.addEventListener("change", this.#onCat);
+    LIVE.add(this);
     this.index();
     this.tree();
   }
   disconnect() {
     this.#catEl.removeEventListener("change", this.#onCat);
+    LIVE.delete(this);
     this.#unbind();
   }
 
@@ -266,7 +277,8 @@ export class Picker {
     else setTimeout(run, 0);
   }
 
-  #onCat = () => {
+  /* Whatever the select now reads, made the element's category. */
+  #choose() {
     if (this.#catEl.value === FOLLOW) {
       this.#following = true;
       this.#soon();
@@ -274,7 +286,32 @@ export class Picker {
     }
     this.release();
     this.#to.open(href(this.#indexSrc, this.#catEl.value));
+  }
+
+  #onCat = () => {
+    this.#choose();
+    const group = this.#host.getAttribute("group");
+    if (!group) return;
+    for (const p of LIVE)
+      if (p !== this && p.#host.getAttribute("group") === group) p.#take(this.#catEl.value);
   };
+
+  /* A choice made in another picker of the group. Taken only where this one
+     offers it, since the follow option needs a disc and a category has to be
+     in this picker's index, and skipped where the element is on it already,
+     which would reload a file for nothing. Taking it goes through #choose
+     rather than #onCat, so a choice crosses the group once. */
+  /** @param {string} value */
+  #take(value) {
+    if (value === FOLLOW) {
+      if (!this.#opt || this.#opt.disabled || this.#following) return;
+    } else {
+      const offered = Array.prototype.some.call(this.#catEl.children, o => o.value === value);
+      if (!offered || (this.#catEl.value === value && !this.#following)) return;
+    }
+    this.#catEl.value = value;
+    this.#choose();
+  }
 
   #onZoom = () => {
     if (this.#following) {

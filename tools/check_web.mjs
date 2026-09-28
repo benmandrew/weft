@@ -2401,6 +2401,68 @@ await settle();
 check(said(second) === "rock|plant|moss|tom", `a second follower drew ${said(second)}`);
 check(tableFetches() === 1, `two followers fetched the table ${tableFetches()} times`);
 
+/* Hosts carrying the same group move together: the reader's choice in one
+   picker is made in the others, and not in a picker of another group. */
+follower.setAttribute("group", "g");
+second.setAttribute("group", "g");
+const third = new WordDisc();
+third.setAttribute("index-src", "/out/words-index.json");
+third.setAttribute("tree", "tree");
+third.setAttribute("group", "h");
+third.connectedCallback();
+await settle();
+await settle();
+const tCat = third._shadow.querySelector(".cat");
+const twice = async () => {
+  await settle();
+  await settle();
+};
+sCat.value = "animal";
+fire(sCat, "change");
+await twice();
+check(
+  follower.getAttribute("src") === "/out/words-animal.json" && fCat.value === "animal",
+  `animal chosen beside it left the grouped disc on ${follower.stats.category}, reading ${fCat.value}`,
+);
+fCat.value = "bird";
+fire(fCat, "change");
+await twice();
+check(second.stats.category === "bird", `bird chosen beside it left ${second.stats.category}`);
+check(
+  sCat.value === "bird",
+  `a grouped picker reads ${sCat.value} after bird was chosen beside it`,
+);
+check(
+  third.stats.category === "animal",
+  `a choice crossed into another group: ${third.stats.category}`,
+);
+check(tCat.value === "animal", `another group's picker reads ${tCat.value}`);
+/* The follow option too. */
+fCat.value = "#tree";
+fire(fCat, "change");
+await twice();
+check(
+  said(second) === "rock|plant|moss|tom" && sCat.value === "#tree",
+  `following chosen beside it drew ${said(second)}, reading ${sCat.value}`,
+);
+/* A host's src stays with its own element. */
+second.setAttribute("src", "/out/words-animal.json");
+await twice();
+check(second.stats.category === "animal", `the host's src left ${second.stats.category}`);
+check(fCat.value === "#tree", `a host src crossed the group, leaving ${fCat.value}`);
+check(said(follower) === "rock|plant|moss|tom", `a host src beside it drew ${said(follower)}`);
+/* And a picker already on the choice is left alone rather than reloaded. */
+const animalFetches = () => fetched.filter(u => u.endsWith("words-animal.json")).length;
+const before = animalFetches();
+fCat.value = "animal";
+fire(fCat, "change");
+await twice();
+check(
+  animalFetches() - before === 1,
+  `animal chosen beside a disc already on it was fetched ${animalFetches() - before} times`,
+);
+third.disconnectedCallback();
+
 /* The stacked layout and back. The stage is observed because its box sizes the
    canvases and the frame because its shape decides the layout, and the two do not
    move together: a frame dragged wider leaves the stage's box where it was, so an

@@ -264,6 +264,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   or `change` handler, so the disc paints first. Moves made while it waits
   coalesce into one follow of where the disc ended. A hidden page runs no
   frames, so it waits for a task alone. `check_web.mjs` tests all of this.
+- `group` is read when the reader chooses, never observed. `LIVE` holds the
+  connected pickers; a choice runs `#choose` here and `#take` in the rest, which
+  goes through `#choose` and not `#onCat`, so it crosses once. `#take` skips a
+  picker that does not offer the value or is on it already, and a `src` or
+  `data` from the host never crosses.
 
 ## `<word-run>`
 

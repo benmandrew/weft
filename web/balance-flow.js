@@ -25,6 +25,7 @@
  * Attributes: src, index-src (words-index.json, which turns the picker on),
  *             tree (the id of a <hypernym-disc>, whose node the picker then
  *             offers as a category; see disc-picker.js),
+ *             group (hosts sharing it take the reader's category together),
  *             readout="off", fit
  * Properties: data, stats, step, frames. Methods: seek(k), play(), pause(),
  *             repaint().
