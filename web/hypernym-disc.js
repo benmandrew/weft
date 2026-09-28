@@ -39,6 +39,7 @@
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
 import { Painter, TAU } from "./disc-paint.js";
+import { layoutTree } from "./disc-layout.js";
 import { Search } from "./disc-search.js";
 import { fit } from "./disc-label.js";
 import { ratio } from "./disc-ratio.js";
@@ -658,52 +659,18 @@ class HypernymDisc extends HTMLElement {
     if (this.#listEl.scrollHeight <= this.#listEl.clientHeight) this.#page();
   }
 
-  /* Every pass is one forward or one backward loop, because a parent's index
-     is always lower than its children's. */
+  /* disc-layout.js lays the tree out, so a copy drawn elsewhere is this one. */
   #build() {
     const t0 = performance.now();
-    const N = this.#par.length,
-      par = this.#par;
-    // Counting sort into one flat array. Children come out in index order
-    // within each parent, which is the order the angles below are laid in.
-    const off = new Int32Array(N + 1);
-    for (let i = 0; i < N; i++) if (par[i] >= 0) off[par[i] + 1]++;
-    for (let i = 0; i < N; i++) off[i + 1] += off[i];
-    const at = Int32Array.from(off.subarray(0, N));
-    const idx = new Int32Array(off[N]);
-    for (let i = 0; i < N; i++) if (par[i] >= 0) idx[at[par[i]]++] = i;
-    this.#kidOff = off;
-    this.#kidIdx = idx;
-
-    this.#depth = new Int16Array(N);
-    this.#leaves = new Int32Array(N);
-    for (let i = 0; i < N; i++) this.#depth[i] = par[i] < 0 ? 0 : this.#depth[par[i]] + 1;
-    for (let i = N - 1; i >= 0; i--) {
-      if (off[i] === off[i + 1]) this.#leaves[i] = 1;
-      if (par[i] >= 0) this.#leaves[par[i]] += this.#leaves[i];
-    }
-    this.#a0 = new Float64Array(N);
-    this.#a1 = new Float64Array(N);
-    this.#a1[0] = TAU;
-    for (let i = 0; i < N; i++) {
-      let a = this.#a0[i];
-      const w = (this.#a1[i] - this.#a0[i]) / this.#leaves[i];
-      for (let k = off[i]; k < off[i + 1]; k++) {
-        const c = idx[k];
-        this.#a0[c] = a;
-        a += this.#leaves[c] * w;
-        this.#a1[c] = a;
-      }
-    }
-    this.#maxDepth = 0;
-    for (let i = 0; i < N; i++)
-      if (this.#depth[i] > this.#maxDepth) this.#maxDepth = this.#depth[i];
-    const rings = Array.from({ length: this.#maxDepth + 1 }, () => []);
-    for (let i = 0; i < N; i++) rings[this.#depth[i]].push(i);
-    for (const arr of rings) arr.sort((x, y) => this.#a0[x] - this.#a0[y]);
-    // Typed, because these cross to the worker whole and a nested plain array
-    // of numbers is the slowest thing structured clone can be handed.
-    this.#byDepth = rings.map(arr => Int32Array.from(arr));
+    const t = layoutTree(this.#par);
+    this.#kidOff = t.kidOff;
+    this.#kidIdx = t.kidIdx;
+    this.#depth = t.depth;
+    this.#leaves = t.leaves;
+    this.#a0 = t.a0;
+    this.#a1 = t.a1;
+    this.#maxDepth = t.maxDepth;
+    this.#byDepth = t.byDepth;
     this.#layoutKey++;
     this.#buildMs = performance.now() - t0;
   }

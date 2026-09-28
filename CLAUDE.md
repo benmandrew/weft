@@ -155,6 +155,12 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   the base canvas, which transfers once, and the element must not size that
   canvas. The main-thread fallback calls the same `disc-paint.js` class, so it
   cannot drift.
+- `layoutTree` (`disc-layout.js`) and `tints`, `merge`, `ramp` and `rampStep`
+  (`disc-paint.js`) are public: a static SVG banner of the disc, drawn outside
+  this repo, imports them from `web-dist` so it cannot drift from the element
+  either. Keep their signatures, or change the caller with them. `merge` takes
+  the hue step (`hueQ`) and the hairline rule (`hair`) as options, because a
+  file sized in pixels wants both set differently from a canvas.
 - Never batch the draw into one path per colour: 145 fills against 82,115 is
   eight times slower, since each colour's path scatters across the disc and the
   rasteriser covers its bounding box. A merged piece takes the circular mean of
@@ -480,6 +486,7 @@ CLI is not in the flake.
     docs/notes.md                  the algorithms, the reasoning, the figures
 
     web/hypernym-disc.js           the nested-arc element
+    web/disc-layout.js             its tree's angles and rings, no DOM
     web/disc-paint.js              the draw pipeline, no DOM
     web/disc-search.js             ranked name lookup, no DOM
     web/disc-worker.js             hosts it on its own thread
@@ -498,7 +505,7 @@ CLI is not in the flake.
     web/balance-flow.js            the transshipment as it runs
     web/balance-bank.js            its two columns and their bands, no DOM
     web/balance.html               its harness
-    web/disc-colour.js             TAU, hsv and the chord cubic, all three discs
+    web/disc-colour.js             TAU, hsv(Bytes) and the chord cubic, all discs
     web/disc-label.js              the hub's text: fit, band, baseline, halo
     web/disc-index.js              where a category's words sit beside the index
     web/disc-ratio.js              the backing-store ratio and its budget, no DOM

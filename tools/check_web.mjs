@@ -476,6 +476,7 @@ const MODULES = [
   "disc-idle.js",
   "disc-index.js",
   "disc-label.js",
+  "disc-layout.js",
   "disc-lines.js",
   "disc-paint.js",
   "disc-picker.js",
@@ -506,7 +507,9 @@ if (problems.length) {
   process.exit(1);
 }
 
-const { Painter, TAU } = await import(mod("disc-paint.js"));
+const { Painter, TAU, merge, tints, rampStep, RAMP_STEPS } = await import(mod("disc-paint.js"));
+const { layoutTree } = await import(mod("disc-layout.js"));
+const { hsv, hsvBytes } = await import(mod("disc-colour.js"));
 
 /* Four subtrees of 2,000 leaves, which at the geometry below puts the fringe
    wedges at about a quarter of a pixel, so the merge is the path under test. */
@@ -517,7 +520,8 @@ for (let b = 0; b < BRANCHES; b++) par.push(0);
 for (let b = 0; b < BRANCHES; b++) for (let k = 0; k < LEAVES; k++) par.push(1 + b);
 const N = par.length;
 
-/* The element's #build, which the painter is fed the output of. */
+/* The layout written out longhand, which disc-layout.js has to agree with: it
+   is what the element and the site's banner both draw from. */
 const kids = Array.from({ length: N }, () => []);
 for (let i = 0; i < N; i++) if (par[i] >= 0) kids[par[i]].push(i);
 const depth = new Int16Array(N),
@@ -546,6 +550,54 @@ for (let i = 0; i < N; i++) rings[depth[i]].push(i);
 for (const r of rings) r.sort((x, y) => a0[x] - a0[y]);
 const byDepth = rings.map(r => Int32Array.from(r));
 const layout = { par: Int32Array.from(par), depth, a0, a1, byDepth, maxDepth };
+{
+  const t = layoutTree(par);
+  const same = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
+  check(
+    same(t.depth, depth) &&
+      same(t.leaves, leaves) &&
+      same(t.a0, a0) &&
+      same(t.a1, a1) &&
+      t.maxDepth === maxDepth &&
+      t.byDepth.length === byDepth.length &&
+      t.byDepth.every((r, d) => same(r, byDepth[d])),
+    "layoutTree does not lay the tree out as the longhand does",
+  );
+  check(
+    t.kidOff[1] - t.kidOff[0] === BRANCHES && t.kidIdx[0] === 1,
+    `the root has ${t.kidOff[1] - t.kidOff[0]} children, the first ${t.kidIdx[0]}`,
+  );
+}
+/* One conversion behind both notations, so a file writing hex and a canvas
+   taking rgb() cannot disagree about a colour. */
+check(
+  hsv(0.3, 0.55, 0.88) === `rgb(${hsvBytes(0.3, 0.55, 0.88).join(",")})`,
+  `hsv and hsvBytes disagree: ${hsv(0.3, 0.55, 0.88)} against ${hsvBytes(0.3, 0.55, 0.88)}`,
+);
+/* merge's hairline is the caller's to decide: a file sized in pixels asks by
+   length, and asked for none, gets none. */
+{
+  const tn = tints(layout, 2);
+  const at = hair => {
+    const m = merge(layout, tn, {
+      root: 0,
+      r0: 50,
+      rw: 40,
+      rings: maxDepth + 1,
+      hueQ: 360,
+      dense: true,
+      ...(hair ? { hair } : {}),
+    });
+    return m.w.reduce((a, b) => a + b, 0);
+  };
+  check(at(null) === 1 + BRANCHES, `by default ${at(null)} wedges got a hairline`);
+  check(at(() => false) === 0, "a hair rule refusing every wedge left hairlines");
+  check(rampStep(0, 64) === RAMP_STEPS, "a whole wedge was not given the top rung");
+  check(
+    rampStep(64, 64) === RAMP_STEPS && rampStep(1, 64) === 0,
+    "the ramp is not log over 1..peak",
+  );
+}
 
 const DPR = 2,
   R0 = BOX * 0.075,

@@ -10,6 +10,11 @@
  *
  * `rings` is how many depths below the root are drawn; what is cut off is one
  * zoom away.
+ *
+ * The steps are exported as well as run here, so a copy of the disc drawn
+ * somewhere a canvas is not (the site renders one to an SVG banner) takes the
+ * same hues, runs and ramp: `tints`, then `merge`, then `ramp` and `rampStep`
+ * for each piece's value.
  */
 // TAU is re-exported so this module's import sites stay as they were.
 import { hsv, TAU } from "./disc-colour.js";
@@ -19,8 +24,169 @@ export const MERGE_PX = 1;
 // Value steps the density ramp is quantised to, and how far it dips at its
 // sparse end. Quantised so the ramped colours stay interned rather than built
 // per piece.
-const RAMP_STEPS = 24;
+export const RAMP_STEPS = 24;
 const RAMP_FLOOR = 0.62;
+// A whole wedge narrower than this many radians gets no hairline, since one
+// down both its edges would cover most of it.
+const HAIR_RAD = 0.012;
+
+/** Each node's hue, as a turn and as a unit vector. Above hue-depth a node
+   takes its own angle; below it inherits, so each branch reads as one colour
+   family. Merged pieces average their members' hues, and hue is an angle, so
+   the vectors are what get summed. Radius plays no part, so these survive a
+   resize and a zoom.
+   @param {{par: ArrayLike<number>, depth: ArrayLike<number>,
+     a0: Float64Array, a1: Float64Array}} t
+   @param {number} hd
+   @returns {Tints} */
+export function tints(t, hd) {
+  const N = t.depth.length;
+  const tint = new Float64Array(N);
+  for (let i = 0; i < N; i++)
+    tint[i] = t.depth[i] <= hd ? (t.a0[i] + t.a1[i]) / 2 / TAU : tint[t.par[i]];
+  const tcos = new Float64Array(N);
+  const tsin = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    tcos[i] = Math.cos(tint[i] * TAU);
+    tsin[i] = Math.sin(tint[i] * TAU);
+  }
+  return { tint, tcos, tsin };
+}
+
+/** A hue rounded to one of `q` slices of the turn. A blended hue is a
+   continuous value and a colour a string to parse, so the canvas interns them.
+   @param {number} h @param {number} q @returns {number} */
+export function quantise(h, q) {
+  const w = ((h % 1) + 1) % 1;
+  return Math.round(w * q) / q;
+}
+
+/** A piece's value: the ring's own, dimmed with depth so the fringe sits behind
+   the trunk, then scaled by its density rung, RAMP_STEPS meaning fully covered.
+   @param {number} rel ring below the root @param {number} step
+   @param {number} val @returns {number} */
+export function ramp(rel, step, val) {
+  const base = Math.max(0.22, val * (1 - rel * 0.035));
+  return Math.min(1, base * (RAMP_FLOOR + ((1 - RAMP_FLOOR) * step) / RAMP_STEPS));
+}
+
+/** The density rung for a piece `count` wedges fell in. Log, because counts run
+   1 to 64 and a linear ramp would spend most of its range on the sparse end. A
+   count of 0 means a whole wedge, not an empty one, so it takes the top rung.
+   @param {number} count @param {number} peak the largest count of the frame
+   @returns {number} */
+export function rampStep(count, peak) {
+  const lg = Math.log(peak);
+  return count && lg > 0 ? Math.round((RAMP_STEPS * Math.log(count)) / lg) : RAMP_STEPS;
+}
+
+/** Adjacent wedges thinner than a pixel are one shape to the rasteriser,
+   which below about 0.1 px draws them as nothing at all, so they are drawn as
+   one and take the mean of their hues. Blending rather than matching on
+   colour is what lets a run merge above hue-depth 2, where every node takes
+   its own angle. A gap between subtrees breaks every run, which keeps the
+   fringe reading as many nodes. `dense` then cuts a run at pixel boundaries
+   and each piece keeps its own count and its own blend. Runs are found off
+   `byDepth`, already sorted by start angle.
+
+   `hueQ` is how many slices the hue is rounded to, and `hair` whether a whole
+   wedge gets a hairline, given its angle in the view and its outer radius; by
+   default one wider than HAIR_RAD does. A canvas wants a slice a pixel wide at
+   the fringe; a file, where each colour is a fill attribute, wants them wider.
+   @param {MergeTree} t @param {Tints} tn @param {MergeOptions} o
+   @returns {Merged} */
+export function merge(t, tn, o) {
+  const { root, r0, rw, rings, hueQ, dense } = o;
+  const hair = o.hair ?? (span => span > HAIR_RAD);
+  const base = t.depth[root];
+  const sc = TAU / (t.a1[root] - t.a0[root]);
+  /** @type {(i: number) => boolean} */
+  const inView = i => {
+    const rel = t.depth[i] - base;
+    return rel >= 0 && rel < rings && t.a0[i] >= t.a0[root] - 1e-9 && t.a1[i] <= t.a1[root] + 1e-9;
+  };
+  /** @type {(i: number) => number} */
+  const hue = i => quantise(tn.tint[i], hueQ);
+  /** @type {Merged} */
+  const out = { s0: [], s1: [], d: [], h: [], n: [], w: [], peak: 1 };
+  const last = Math.min(t.maxDepth, base + rings - 1);
+  for (let d = base; d <= last; d++) {
+    const arr = t.byDepth[d];
+    const rel = d - base;
+    const r1 = r0 + (rel + 1) * rw;
+    /** @type {(k: number) => boolean} */
+    const thin = k => (t.a1[k] - t.a0[k]) * sc * r1 < MERGE_PX;
+    // Hue wraps, so the mean of 0.99 and 0.01 has to come out at 0 rather
+    // than 0.5, which is why the members are summed as vectors.
+    /** @type {(lo: number, hi: number) => number} */
+    const blend = (lo, hi) => {
+      if (lo === hi) return hue(arr[lo]);
+      let cx = 0,
+        cy = 0;
+      for (let k = lo; k <= hi; k++) {
+        cx += tn.tcos[arr[k]];
+        cy += tn.tsin[arr[k]];
+      }
+      return quantise(Math.atan2(cy, cx) / TAU, hueQ);
+    };
+    let i = 0;
+    while (i < arr.length) {
+      if (!inView(arr[i])) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (
+        thin(arr[j]) &&
+        j + 1 < arr.length &&
+        inView(arr[j + 1]) &&
+        thin(arr[j + 1]) &&
+        Math.abs(t.a0[arr[j + 1]] - t.a1[arr[j]]) < 1e-9
+      )
+        j++;
+      const from = t.a0[arr[i]],
+        to = t.a1[arr[j]];
+      if (j === i || !dense) {
+        // A wedge that stayed whole is fully covered, and only it is wide
+        // enough to earn a hairline.
+        out.s0.push(from);
+        out.s1.push(to);
+        out.d.push(rel);
+        out.h.push(blend(i, j));
+        out.n.push(0);
+        out.w.push(j === i && hair((to - from) * sc, r1) ? 1 : 0);
+      } else {
+        const pieces = Math.max(1, Math.round(((to - from) * sc * r1) / MERGE_PX));
+        const width = (to - from) / pieces;
+        let m = i;
+        for (let q = 0; q < pieces; q++) {
+          const a = from + q * width,
+            b = a + width;
+          let count = 0,
+            cx = 0,
+            cy = 0;
+          while (m <= j && (t.a0[arr[m]] + t.a1[arr[m]]) / 2 < b) {
+            cx += tn.tcos[arr[m]];
+            cy += tn.tsin[arr[m]];
+            count++;
+            m++;
+          }
+          if (count > out.peak) out.peak = count;
+          out.s0.push(a);
+          out.s1.push(b);
+          out.d.push(rel);
+          // A piece no midpoint fell in lies under one wedge, so it takes
+          // that wedge's hue rather than the mean of nothing.
+          out.h.push(count ? quantise(Math.atan2(cy, cx) / TAU, hueQ) : hue(arr[Math.min(m, j)]));
+          out.n.push(count || 1);
+          out.w.push(0);
+        }
+      }
+      i = j + 1;
+    }
+  }
+  return out;
+}
 
 /** The tree, flat. Every parent's index is below all of its children's, which
    is what lets `#retint` and `#remerge` be forward loops rather than
@@ -60,6 +226,37 @@ const RAMP_FLOOR = 0.62;
    @property {number} segments
    @property {number} colours
    @property {string} mode */
+
+/** @typedef {{tint: Float64Array, tcos: Float64Array, tsin: Float64Array}} Tints */
+
+/** What `merge` reads of the tree.
+   @typedef {object} MergeTree
+   @property {ArrayLike<number>} depth
+   @property {Float64Array} a0
+   @property {Float64Array} a1
+   @property {ArrayLike<number>[]} byDepth
+   @property {number} maxDepth */
+
+/** @typedef {object} MergeOptions
+   @property {number} root the node the view is zoomed to
+   @property {number} r0 the hub's radius
+   @property {number} rw one ring's width
+   @property {number} rings how many rings below the root are drawn
+   @property {number} hueQ slices of the turn the hue is rounded to
+   @property {boolean} dense cut runs into counted pieces
+   @property {(span: number, r1: number) => boolean} [hair] */
+
+/** One entry per piece: its angles, its ring below the root, its hue, how many
+   wedges fell in it (0 for a whole wedge) and whether it earns a hairline.
+   `peak` is the largest count, which `rampStep` reads.
+   @typedef {object} Merged
+   @property {number[]} s0
+   @property {number[]} s1
+   @property {number[]} d
+   @property {number[]} h
+   @property {number[]} n
+   @property {number[]} w
+   @property {number} peak */
 
 /** The merged runs, one entry per piece drawn: [s0, s1] its angles, `d` its
    ring, `f` its colour and `w` whether it earns a hairline.
@@ -131,43 +328,23 @@ export class Painter {
     }
   }
 
-  /* Above hue-depth a node takes its own angle as a hue; below it inherits, so
-     each branch reads as one colour family. Every pass is one forward loop,
-     because a parent's index is always lower than its children's. */
   #retint() {
     if (!this.#n) return;
-    const N = this.#n;
-    this.#tint = new Float64Array(N);
-    for (let i = 0; i < N; i++)
-      this.#tint[i] =
-        this.#depth[i] <= this.#hd
-          ? (this.#a0[i] + this.#a1[i]) / 2 / TAU
-          : this.#tint[this.#par[i]];
-    // Merged pieces average their members' hues, and hue is an angle, so each
-    // node's is kept as a vector rather than turned into one per piece per
-    // frame. Radius plays no part, so this survives a resize and a zoom.
-    this.#tcos = new Float64Array(N);
-    this.#tsin = new Float64Array(N);
-    for (let i = 0; i < N; i++) {
-      this.#tcos[i] = Math.cos(this.#tint[i] * TAU);
-      this.#tsin[i] = Math.sin(this.#tint[i] * TAU);
-    }
+    ({
+      tint: this.#tint,
+      tcos: this.#tcos,
+      tsin: this.#tsin,
+    } = tints({ par: this.#par, depth: this.#depth, a0: this.#a0, a1: this.#a1 }, this.#hd));
     this.#tintKey++;
   }
 
-  /* A blended hue is a continuous value, and a colour is a string the canvas
-     has to parse, so hues are rounded to a slice one pixel wide at the fringe
-     and interned. That is the same threshold that decides two wedges cannot be
-     told apart: neighbouring slices differ by 0.16°, and a wedge wide enough to
-     read as its own arc cannot collide with its neighbour at that step. */
-  /** @param {number} h @returns {number} */
-  #quant(h) {
-    const w = ((h % 1) + 1) % 1;
-    return Math.round(w * this.#hueQ) / this.#hueQ;
-  }
+  /* Hues are rounded to a slice one pixel wide at the fringe. That is the same
+     threshold that decides two wedges cannot be told apart: neighbouring slices
+     differ by 0.16°, and a wedge wide enough to read as its own arc cannot
+     collide with its neighbour at that step. */
   /** @param {number} i @returns {number} */
   #hue(i) {
-    return this.#quant(this.#tint[i]);
+    return quantise(this.#tint[i], this.#hueQ);
   }
 
   /* A colour is a string the canvas has to parse, so they are interned rather
@@ -179,10 +356,8 @@ export class Painter {
     const key = tint + "|" + rel + "|" + step;
     let id = this.#paletteKey.get(key);
     if (id === undefined) {
-      const base = Math.max(0.22, this.#val * (1 - rel * 0.035));
-      const v = base * (RAMP_FLOOR + ((1 - RAMP_FLOOR) * step) / RAMP_STEPS);
       id = this.#palette.length;
-      this.#palette.push(hsv(tint, this.#sat, Math.min(1, v)));
+      this.#palette.push(hsv(tint, this.#sat, ramp(rel, step, this.#val)));
       this.#paletteKey.set(key, id);
     }
     return id;
@@ -201,122 +376,39 @@ export class Painter {
       this.#fillId[i] = this.#colourId(this.#hue(i), this.#depth[i] - base, RAMP_STEPS);
   }
 
-  /* Adjacent wedges thinner than a pixel are one shape to the rasteriser,
-     which below about 0.1 px draws them as nothing at all, so they are drawn as
-     one and take the mean of their hues. Blending rather than matching on
-     colour is what lets a run merge above hue-depth 2, where every node takes
-     its own angle. A gap between subtrees breaks every run, which keeps the
-     fringe reading as many nodes. In density mode a run is then cut at pixel
-     boundaries and each piece keeps its own count and its own blend. Runs are
-     found off `byDepth`, already sorted by start angle for hit testing. */
+  /* The runs, from `merge`, each given an interned colour. */
   #remerge() {
     if (this.#mode === "off") {
       this.#seg = null;
       return;
     }
-    const dense = this.#mode === "density";
-    const base = this.#depth[this.#root];
-    const sc = TAU / (this.#a1[this.#root] - this.#a0[this.#root]);
-    const s0 = [],
-      s1 = [],
-      sd = [],
-      st = [],
-      sn = [],
-      sw = [];
-    let peak = 1;
-    const last = Math.min(this.#maxDepth, base + this.#rings - 1);
-    for (let d = base; d <= last; d++) {
-      const arr = this.#byDepth[d];
-      const rel = d - base;
-      const r1 = this.#r0 + (rel + 1) * this.#rw;
-      /** @type {(k: number) => boolean} */
-      const thin = k => (this.#a1[k] - this.#a0[k]) * sc * r1 < MERGE_PX;
-      // Hue wraps, so the mean of 0.99 and 0.01 has to come out at 0 rather
-      // than 0.5, which is why the members are summed as vectors.
-      /** @type {(lo: number, hi: number) => number} */
-      const blend = (lo, hi) => {
-        if (lo === hi) return this.#hue(arr[lo]);
-        let cx = 0,
-          cy = 0;
-        for (let k = lo; k <= hi; k++) {
-          cx += this.#tcos[arr[k]];
-          cy += this.#tsin[arr[k]];
-        }
-        return this.#quant(Math.atan2(cy, cx) / TAU);
-      };
-      let i = 0;
-      while (i < arr.length) {
-        if (!this.#inView(arr[i])) {
-          i++;
-          continue;
-        }
-        let j = i;
-        while (
-          thin(arr[j]) &&
-          j + 1 < arr.length &&
-          this.#inView(arr[j + 1]) &&
-          thin(arr[j + 1]) &&
-          Math.abs(this.#a0[arr[j + 1]] - this.#a1[arr[j]]) < 1e-9
-        )
-          j++;
-        const from = this.#a0[arr[i]],
-          to = this.#a1[arr[j]];
-        if (j === i || !dense) {
-          // A wedge that stayed whole is fully covered, and only it is wide
-          // enough to earn a hairline.
-          s0.push(from);
-          s1.push(to);
-          sd.push(rel);
-          st.push(blend(i, j));
-          sn.push(0);
-          sw.push(j === i && (to - from) * sc > 0.012 ? 1 : 0);
-        } else {
-          const pieces = Math.max(1, Math.round((to - from) * sc * r1));
-          const width = (to - from) / pieces;
-          let m = i;
-          for (let q = 0; q < pieces; q++) {
-            const a = from + q * width,
-              b = a + width;
-            let count = 0,
-              cx = 0,
-              cy = 0;
-            while (m <= j && (this.#a0[arr[m]] + this.#a1[arr[m]]) / 2 < b) {
-              cx += this.#tcos[arr[m]];
-              cy += this.#tsin[arr[m]];
-              count++;
-              m++;
-            }
-            if (count > peak) peak = count;
-            s0.push(a);
-            s1.push(b);
-            sd.push(rel);
-            // A piece no midpoint fell in lies under one wedge, so it takes
-            // that wedge's hue rather than the mean of nothing.
-            st.push(count ? this.#quant(Math.atan2(cy, cx) / TAU) : this.#hue(arr[Math.min(m, j)]));
-            sn.push(count || 1);
-            sw.push(0);
-          }
-        }
-        i = j + 1;
-      }
-    }
-    // Log, because counts run 1 to 64 and a linear ramp would spend most of
-    // its range on the sparse end. A count of 0 means a whole wedge, not an
-    // empty one, so it takes the top rung.
-    const lg = Math.log(peak);
-    const f = new Int32Array(s0.length);
+    const m = merge(
+      {
+        depth: this.#depth,
+        a0: this.#a0,
+        a1: this.#a1,
+        byDepth: this.#byDepth,
+        maxDepth: this.#maxDepth,
+      },
+      { tint: this.#tint, tcos: this.#tcos, tsin: this.#tsin },
+      {
+        root: this.#root,
+        r0: this.#r0,
+        rw: this.#rw,
+        rings: this.#rings,
+        hueQ: this.#hueQ,
+        dense: this.#mode === "density",
+      },
+    );
+    const f = new Int32Array(m.h.length);
     for (let i = 0; i < f.length; i++)
-      f[i] = this.#colourId(
-        st[i],
-        sd[i],
-        sn[i] && lg > 0 ? Math.round((RAMP_STEPS * Math.log(sn[i])) / lg) : RAMP_STEPS,
-      );
+      f[i] = this.#colourId(m.h[i], m.d[i], rampStep(m.n[i], m.peak));
     this.#seg = {
-      s0: Float64Array.from(s0),
-      s1: Float64Array.from(s1),
-      d: Int16Array.from(sd),
+      s0: Float64Array.from(m.s0),
+      s1: Float64Array.from(m.s1),
+      d: Int16Array.from(m.d),
       f,
-      w: Uint8Array.from(sw),
+      w: Uint8Array.from(m.w),
     };
   }
 
@@ -430,7 +522,7 @@ export class Painter {
         g.fill();
         drawn++;
         // A hairline on a sub-pixel wedge would cover the fill it separates.
-        if (e - s > 0.012) {
+        if (e - s > HAIR_RAD) {
           g.strokeStyle = v.panel;
           g.lineWidth = 0.6;
           g.stroke();

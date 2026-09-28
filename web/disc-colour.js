@@ -27,8 +27,10 @@ export function bow(g, cx, cy, x0, y0, x1, y1, pull) {
   );
 }
 
-/** @type {(h: number, s: number, v: number) => string} */
-export const hsv = (h, s, v) => {
+/** HSV as three bytes, which is what a file wanting some other notation than
+   the canvas's formats from.
+   @type {(h: number, s: number, v: number) => [number, number, number]} */
+export const hsvBytes = (h, s, v) => {
   const i = Math.floor(h * 6) % 6,
     f = h * 6 - Math.floor(h * 6),
     p = v * (1 - s),
@@ -42,5 +44,8 @@ export const hsv = (h, s, v) => {
     [t, p, v],
     [v, p, q],
   ][i];
-  return `rgb(${(c[0] * 255) | 0},${(c[1] * 255) | 0},${(c[2] * 255) | 0})`;
+  return [(c[0] * 255) | 0, (c[1] * 255) | 0, (c[2] * 255) | 0];
 };
+
+/** @type {(h: number, s: number, v: number) => string} */
+export const hsv = (h, s, v) => `rgb(${hsvBytes(h, s, v).join(",")})`;
