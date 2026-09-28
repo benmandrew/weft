@@ -2434,8 +2434,11 @@ const moveTo = (/** @type {number} */ i) => {
 };
 const tableFetches = () => fetched.filter(u => u.endsWith("wordnet-words.json")).length;
 
+/* A src beside the tree, so the element opens on a category and the reader
+   comes to the follow option; the host naming none is further down. */
 const follower = new WordDisc();
 follower.setAttribute("index-src", "/out/words-index.json");
+follower.setAttribute("src", "/out/words-animal.json");
 follower.setAttribute("tree", "tree");
 follower.connectedCallback();
 await settle();
@@ -2598,6 +2601,7 @@ check(
 /* A second element following the same disc shares the fetch and the decode. */
 const second = new WordDisc();
 second.setAttribute("index-src", "/out/words-index.json");
+second.setAttribute("src", "/out/words-bird.json");
 second.setAttribute("tree", "tree");
 second.connectedCallback();
 await settle();
@@ -2615,6 +2619,7 @@ follower.setAttribute("group", "g");
 second.setAttribute("group", "g");
 const third = new WordDisc();
 third.setAttribute("index-src", "/out/words-index.json");
+third.setAttribute("src", "/out/words-animal.json");
 third.setAttribute("tree", "tree");
 third.setAttribute("group", "h");
 third.connectedCallback();
@@ -2670,6 +2675,66 @@ check(
   `animal chosen beside a disc already on it was fetched ${animalFetches() - before} times`,
 );
 third.disconnectedCallback();
+
+/* A host naming a tree and no src opens on the tree's node, which is where the
+   disc starts, rather than on the index's first category. */
+const openedFirst = animalFetches();
+const opener = new WordDisc();
+opener.setAttribute("index-src", "/out/words-index.json");
+opener.setAttribute("tree", "tree");
+opener.connectedCallback();
+await twice();
+await twice();
+const oCat = opener._shadow.querySelector(".cat");
+check(oCat.value === "#tree", `a host naming no src opened the picker on ${oCat.value}`);
+check(
+  opener.stats.category === String(W_NAMES[hyper.index]),
+  `a host naming no src drew ${opener.stats.category}, not ${W_NAMES[hyper.index]}`,
+);
+check(animalFetches() === openedFirst, "a host naming no src fetched the first category as well");
+opener.disconnectedCallback();
+
+/* A disc whose names are not in yet has no table to follow with, so the
+   element waits for them rather than giving up on the node. */
+const bare = document.createElement("hypernym-disc");
+bare.setAttribute("id", "bare");
+bare.data = { par: W_PAR, names: [] };
+bare.index = 4;
+const waiter = new WordDisc();
+waiter.setAttribute("index-src", "/out/words-index.json");
+waiter.setAttribute("tree", "bare");
+waiter.connectedCallback();
+await twice();
+await twice();
+const wCat = waiter._shadow.querySelector(".cat");
+check(wCat.value === "#tree", `before the names the picker reads ${wCat.value}`);
+check(waiter.stats.words === 0, `before the names the element drew ${waiter.stats.category}`);
+bare.data = { par: W_PAR, names: W_NAMES };
+bare.dispatchEvent({ type: "disc-names" });
+await twice();
+await twice();
+check(said(waiter) === "rock|plant|moss|tom", `once the names landed it drew ${said(waiter)}`);
+waiter.disconnectedCallback();
+
+/* And a table that will not load leaves the first category, not a blank disc. */
+FILES.set("/lost/words-index.json", INDEX);
+FILES.set("/lost/words-animal.json", FILES.get("/out/words-animal.json"));
+const lost = new WordDisc();
+lost.setAttribute("index-src", "/lost/words-index.json");
+lost.setAttribute("tree", "tree");
+const warn = console.warn;
+console.warn = () => {};
+lost.connectedCallback();
+await twice();
+await twice();
+await twice();
+console.warn = warn;
+const lCat = lost._shadow.querySelector(".cat");
+check(
+  lost.stats.category === "animal" && lCat.value === "animal",
+  `with no table a host naming no src drew ${lost.stats.category}, reading ${lCat.value}`,
+);
+lost.disconnectedCallback();
 
 /* The stacked layout and back. The stage is observed because its box sizes the
    canvases and the frame because its shape decides the layout, and the two do not

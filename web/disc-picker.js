@@ -13,6 +13,10 @@
  * first time the disc moves or the option is chosen, whichever comes first,
  * and once per page however many pickers follow the same disc.
  *
+ * A host naming `tree` and no `src` opens on that option, at whatever node
+ * the disc starts on, once the disc's names are in. Should the table fail, it
+ * opens on the index's first category instead.
+ *
  * Hosts carrying the same `group` move together: a category the reader
  * chooses in one picker is chosen in the others too, where they offer it. Only
  * the reader's choice crosses; a src or data a host sets stays with its own
@@ -45,6 +49,14 @@ const LIVE = new Set();
    @typedef {HTMLElement & {index: number,
      data: {names: string[], par: ArrayLike<number>}}} TreeDisc */
 
+/** Whether the disc has both its structure and its names, which is what the
+   word table is built over.
+   @param {TreeDisc} disc */
+function named(disc) {
+  const data = disc.data;
+  return Boolean(data?.par?.length) && data.names?.length === data.par.length;
+}
+
 export class Picker {
   /** @type {HTMLElement} */ #host;
   /** @type {HTMLElement} */ #pickEl;
@@ -52,6 +64,8 @@ export class Picker {
   /** @type {PickerHost} */ #to;
   /** @type {string | null} */ #indexSrc = null;
   #rows = 0;
+  // The index's first category, which a host naming no src falls back on.
+  #first = "";
   /** @type {HTMLOptionElement | null} */ #opt = null;
   /** @type {TreeDisc | null} */ #disc = null;
   #following = false;
@@ -117,6 +131,7 @@ export class Picker {
     }
     if (!Array.isArray(rows) || !rows.length) return;
     this.#rows = rows.length;
+    this.#first = rows[0].name;
     this.#catEl.replaceChildren(
       ...rows.map(row => {
         const o = document.createElement("option");
@@ -129,11 +144,17 @@ export class Picker {
     this.#opt = null;
     this.#offer();
     this.mark(this.#to.category());
-    /* An index alone opens on its first category rather than on nothing. The
-       element's own load has run and found nothing by now, so a src written by
-       hand is already loading or loaded. */
-    if (!this.#to.ready() && !this.#host.getAttribute("src"))
-      this.#to.open(href(src, rows[0].name));
+    /* An index alone opens on its first category rather than on nothing, and
+       an index beside a disc opens on the disc's node. The element's own load
+       has run and found nothing by now, so a src written by hand is already
+       loading or loaded. */
+    if (this.#to.ready() || this.#host.getAttribute("src")) return;
+    if (this.#opt) {
+      this.#following = true;
+      this.#catEl.value = FOLLOW;
+      this.#name();
+      this.#soon();
+    } else this.#to.open(href(src, this.#first));
   }
 
   /* The disc the host names, found through getRootNode so an element inside a
@@ -222,8 +243,8 @@ export class Picker {
   async #load() {
     if (this.#table) return this.#table;
     const disc = this.#disc;
-    const data = disc?.data;
-    if (!disc || !data?.par?.length || data.names?.length !== data.par.length) return null;
+    if (!disc || !named(disc)) return null;
+    const data = disc.data;
     try {
       this.#table = await table(beside(this.#indexSrc, TABLE), data.par, data.names);
     } catch (err) {
@@ -241,9 +262,14 @@ export class Picker {
     const disc = this.#disc;
     if (gen !== this.#gen || !this.#following) return;
     if (!t || !disc) {
-      // Nothing to follow with, so the select goes back to what is drawn.
+      // The disc's names are still on their way, which is where a host that
+      // opened on the disc starts. #onNames comes back once they land.
+      if (disc && !named(disc) && !this.#tableFailed) return;
+      // Nothing to follow with, so the select goes back to what is drawn, or
+      // to the first category where nothing is.
       this.release();
       this.mark(this.#to.category());
+      if (!this.#to.ready() && this.#first) this.#to.open(href(this.#indexSrc, this.#first));
       return;
     }
     const at = disc.index;
@@ -334,5 +360,9 @@ export class Picker {
     this.#name();
   };
 
-  #onNames = () => this.#name();
+  #onNames = () => {
+    this.#name();
+    // A host that opened on the disc has been waiting for these.
+    if (this.#following && this.#drawn < 0) this.#soon();
+  };
 }

@@ -298,6 +298,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   goes through `#choose` and not `#onCat`, so it crosses once. `#take` skips a
   picker that does not offer the value or is on it already, and a `src` or
   `data` from the host never crosses.
+- A host naming `tree` and no `src` opens following the disc. `#follow`
+  returns without releasing while the disc's names are missing, and
+  `#onNames` calls `#soon` again for a picker that is following and has drawn
+  nothing. If the table fails, it opens `#first`, the index's first category.
+  Such a page fetches the word table on load, not on the first move.
 
 ## `<word-run>`
 
