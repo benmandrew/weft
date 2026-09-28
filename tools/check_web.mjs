@@ -2279,6 +2279,66 @@ check(
   `after stone the option reads "${fOpt().textContent}"`,
 );
 
+/* A move is followed once the disc has had a frame to paint, so nothing is
+   applied inside the handler that fired disc-zoom, and the moves made before
+   then are one follow, of wherever the disc stopped. */
+{
+  const own = /** @type {PropertyDescriptor} */ (
+    Object.getOwnPropertyDescriptor(WordDisc.prototype, "data")
+  );
+  let applied = 0;
+  Object.defineProperty(follower, "data", {
+    configurable: true,
+    get: own.get,
+    set(d) {
+      applied++;
+      own.set?.call(this, d);
+    },
+  });
+  /** @type {(() => void)[]} */
+  const frames = [];
+  globalThis.requestAnimationFrame = cb => frames.push(cb);
+  moveTo(3);
+  moveTo(1);
+  moveTo(3);
+  check(said(follower) === "rock|plant|moss|tom", `a move was followed inside its own handler`);
+  await settle();
+  check(applied === 0, "a move was followed before the disc had a frame to paint");
+  check(frames.length === 1, `three moves asked for ${frames.length} frames`);
+  for (const cb of frames.splice(0)) cb();
+  await settle();
+  check(applied === 1, `three moves before the frame applied ${applied} times`);
+  check(
+    said(follower) === "cat|rock|plant|moss|tom",
+    `moves ending on animal drew ${said(follower)}`,
+  );
+  /* A hidden page runs no frames, so a move there waits for a task alone. */
+  document.visibilityState = "hidden";
+  moveTo(4);
+  await settle();
+  check(frames.length === 0, "a hidden page waited on a frame it will not run");
+  check(said(follower) === "rock|plant|moss|tom", `a move on a hidden page drew ${said(follower)}`);
+  delete document.visibilityState;
+  /* Choosing the option waits the same frame, for the select to show it. */
+  fCat.value = "bird";
+  fire(fCat, "change");
+  await settle();
+  await settle();
+  applied = 0;
+  fCat.value = "#tree";
+  fire(fCat, "change");
+  await settle();
+  check(applied === 0, "choosing the option followed before the page had a frame to paint");
+  for (const cb of frames.splice(0)) cb();
+  await settle();
+  check(
+    applied === 1 && said(follower) === "rock|plant|moss|tom",
+    `choosing the option on Cat applied ${applied} times and drew ${said(follower)}`,
+  );
+  delete globalThis.requestAnimationFrame;
+  delete (/** @type {{data?: unknown}} */ (follower).data);
+}
+
 /* Another category ends following, and the disc moving no longer moves it. */
 fCat.value = "bird";
 fire(fCat, "change");

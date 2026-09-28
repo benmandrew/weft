@@ -259,6 +259,11 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - A node with no words below it is disabled in the select, and moving the disc
   onto one while following leaves the element on what it had, since an empty
   list is nothing to play.
+- `#soon()` hands a followed node's words over a frame later
+  (`requestAnimationFrame`, then `setTimeout(0)`), never inside the `disc-zoom`
+  or `change` handler, so the disc paints first. Moves made while it waits
+  coalesce into one follow of where the disc ended. A hidden page runs no
+  frames, so it waits for a task alone. `check_web.mjs` tests all of this.
 
 ## `<word-run>`
 

@@ -54,6 +54,8 @@ export class Picker {
   // Bumped by every choice and every move, so an answer arriving after the
   // reader moved on is dropped rather than drawn.
   #gen = 0;
+  // Set while a follow waits for the disc to paint; see #soon.
+  #queued = false;
   /** @type {import("./word-source.js").WordTable | null} */ #table = null;
   #tableFailed = false;
 
@@ -245,10 +247,29 @@ export class Picker {
     this.#name();
   }
 
+  /* Follow once the page has painted. The disc redraws inside the handler
+     that fires disc-zoom, and three elements taking entity's 40,117 words in
+     that same task held its new picture back by 172 ms, or 552 ms at a
+     quarter of the CPU, so to the reader the disc froze. After the next frame
+     the disc shows first and the elements catch up behind it. Moves made
+     before the callback runs are one follow, of wherever the disc ended up.
+     A hidden page runs no frames, so there it waits for a task alone. */
+  #soon() {
+    if (this.#queued) return;
+    this.#queued = true;
+    const run = () => {
+      this.#queued = false;
+      if (this.#following) this.#follow();
+    };
+    if (typeof requestAnimationFrame === "function" && document.visibilityState !== "hidden")
+      requestAnimationFrame(() => setTimeout(run, 0));
+    else setTimeout(run, 0);
+  }
+
   #onCat = () => {
     if (this.#catEl.value === FOLLOW) {
       this.#following = true;
-      this.#follow();
+      this.#soon();
       return;
     }
     this.release();
@@ -257,7 +278,7 @@ export class Picker {
 
   #onZoom = () => {
     if (this.#following) {
-      this.#follow();
+      this.#soon();
       return;
     }
     // The first move is the reader using the disc, which is when the table
