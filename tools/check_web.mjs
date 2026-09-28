@@ -1195,6 +1195,7 @@ check(wordAt(L, turn, 2 * Math.PI - 0.001) === -1, "the gap before the top answe
    resize a blit rather than a rebuild. */
 const {
   bundle: strokeBundle,
+  bands: bundleBands,
   curve: wordCurve,
   BANDS,
   KNEE,
@@ -1312,6 +1313,98 @@ check(
   `${bundleCanvas.drew.curve} curves against ${strokes} strokes`,
 );
 check(typeof wordCurve === "function", "word-bundle.js exports no shared curve");
+
+/* The worker's form of the same draw: a yield after every band, and the same
+   strokes in the same order as bundle(), so the two threads cannot differ. */
+const bundleSpec = {
+  px: 512,
+  ang: L.ang,
+  byHead: L.byHead,
+  tail: L.tail,
+  live: L.live,
+  colours: Array.from({ length: 26 }, (_, i) => `L${i}`),
+  pull: 0.32,
+  alpha: 0.2,
+  lineWidth: 1,
+};
+const bandCanvas = new Canvas();
+const bandRun = bundleBands(bandCanvas.getContext("2d"), bundleSpec);
+let bandYields = 0;
+let bandStep = bandRun.next();
+for (; !bandStep.done; bandStep = bandRun.next()) bandYields++;
+check(bandYields === BANDS, `the draw yielded ${bandYields} times for ${BANDS} bands`);
+check(bandStep.value === strokes, `bands drew ${bandStep.value} strokes, bundle ${strokes}`);
+check(
+  bandCanvas.inks.join() === bundleCanvas.inks.join(),
+  "bands laid its strokes in another order than bundle",
+);
+
+/* And the worker, driven: a build snapshots after every band, and one the next
+   message overtakes stops there and answers nothing. The snapshot resolves at
+   once here, so what spaces the bands out is the worker's own wait for a task,
+   counted through setTimeout; the check waits on setImmediate so its own
+   ticks are not counted. Imported afresh, so the onmessage it sets is its own. */
+{
+  const tick = () => new Promise(r => setImmediate(r));
+  const was = {
+    post: globalThis.postMessage,
+    canvas: globalThis.OffscreenCanvas,
+    snap: globalThis.createImageBitmap,
+    timer: globalThis.setTimeout,
+  };
+  let timers = 0;
+  globalThis.setTimeout = (fn, ms) => {
+    timers++;
+    return was.timer(fn, ms);
+  };
+  /** @type {any[]} */
+  const posted = [];
+  let snaps = 0;
+  globalThis.postMessage = m => posted.push(m);
+  globalThis.OffscreenCanvas = class extends Canvas {
+    constructor(w, h) {
+      super();
+      this.width = w;
+      this.height = h;
+    }
+    transferToImageBitmap() {
+      return { close() {} };
+    }
+  };
+  globalThis.createImageBitmap = async () => {
+    snaps++;
+    return { close() {} };
+  };
+  await import(`${mod("word-bundle-worker.js")}?driven`);
+  const send = globalThis.onmessage;
+  check(posted.length === 1 && posted[0].ready, "the bundle worker did not say it was ready first");
+  send({ data: { ...bundleSpec, id: "first" } });
+  // A few bands in, on the uncounted timer: Node holds a zero timeout to 1 ms.
+  await new Promise(r => was.timer(r, 8));
+  const early = snaps;
+  send({ data: { ...bundleSpec, id: "second" } });
+  for (
+    const until = Date.now() + 5000;
+    Date.now() < until && !posted.some(m => m.id === "second");
+  )
+    await tick();
+  const ids = posted.filter(m => m.id).map(m => m.id);
+  check(
+    ids.join() === "second",
+    `the worker answered ${ids.join() || "nothing"}, not second alone`,
+  );
+  check(early > 0 && early < BANDS, `the overtaken build had taken ${early} snapshots`);
+  check(
+    snaps > BANDS && snaps < 2 * BANDS,
+    `${snaps} snapshots for a build of ${BANDS} bands after one of ${early}`,
+  );
+  check(posted.at(-1)?.strokes === strokes, `the worker drew ${posted.at(-1)?.strokes} strokes`);
+  globalThis.postMessage = was.post;
+  globalThis.OffscreenCanvas = was.canvas;
+  globalThis.createImageBitmap = was.snap;
+  globalThis.setTimeout = was.timer;
+  check(timers >= snaps, `${timers} waits for a task across ${snaps} bands`);
+}
 
 /* The z-order. Letter by letter, every chord leaving Z composites over every
    chord leaving A and the fringe reads as the back of the alphabet, so what is

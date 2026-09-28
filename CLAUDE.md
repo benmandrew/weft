@@ -190,6 +190,13 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   disconnect, unlike `disc-worker.js`. `#armFloor` starts the `WORKER_FLOOR`
   deadline at the first bundle wanted, since timing it from construction reads
   a slow link as no worker.
+- The worker draws through `bands`, and after each band it snapshots the canvas
+  with `createImageBitmap` and waits for a task. That sends each band to the
+  GPU process on its own; batched, entity arrived there as three tasks of about
+  45 ms on the thread every browser frame is drawn on, and frames ran late for
+  a quarter of a second. Keep both halves. Do not swap in `getImageData`, which
+  doubles the GPU work, or `willReadFrequently`, whose software canvas took
+  1.2 s for plant. A build a newer message overtakes stops and answers nothing.
 - `release(pic)` closes an `ImageBitmap`, whose pixels sit outside the heap and
   look small to the collector: call it when a bundle is replaced, lands after
   the disc moved on, or on a word-set change. The bundle held over

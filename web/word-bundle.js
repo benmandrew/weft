@@ -186,6 +186,25 @@ export function weight(L, s, t) {
    @param {Spec} spec
    @returns {number} strokes drawn */
 export function bundle(g, spec) {
+  const run = bands(g, spec);
+  let step = run.next();
+  while (!step.done) step = run.next();
+  return step.value;
+}
+
+/* The same draw, handing control back after each band. On an accelerated
+   canvas the strokes are only recorded here and painted on the GPU process's
+   main thread, the one every frame of the browser is drawn on, and Chrome sends
+   them over in a few large batches: entity's 192,843 strokes arrived as three
+   of about 45 ms, and for a quarter of a second after a switch frames were
+   dropped or shown up to 124 ms late. word-bundle-worker.js snapshots the
+   canvas and waits for a task at each yield, which sends the band on its own,
+   so the GPU's work comes in 64 pieces with frames drawn between them. */
+/** @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D} g
+   @param {Spec} spec
+   @returns {Generator<number, number, void>} yields the band just drawn,
+   returns the strokes drawn */
+export function* bands(g, spec) {
   const { px, ang, byHead, tail, live, colours, pull, alpha, lineWidth } = spec;
   const c = px / 2,
     r = px * RING;
@@ -254,6 +273,7 @@ export function bundle(g, spec) {
       g.strokeStyle = colours[s.L];
       slice(s, want);
     }
+    yield band;
   }
   return strokes;
 }
