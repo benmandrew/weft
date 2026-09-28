@@ -284,6 +284,8 @@ Of the disc rules, `ratio`, the sleep, `fit`, the fonts refit and
   solving again, so it moves no answer and `graph.py` and `tools/chains.json`
   need no counterpart. A step is signed `cell + 1` for a discard and
   `-(cell + 1)` for a recovery, since cell 0 has no sign.
+- A solve while asleep still fires `balance-render`, with `drawMs` 0, since a
+  host's prose quoting the figures can be in view while the element is not.
 - One scale across both columns, and bands tile their slot in solver order, so
   a band never overruns what its letter shipped. The deficit column is muted,
   since a band takes the hue of the letter it leaves.

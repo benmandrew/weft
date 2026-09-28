@@ -3756,6 +3756,23 @@ check(bf.playing, "the play key did not start a run");
 await away();
 check(bBase.width === 0, `an element a screen away kept a ${bBase.width}px canvas`);
 check(!bf.playing, "an element a screen away went on playing");
+/* Asleep, it still solves a change of words and reports the figures, which
+   prose above it may quote while the element itself is out of view. It draws
+   nothing, so the canvas stays given back. */
+{
+  /** @type {{category: string, frames: number, drawMs: number}[]} */
+  const heard = [];
+  const hear = (/** @type {CustomEvent} */ e) => heard.push(e.detail);
+  bf.addEventListener("balance-render", hear);
+  bf.data = { category: "asleep", words: BWORDS };
+  bf.removeEventListener("balance-render", hear);
+  check(heard.length === 1, `a solve while asleep reported ${heard.length} times`);
+  check(
+    heard[0]?.category === "asleep" && heard[0]?.frames === bf.frames && heard[0]?.drawMs === 0,
+    `a solve while asleep reported ${JSON.stringify(heard[0])}`,
+  );
+  check(bBase.width === 0, `a solve while asleep took back a ${bBase.width}px canvas`);
+}
 nearScreen(true);
 check(bBase.width === bBig, `coming back left the canvas at ${bBase.width} of ${bBig}`);
 check(!bf.playing, "coming back into view started a run of its own accord");

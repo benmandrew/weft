@@ -30,7 +30,8 @@
  *             repaint().
  * Events: balance-step {step, frames, push, cost, from, to, shipped, need},
  *         balance-render {category, words, frames, reversed, need, paid,
- *                         settled, solveMs, drawMs}
+ *                         settled, solveMs, drawMs}, after every draw and
+ *                         after a solve with no pixels to draw into (drawMs 0)
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
@@ -471,7 +472,11 @@ class BalanceFlow extends HTMLElement {
     this.#scrub.value = String(this.#step);
     this.#scrub.disabled = this.#frames.length === 0;
     this.#ticks();
+    /* Asleep, a screen away, there are no pixels to draw into, but a host's
+       prose quoting these figures may be in view above the element while it
+       is not, so the solve is reported without a draw. */
     if (this.#pw) this.#draw();
+    else this.#report(0);
   }
 
   /* A tick on the scrub for every step whose path recovers a word, since those
@@ -722,6 +727,15 @@ class BalanceFlow extends HTMLElement {
     // rather than under a label the bands run behind.
     if (turns) this.#turns(g, turns, labelPx(w), litInk);
     this.#drawMs = performance.now() - t0;
+    this.#report(this.#drawMs);
+  }
+
+  /* balance-render: the figures a draw showed, or, from #build, the ones a
+     solve found with nothing drawn. `drawMs` is 0 for the second. */
+  /** @param {number} drawMs */
+  #report(drawMs) {
+    const t = this.#trace;
+    if (!t) return;
     this.#emit("balance-render", {
       category: this.#category,
       words: this.#words.length,
@@ -731,7 +745,7 @@ class BalanceFlow extends HTMLElement {
       paid: t.paid,
       settled: t.settled,
       solveMs: this.#solveMs,
-      drawMs: this.#drawMs,
+      drawMs,
     });
   }
 
