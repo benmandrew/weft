@@ -30,7 +30,9 @@ export const TABLE = "wordnet-words.json";
    @type {Set<Picker>} */
 const LIVE = new Set();
 
-/** @typedef {{category: string, words: string[], zipf: number[]}} WordData */
+/** `spell` is each word's alphabetical place, when the source knows it.
+   @typedef {{category: string, words: string[], zipf: number[],
+     spell?: ArrayLike<number>}} WordData */
 /** What the picker asks of the element it sits in.
    @typedef {object} PickerHost
    @property {(src: string) => void} open  load a word file, even the one it holds
@@ -250,7 +252,12 @@ export class Picker {
       this.#drawn = at;
       this.#applying = true;
       try {
-        this.#to.apply({ category: String(disc.data.names[at]), words: got.words, zipf: got.zipf });
+        this.#to.apply({
+          category: String(disc.data.names[at]),
+          words: got.words,
+          zipf: got.zipf,
+          spell: got.spell,
+        });
       } finally {
         this.#applying = false;
       }

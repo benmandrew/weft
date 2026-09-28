@@ -9,12 +9,14 @@
  * one contiguous run.
  *
  *   const t = await table("wordnet-words.json", disc.data.par, disc.data.names);
- *   t.words(disc.index)   // {words: ["cat", …], zipf: [4.7, …]}
+ *   t.words(disc.index)   // {words: ["cat", …], zipf: [4.7, …], spell: [5120, …]}
  *
  * A page holding three word elements that follow one disc asks three times for
  * the same node, so the file is fetched and decoded once per page and each
  * node's answer is kept for the next asker.
  */
+
+import { spelling } from "./word-layout.js";
 
 export const MEMBER = 1,
   EARLY = 2,
@@ -43,7 +45,9 @@ const KEEP = 12;
    `multiword` are already applied; the rest are applied here.
    @typedef {{min_zipf: number, min_dominance: number, max_rank: number,
      min_depth: number, target: number, zipf_floor: number, multiword: boolean}} Selection */
-/** @typedef {{words: string[], zipf: number[]}} Derived */
+/** `spell` is each word's place in the table's alphabetical order, which is
+   what word-layout.js sorts by in place of the strings.
+   @typedef {{words: string[], zipf: number[], spell: Int32Array}} Derived */
 /** A synset's label by index: the disc's own array, or a disc-lines.js Lines,
    which both answer `at`.
    @typedef {{length: number, at(i: number): string | undefined}} Names */
@@ -77,6 +81,11 @@ export class WordTable {
   /** @type {Int32Array | null} */ #kids = null;
   /** @type {Int32Array | null} */ #kidStart = null;
   /** @type {Map<string, Derived>} */ #kept = new Map();
+  // Every word's place in alphabetical order, from one sort of all of them on
+  // the first answer. Shipped in the file instead, it would be a list with no
+  // order to compress: 99 KiB gzipped against the table's 279, to save 9 ms
+  // once per page.
+  /** @type {Int32Array | null} */ #spell = null;
 
   /** @param {TableJson} t @param {ArrayLike<number>} par @param {Names} names */
   constructor(t, par, names) {
@@ -170,9 +179,13 @@ export class WordTable {
       return hit;
     }
     const ids = this.ids(list);
+    if (!this.#spell)
+      this.#spell = spelling(Array.from({ length: this.size }, (_, w) => this.text(w)));
+    const spell = this.#spell;
     const out = {
       words: Array.from(ids, w => this.text(w)),
       zipf: Array.from(ids, w => this.#centi[w] / 100),
+      spell: Int32Array.from(ids, w => spell[w]),
     };
     this.#kept.set(key, out);
     if (this.#kept.size > KEEP)

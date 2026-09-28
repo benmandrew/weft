@@ -776,15 +776,51 @@ const {
   HUB_SHARE,
   MAX_LABEL_PX,
   MIN_LABEL_PX,
+  alphabetical,
   rank,
+  rankOrder,
   solve,
   spans,
+  spelling,
   turns,
 } = await import(mod("word-layout.js"));
 
 check(
   rank(["b", "a", "c"], [1, 2, 1]).join("|") === "a|b|c",
   `rank did not put the commonest first and break the tie by spelling: ${rank(["b", "a", "c"], [1, 2, 1])}`,
+);
+
+/* A word's place in the set's alphabetical order, which every sort by spelling
+   compares instead of the strings. Code-unit order, as Array.prototype.sort
+   has it, so an uppercase word goes ahead of every lowercase one. */
+check(
+  spelling(["pear", "Zoo", "apple", "fig"]).join("|") === "3|0|1|2",
+  `spelling gave ${spelling(["pear", "Zoo", "apple", "fig"])}`,
+);
+/* The tie on frequency goes to the spelling handed in, which is how a source
+   that already knows the order saves the sort. Reversed, it reverses the tie. */
+check(
+  rankOrder(["b", "a", "c"], [1, 2, 1]).join("|") === "1|0|2",
+  `rankOrder gave ${rankOrder(["b", "a", "c"], [1, 2, 1])}`,
+);
+check(
+  rankOrder(["b", "a", "c"], [1, 2, 1], [1, 2, 0]).join("|") === "1|2|0",
+  "rankOrder broke the tie by the strings rather than the spelling it was handed",
+);
+
+/* Within a wedge, words with the same fan key go alphabetically, whatever order
+   they came in, and by the spelling handed in where there is one. */
+check(
+  Array.from(wordLayout(["tzt", "tat", "tmt"]).order).join("|") === "1|2|0",
+  `three T-to-T words were placed ${wordLayout(["tzt", "tat", "tmt"]).order}`,
+);
+check(
+  Array.from(wordLayout(["tzt", "tat", "tmt"], [0, 2, 1]).order).join("|") === "0|2|1",
+  "the layout sorted by the strings rather than the spelling it was handed",
+);
+check(
+  Array.from(alphabetical([3, 0, 2, 0])).join("|") === "1|3|2|0",
+  `alphabetical gave ${alphabetical([3, 0, 2, 0])}`,
 );
 
 /* render.py's key is (ord(head) - ord(tail) - 1) % 26, counted backwards from
@@ -1581,6 +1617,14 @@ const moves = shadow.querySelector(".moves");
 const list = moves.querySelector(".list");
 const why = () => [...moves.querySelector(".why").children].map(c => c.textContent).join("");
 
+/* The column of moves and the longest chain wait for the disc to paint, so a
+   new word set draws the disc alone and the rest land a frame later. With no
+   frames to wait on here, that is one task. */
+const painted = () => new Promise(r => setTimeout(r, 0));
+check(
+  list.children.length === 0 && !gloss.innerHTML.includes("longest chain"),
+  "the column or the longest chain was built in the task that drew the disc",
+);
 check(disc.words.join("|") === WORDS.join("|"), `the element drew ${disc.words}`);
 /* No attribute is every word the category has, not a cut at some count: `build`
    draws 110 and the element does not, having only the frame it was given. */
@@ -1599,6 +1643,55 @@ check(drew.fillText > WORDS.length, "fewer labels were drawn than there are word
 const blits = drew.image;
 await document.fonts.ready;
 check(drew.image === blits + 1, `the font swap redrew ${drew.image - blits} times, not once`);
+await painted();
+check(
+  list.children.length === WORDS.length,
+  `after a frame the column held ${list.children.length}`,
+);
+check(
+  gloss.innerHTML.includes("longest chain"),
+  `after a frame the readout said ${gloss.innerHTML}`,
+);
+/* A spelling handed in is the one used, which is how the word table saves the
+   element a sort. Out of step with the strings on purpose, so the column shows
+   which of the two it followed. */
+disc.data = { category: "handed", words: ["ab", "ba", "ca"], zipf: [1, 1, 1], spell: [2, 1, 0] };
+await painted();
+check(
+  [...list.children].map(li => li.textContent).join("|") === "ca|ba|ab",
+  "the element sorted by the strings rather than the spelling it was handed",
+);
+/* One that does not fit is not the data's, so it is ignored: the wrong length,
+   or a place that is not a small whole number. */
+for (const spell of [
+  [2, 1],
+  [2, 1, -1],
+  [2, 1, 0.5],
+  [2, 1, 1 << 20],
+]) {
+  disc.data = { category: "misfit", words: ["ab", "ba", "ca"], zipf: [1, 1, 1], spell };
+  await painted();
+  check(
+    [...list.children].map(li => li.textContent).join("|") === "ab|ba|ca",
+    `the element took the spelling ${spell}, which does not fit its words`,
+  );
+}
+/* Words spelt the same share a place and keep their order. */
+disc.data = { category: "twins", words: ["ba", "ab", "ab"], zipf: [3, 2, 1] };
+await painted();
+check(
+  [...list.children].map(li => `${li.textContent}${li.dataset.i}`).join("|") === "ab1|ab2|ba0",
+  `words spelt the same listed as ${[...list.children].map(li => li.textContent + li.dataset.i)}`,
+);
+/* Two word sets inside one frame build one column, of the second. */
+disc.data = { category: "first", words: ["ab", "bc"], zipf: [2, 1] };
+disc.data = { category: "test", words: WORDS, zipf: WORDS.map((_, i) => 8 - i) };
+await painted();
+check(
+  [...list.children].map(li => li.textContent).join("|") === [...WORDS].sort().join("|"),
+  "a word set replaced before its frame left its column behind",
+);
+
 /* Nothing is painted behind the hub's name; it carries its own ground. With the
    pointer off the disc and no chain the overlay owes an arc to nothing, and that
    count is what says a panel disc has not come back. */
@@ -1749,6 +1842,7 @@ const reaches = () => {
    pointer goes to read the at-rest line rather than a word's own. */
 const offWord = () => fire(over, "pointermove", { offsetX: BOX / 2, offsetY: BOX / 2 });
 const FREE = longestChain(WORDS).words.length;
+await painted();
 disc.clear();
 offWord();
 check(
@@ -2010,6 +2104,7 @@ const CROWD = Array.from(
   (_, i) => ABC[i % 26] + ABC[((i / 26) | 0) % 26] + ABC[((i / 676) | 0) % 26] + ABC[(i * 7) % 26],
 );
 disc.data = { category: "crowd", words: CROWD, zipf: CROWD.map((_, i) => -i) };
+await painted();
 check(disc.stats.words === CROWD.length, `the default drew ${disc.stats.words} of ${CROWD.length}`);
 /* Nothing is capped: a page goes into the DOM and the rest follow as the column
    is scrolled, so what is listed first is the head of the whole sorted list. */
@@ -2202,6 +2297,15 @@ const animal = wt.words(3);
 check(said(animal) === "cat|rock|plant|moss|tom", `animal reads ${said(animal)}`);
 check(animal.zipf.join("|") === "5|4|3.5|3|2.5", `animal's Zipf values are ${animal.zipf}`);
 check(wt.words(3) === animal, "a second ask for animal was worked out again");
+/* Each word's place in the whole table's alphabetical order, which the disc
+   compares in place of the strings, so it has to order them as they spell. */
+check(
+  animal.spell.length === animal.words.length &&
+    animal.words.every((w, i) =>
+      animal.words.every((v, j) => w < v === animal.spell[i] < animal.spell[j]),
+    ),
+  `animal's spelling ${animal.spell} does not order ${said(animal)}`,
+);
 /* The Cat edge counts as a child, so at min_depth 2 plant goes with Cat. */
 const wtDeep = wordTable({ min_depth: 2 });
 check(
@@ -2414,7 +2518,9 @@ check(
     said(follower) === "cat|rock|plant|moss|tom",
     `moves ending on animal drew ${said(follower)}`,
   );
-  /* A hidden page runs no frames, so a move there waits for a task alone. */
+  /* A hidden page runs no frames, so a move there waits for a task alone. The
+     frame the element asked for when it drew animal is not this picker's. */
+  frames.splice(0);
   document.visibilityState = "hidden";
   moveTo(4);
   await settle();

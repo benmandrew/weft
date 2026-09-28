@@ -213,6 +213,22 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   keep a fill each, because overlapping they must darken each other. A single
   path anti-aliases its edge once, so a packed ring comes out about a device
   pixel thinner than the stacked fills made it.
+- Every sort by spelling compares integer places from `spelling()`, never the
+  strings: `rankOrder`'s tie-break, `layout`'s within-letter order and the
+  column's `#alpha`. The last two are counting sorts through `alphabetical`,
+  bucketed by place; on entity `layout` went from 8.4 ms to 1.3 ms with the
+  same output. `WordTable` sorts its whole table once and hands each
+  derived set its places as `spell`, which the picker passes through to
+  `apply`. A place is only used for comparison, so the table's global places
+  work for any subset. Do not ship the places in `wordnet-words.json`: words
+  are numbered commonest first, so the list does not compress, and it adds
+  99 KiB gzipped to a 279 KiB file to save 9 ms once per page.
+- `#build` draws the disc and leaves the column of moves and the longest-chain
+  sentence to `#later`, which runs after the next frame. On entity they took
+  16 ms and 7 ms of the task that drew the disc. `#settled` is clear while that
+  work waits: `#showRead` leaves the sentence out and `#shape` leaves the
+  column alone until then. The build clears the old column at once, since a
+  row clicked before `#later` runs would play whatever word took its index.
 
 ### `<letter-disc>`
 

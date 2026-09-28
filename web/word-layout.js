@@ -20,15 +20,55 @@ export const LETTERS = 26;
 // The gap between two wedges. render.py's `gap`.
 export const GAP = (3.5 * Math.PI) / 180;
 
+/* Each word's place in alphabetical order, so a sort by spelling compares two
+   numbers rather than two strings. On entity's 40,117 words a sort comparing
+   strings in JavaScript took 11 ms, and three of them ran on every build. The
+   default sort compares UTF-16 code units, the order `<` gives, and runs
+   natively, so this is one of those sorts at 9 ms and every later one is
+   numeric. A word listed twice gets one place. word-source.js's table hands a
+   derived list its places already, taken from one sort of every word it holds. */
+/** @param {ArrayLike<string>} words @returns {Int32Array} */
+export function spelling(words) {
+  const sorted = Array.from(words).sort();
+  /** @type {Map<string, number>} */
+  const at = new Map();
+  for (let r = 0; r < sorted.length; r++) at.set(sorted[r], r);
+  return Int32Array.from(words, w => /** @type {number} */ (at.get(w)));
+}
+
 /* Commonest first, ties by spelling: the order render.py draws and `--limit`
-   cuts, for a host that sets `data` itself. */
+   cuts, as indices into `words`. `spell` is any numbering in alphabetical
+   order, a subset's places in a larger list included. */
+/** @param {ArrayLike<string>} words @param {ArrayLike<number>} zipf
+   @param {ArrayLike<number>} [spell] @returns {number[]} */
+export function rankOrder(words, zipf, spell = spelling(words)) {
+  const order = Array.from(words, (_, i) => i);
+  order.sort((x, y) => zipf[y] - zipf[x] || spell[x] - spell[y]);
+  return order;
+}
+
+/* The same order as the words themselves, for a host that sets `data` itself. */
 /** @param {string[]} words @param {number[]} zipf @returns {string[]} */
 export function rank(words, zipf) {
-  const order = words.map((_, i) => i);
-  order.sort(
-    (x, y) => zipf[y] - zipf[x] || (words[x] < words[y] ? -1 : words[x] > words[y] ? 1 : 0),
-  );
-  return order.map(i => words[i]);
+  return rankOrder(words, zipf).map(i => words[i]);
+}
+
+/** The indices of a word set in alphabetical order, given each word's place
+   in it. Places are small integers, below the word table's 40,118 words, so
+   this is a counting sort: 0.2 ms for entity's 40,117 words, against 3.6 ms
+   for a typed sort of keys and 11 ms comparing the strings. Equal places,
+   which are words spelt the same, keep their order.
+   @param {ArrayLike<number>} spell @returns {Int32Array} */
+export function alphabetical(spell) {
+  const n = spell.length;
+  let top = -1;
+  for (let i = 0; i < n; i++) if (spell[i] > top) top = spell[i];
+  const start = new Int32Array(top + 2);
+  for (let i = 0; i < n; i++) start[spell[i] + 1]++;
+  for (let r = 0; r <= top; r++) start[r + 1] += start[r];
+  const out = new Int32Array(n);
+  for (let i = 0; i < n; i++) out[start[spell[i]]++] = i;
+  return out;
 }
 
 /* How far round the alphabet a word hands over, counted backwards from its own
@@ -64,8 +104,9 @@ export function fanKey(head, tail) {
    so a caller makes a point with `Math.cos(ang)` and, canvas y growing
    downward, `-Math.sin(ang)`.
    @param {string[]} words
+   @param {ArrayLike<number>} [spell] alphabetical places, as spelling() gives
    @returns {Layout} */
-export function layout(words) {
+export function layout(words, spell = spelling(words)) {
   const n = words.length;
   const head = new Uint8Array(n),
     tail = new Uint8Array(n);
@@ -91,22 +132,26 @@ export function layout(words) {
   /** @type {Wedge[]} */
   const wedge = [];
 
+  /* Round the ring by head letter, then by fan key within the wedge, then
+     alphabetically: the words go into one bucket per letter and key in
+     alphabetical order, which leaves each bucket in that order. A comparator
+     sort per wedge took 8 ms over entity's 40,117 words. */
+  const start = new Int32Array(LETTERS * LETTERS + 1);
+  for (let i = 0; i < n; i++) start[head[i] * LETTERS + fanKey(head[i], tail[i]) + 1]++;
+  for (let b = 0; b < LETTERS * LETTERS; b++) start[b + 1] += start[b];
+  for (const i of alphabetical(spell))
+    order[start[head[i] * LETTERS + fanKey(head[i], tail[i])]++] = i;
+
   let a = Math.PI / 2,
     at = 0;
   for (const L of live) {
-    const block = byHead[L].slice().sort((x, y) => {
-      const kx = fanKey(head[x], tail[x]),
-        ky = fanKey(head[y], tail[y]);
-      if (kx !== ky) return kx - ky;
-      return words[x] < words[y] ? -1 : words[x] > words[y] ? 1 : 0;
-    });
     const from = a;
-    for (const i of block) {
+    const count = byHead[L].length;
+    for (const stop = at + count; at < stop; at++) {
       a -= span;
-      ang[i] = a + span / 2;
-      order[at++] = i;
+      ang[order[at]] = a + span / 2;
     }
-    wedge.push({ letter: L, from, to: a, mid: (from + a) / 2, count: block.length });
+    wedge.push({ letter: L, from, to: a, mid: (from + a) / 2, count });
     a -= GAP;
   }
   return { n, head, tail, ang, order, byHead, live, wedge, span };

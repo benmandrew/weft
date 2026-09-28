@@ -48,18 +48,23 @@ import { longest } from "./word-longest.js";
 import { watch } from "./disc-idle.js";
 import { bundle as strokeBundle, curve, release, RING, square, thin } from "./word-bundle.js";
 import {
+  alphabetical,
   at,
   chords,
   layout,
   LABEL_RADIUS,
   LETTERS,
-  rank,
+  rankOrder,
   solve,
+  spelling,
   spans,
   turns,
   WEDGE_BAND,
 } from "./word-layout.js";
 
+// The largest spelling place taken from data, far above the word table's
+// 40,118 words and small enough that the counting sort's array stays cheap.
+const SPELL_MAX = 1 << 20;
 // The hub's "back" hint: its size, and the room it takes from the name above.
 const HINT_PX = 11,
   HINT_H = 15;
@@ -331,8 +336,19 @@ class WordDisc extends HTMLElement {
   #category = "";
   #all = [];
   #zipf = [];
-  // The words actually drawn, commonest first, and the layout over them.
+  // Each of #all's places in alphabetical order, which is what every sort by
+  // spelling compares instead of the strings.
+  #allSpell = new Int32Array(0);
+  // The words actually drawn, commonest first, the same places for them, and
+  // the layout over them.
   #words = [];
+  #spell = new Int32Array(0);
+  // The drawn words in alphabetical order, which the column of moves filters.
+  #alpha = new Int32Array(0);
+  // Bumped by every build, so work #later put off for a word set that has
+  // since gone is dropped. #settled is clear while that work is waiting.
+  #builds = 0;
+  #settled = true;
   #L = null;
   #chain = null;
   // Turns clockwise from the top for each word in placement order, which is
@@ -597,6 +613,9 @@ class WordDisc extends HTMLElement {
     // Without frequencies the file's own order stands, which is what a host
     // building a list by hand would mean by it.
     this.#zipf = d.zipf ? Array.from(d.zipf) : this.#all.map((_, i) => -i);
+    // A source that knows the order already hands it over (word-source.js
+    // does, from one sort of its whole table); anything else is sorted here.
+    this.#allSpell = places(d.spell, this.#all.length) ?? spelling(this.#all);
     this.#build();
     this.#ready = true;
     this.#fit();
@@ -642,10 +661,13 @@ class WordDisc extends HTMLElement {
   }
 
   #build() {
-    const ranked = rank(this.#all, this.#zipf);
+    const ranked = rankOrder(this.#all, this.#zipf, this.#allSpell);
     const n = this.#limit();
-    this.#words = n ? ranked.slice(0, n) : ranked;
-    this.#L = layout(this.#words);
+    const kept = n ? ranked.slice(0, n) : ranked;
+    this.#words = kept.map(i => this.#all[i]);
+    this.#spell = Int32Array.from(kept, i => this.#allSpell[i]);
+    this.#L = layout(this.#words, this.#spell);
+    this.#alpha = alphabetical(this.#spell);
     this.#chain = new Chain(this.#L.head, this.#L.tail);
     this.#chordCount = chords(this.#L);
     this.#reachOf.clear();
@@ -673,7 +695,13 @@ class WordDisc extends HTMLElement {
     this.#turn = turns(this.#L);
 
     this.#crumbs();
-    this.#showMoves();
+    // The old column names words that are no longer drawn, and a row clicked
+    // now would play whatever word took its index, so it goes at once.
+    this.#listEl.replaceChildren();
+    this.#whyEl.replaceChildren();
+    this.#moves = [];
+    this.#listed = 0;
+    this.#later();
     if (this.#pw) {
       this.#measure();
       this.#geometry();
@@ -682,14 +710,34 @@ class WordDisc extends HTMLElement {
     }
   }
 
+  /* What the disc can do without for a frame, run once it has painted. For
+     entity's 40,117 words the column of moves took 16 ms and the longest
+     chain 7 ms, both in the task that drew the disc, which held the new
+     picture back by as much. A hidden page runs no frames, so there it waits
+     for a task alone. */
+  #later() {
+    const b = ++this.#builds;
+    this.#settled = false;
+    const run = () => {
+      if (b !== this.#builds) return;
+      this.#settled = true;
+      this.#showMoves();
+      this.#showRead();
+    };
+    if (typeof requestAnimationFrame === "function" && document.visibilityState !== "hidden")
+      requestAnimationFrame(() => setTimeout(run, 0));
+    else setTimeout(run, 0);
+  }
+
   #shape() {
     const f = this.#frame.getBoundingClientRect();
     const want = this.hasAttribute("fit") && f.width - f.height >= ASIDE_MIN + ASIDE_GAP;
     if (want === this.#frame.classList.contains("wide")) return false;
     this.#frame.classList.toggle("wide", want);
     // Built on the way into the wide layout and dropped on the way out, since
-    // the column exists only there.
-    if (this.#ready) this.#showMoves();
+    // the column exists only there. A build still waiting on its frame builds
+    // the column then.
+    if (this.#ready && this.#settled) this.#showMoves();
     return true;
   }
 
@@ -1616,9 +1664,11 @@ class WordDisc extends HTMLElement {
     const i = sel >= 0 ? sel : this.#chain.end;
     if (i < 0) {
       const n = this.#words.length;
-      const best = this.#hinting()
-        ? ` The longest chain here runs <b>${this.#run()}</b> of them.`
-        : "";
+      // Put off until the disc has painted; #later comes back for it.
+      const best =
+        this.#hinting() && this.#settled
+          ? ` The longest chain here runs <b>${this.#run()}</b> of them.`
+          : "";
       this.#glossEl.innerHTML =
         `${n} word${n === 1 ? "" : "s"} in ${this.#category || "the category"}. ` +
         `Pick any one to open the chain.${best}`;
@@ -1680,9 +1730,7 @@ class WordDisc extends HTMLElement {
     }
     const letter = this.#chain.letter;
     const all = [];
-    if (letter < 0) for (let i = 0; i < this.#words.length; i++) all.push(i);
-    else for (const j of this.#L.byHead[letter]) if (this.#chain.legal(j)) all.push(j);
-    all.sort((x, y) => (this.#words[x] < this.#words[y] ? -1 : 1));
+    for (const j of this.#alpha) if (letter < 0 || this.#chain.legal(j)) all.push(j);
 
     const lead = document.createElement("span");
     const key = document.createElement("b");
@@ -1762,4 +1810,17 @@ class WordDisc extends HTMLElement {
       show < 0 ? "" : `${this.#chain.length ? "<i>›</i>" : ""}<em>${this.#words[show]}</em>`;
   }
 }
+/* A spelling handed in with the data, if it fits it: one place per word, each
+   a whole number below SPELL_MAX, which bounds what alphabetical allocates. */
+function places(spell, n) {
+  if (spell?.length !== n) return null;
+  const out = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = spell[i];
+    if (!Number.isInteger(r) || r < 0 || r >= SPELL_MAX) return null;
+    out[i] = r;
+  }
+  return out;
+}
+
 customElements.define("word-disc", WordDisc);
