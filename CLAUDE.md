@@ -125,6 +125,10 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   away after `HOLD`, and a wake cancels the hold, so a fast scroll does not
   empty and refill every disc it crosses. It returns a handle rather than the
   observer, since a held sleep must not outlive a disconnect.
+- `<word-disc>`'s sleep keeps the resting bundle and frees only the canvases.
+  The canvases redraw in 5 ms; entity's bundle takes the worker 255 ms, and a
+  fast scroll reaches the disc 116 ms after it wakes, so a dropped bundle left
+  it without edges on screen. A change of words while asleep still releases it.
 - The resize observer watches the frame as well as the stage, since a stacked
   stage's box does not move when the frame widens.
 - `fit` fills the box the host gives, so the host must give one. Blocks under a

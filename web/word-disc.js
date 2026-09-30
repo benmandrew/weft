@@ -775,21 +775,25 @@ class WordDisc extends HTMLElement {
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
   }
 
-  /* A disc more than a screen away gives its pixels back: two canvases and the
-     resting bundle. #pw going to 0 is what stops every draw path, since each
-     already refuses an unsized stage, and #asleep is what stops #fit sizing
-     them again under the resize observer, which goes on firing at an element
-     nobody can see. Nothing is dropped before the first fit, so a disc that
-     starts below the fold never allocates at all. */
+  /* A disc more than a screen away gives its two canvases back. #pw going to 0
+     is what stops every draw path, since each already refuses an unsized
+     stage, and #asleep is what stops #fit sizing them again under the resize
+     observer, which goes on firing at an element nobody can see. Nothing is
+     dropped before the first fit, so a disc that starts below the fold never
+     allocates at all.
+
+     The resting bundle is kept. The canvases redraw in 5 ms, but entity's
+     bundle takes the worker 255 ms, and the disc wakes one screen ahead: a
+     scroll at 8,000 px/s reached it 116 ms after the wake, so a dropped bundle
+     showed the disc without its edges for 150 ms. Kept, it is blitted by the
+     first draw after the wake. It is 1,536 px square (9 MB) on a 1440 by 900
+     screen at a ratio of 2, and MAX_PX square (38 MB) at most. A bundle still
+     being built when the disc sleeps lands and is kept the same way, and a
+     change of words while asleep releases it as it does awake. */
   #sleep = () => {
     if (this.#asleep) return;
     this.#asleep = true;
     if (!this.#pw) return;
-    release(this.#cache);
-    this.#cache = null;
-    this.#cachePx = 0;
-    this.#cacheKey = "";
-    this.#asked = "";
     for (const c of [this.#base, this.#over]) {
       c.width = 0;
       c.height = 0;

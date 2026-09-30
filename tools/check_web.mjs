@@ -2237,8 +2237,10 @@ check(
 );
 zoom(2);
 
-/* A disc more than a screen away gives its pixels back. Nothing downstream can
-   tell, since it draws the same on the way back. */
+/* A disc more than a screen away gives its canvases back and keeps its bundle,
+   which costs the worker hundreds of milliseconds to rebuild where the canvases
+   cost a few. Nothing downstream can tell, since it draws the same on the way
+   back. */
 // After the zoom above has settled, since a fit part way through a drag is held
 // on the trailing timer and this claim is about a canvas that is still.
 await new Promise(r => setTimeout(r, 80));
@@ -2249,7 +2251,8 @@ check(
   shadow.querySelector(".base").width === 0 && shadow.querySelector(".over").width === 0,
   `a disc a screen away kept a ${shadow.querySelector(".base").width}px canvas`,
 );
-check(!disc.stats.bundle, "a disc a screen away kept its bundle");
+check(disc.stats.bundle, "a disc a screen away let its bundle go");
+const sleptWith = shadow.querySelector(".base").sources.at(-1);
 /* And does not take them straight back. The resize observer goes on firing at an
    element nobody can see. The box really moves, and past the coalescing window,
    so a fit that went ahead would size the canvases here and now. */
@@ -2263,6 +2266,10 @@ nearScreen(true);
 check(
   shadow.querySelector(".base").width === bigBase && disc.stats.bundle,
   `coming back left the canvas at ${shadow.querySelector(".base").width} of ${bigBase}`,
+);
+check(
+  sleptWith && shadow.querySelector(".base").sources.at(-1) === sleptWith,
+  "coming back blitted another bundle than the one it slept with",
 );
 
 /* A bundle that has been replaced has to be let go of: its pixels sit outside the
