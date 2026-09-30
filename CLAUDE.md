@@ -203,6 +203,10 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   a quarter of a second. Keep both halves. Do not swap in `getImageData`, which
   doubles the GPU work, or `willReadFrequently`, whose software canvas took
   1.2 s for plant. A build a newer message overtakes stops and answers nothing.
+- The wait is a `MessageChannel` task and then `GAP` (2 ms). Do not go back to
+  `setTimeout(0)`: it nests inside the snapshot's task and is clamped to 4 ms,
+  which was 290 ms of entity's 390 ms build. Do not drop the timer either: bands
+  sent back to back put GPU tasks of up to 48 ms on the browser's frame thread.
 - `release(pic)` closes an `ImageBitmap`, whose pixels sit outside the heap and
   look small to the collector: call it when a bundle is replaced, lands after
   the disc moved on, or on a word-set change. The bundle held over
