@@ -38,10 +38,16 @@ def _parents(synsets: list[Synset]) -> dict[str, list[str]]:
 
     nltk keeps `instance_hypernyms` -- Paris under city, every named river --
     out of `hypernyms`, so asking for one without the other drops them.
+
+    Sorted, since the first is the tree's parent: nltk 3.10 returns pointers in
+    set order, which moves with the hash seed, so a synset with two parents
+    could take either one a run and `export_table.py`'s fingerprint stopped
+    matching the tree's.
     """
     return {
-        synset.name(): [h.name() for h in synset.hypernyms()]
-        + [h.name() for h in synset.instance_hypernyms()]
+        synset.name(): sorted(
+            [h.name() for h in synset.hypernyms()] + [h.name() for h in synset.instance_hypernyms()]
+        )
         for synset in synsets
     }
 

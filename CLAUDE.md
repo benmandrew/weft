@@ -325,8 +325,9 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   otherwise reads as plausible wrong words. `fingerprint()` in
   `export_table.py` and `word-source.js` must agree.
 - The tree keeps only first hypernyms, so the rest ship as `extra` edges and
-  `ids()` closes over them to a fixpoint. `min_depth` counts those edges too, as
-  `lexicon._closure` does.
+  `ids()` closes over them to a fixpoint. "First" is by name: nltk 3.10 returns
+  them in hash-seed order, so `_parents` sorts, or the two exports disagree.
+  `min_depth` counts those edges too, as `lexicon._closure` does.
 - `lexicon.EXTRA_WORDS` is not in the table, since a hand-added word belongs to
   a category's name rather than to a node. A derived list omits them, and
   `check_words.mjs` leaves them out of the comparison.
