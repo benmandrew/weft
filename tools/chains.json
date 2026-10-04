@@ -501,6 +501,92 @@
       "certified": false
     },
     {
+      "name": "whole-too-soon",
+      "why": "the scan's first connected candidate keeps seven, so the heuristic returns it without joining the split candidate that prices eight; the search finds the eight, ending on disc",
+      "words": [
+        "end",
+        "dove",
+        "bird",
+        "dad",
+        "disc",
+        "attic",
+        "eve",
+        "bulb",
+        "boa",
+        "bib"
+      ],
+      "chain": [
+        "bulb",
+        "bib",
+        "bird",
+        "dad",
+        "dove",
+        "eve",
+        "end",
+        "disc"
+      ],
+      "bound": 8,
+      "certified": true
+    },
+    {
+      "name": "whole-too-soon-opened",
+      "why": "the same list opened on bulb, a loop, which the circuit rotates onto: the heuristic stops at seven and the search finds eight",
+      "words": [
+        "end",
+        "dove",
+        "bird",
+        "dad",
+        "disc",
+        "attic",
+        "eve",
+        "bulb",
+        "boa",
+        "bib"
+      ],
+      "opening": "bulb",
+      "chain": [
+        "bulb",
+        "bib",
+        "bird",
+        "dad",
+        "dove",
+        "eve",
+        "end",
+        "disc"
+      ],
+      "bound": 8,
+      "certified": true
+    },
+    {
+      "name": "whole-too-soon-loops",
+      "why": "opened on area, the heuristic keeps disc to close on c and stops at six; the search plays dune and ebb for seven",
+      "words": [
+        "cod",
+        "dune",
+        "disc",
+        "civic",
+        "cubic",
+        "comic",
+        "axe",
+        "ebb",
+        "area",
+        "arc"
+      ],
+      "opening": "area",
+      "chain": [
+        "area",
+        "arc",
+        "civic",
+        "cubic",
+        "comic",
+        "cod",
+        "dune",
+        "ebb"
+      ],
+      "bound": 8,
+      "certified": true
+    },
+    {
       "name": "furniture",
       "why": "a real category that fragments; exhaustive search puts the true optimum at 9",
       "words": [

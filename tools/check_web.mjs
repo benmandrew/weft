@@ -1076,6 +1076,8 @@ const {
   components: chainParts,
   hierholzer: chainWalk,
   longest: longestOn,
+  name: chainName,
+  search: chainSearch,
   trace: chainTrace,
 } = await import(mod("word-longest.js"));
 
@@ -1255,6 +1257,28 @@ const longestByHand = (words, opening) => {
   const firsts = opening === undefined ? words.map((_, i) => i) : [words.indexOf(opening)];
   return firsts.reduce((best, i) => Math.max(best, on(i)), 0);
 };
+/** The chain `search` finds alone, with no heuristic answer to beat: behind the
+   heuristic it runs so rarely that a missing branch would pass unseen. `said`
+   is how many words the search said it holds, which a walk that missed some
+   falls short of. */
+const { matrix: oracleMatrix } = await import(mod("letter-graph.js"));
+const searched = (words, opening) => {
+  const m = Int32Array.from(oracleMatrix(words).count);
+  const held = chainBuckets(words);
+  let start = -1;
+  const first = [];
+  if (opening !== undefined) {
+    const cell = (opening.charCodeAt(0) - 97) * 26 + (opening.charCodeAt(opening.length - 1) - 97);
+    held[cell].splice(held[cell].indexOf(opening), 1);
+    m[cell]--;
+    start = opening.charCodeAt(opening.length - 1) - 97;
+    first.push(opening);
+  }
+  const found = chainSearch(m, start, 0);
+  if (!found) return { alone: first, said: first.length };
+  const said = first.length + found.x.reduce((a, b) => a + b, 0);
+  return { alone: first.concat(chainName(chainWalk(found.x, found.s), held)), said };
+};
 let oracled = 0;
 for (let list = 0; list < ORACLE.lists; list++) {
   const alphabet = "abcdefgh".slice(0, 2 + draw(ORACLE.letters - 1));
@@ -1279,6 +1303,17 @@ for (let list = 0; list < ORACLE.lists; list++) {
       `oracle: ${label} chained ${got.words.length} where ${best} exist`,
     );
     check(got.bound >= best, `oracle: ${label} bound ${got.bound} under a chain of ${best}`);
+    const { alone, said } = searched(words, opening);
+    check(
+      alone.length === said,
+      `oracle: ${label} searched to ${said} words and walked ${alone.length}`,
+    );
+    const wrong = unplayable(alone, words, opening);
+    check(wrong === null, `oracle: ${label} searched to something unplayable — ${wrong}`);
+    check(
+      alone.length === best,
+      `oracle: ${label} searched to ${alone.length} where ${best} exist`,
+    );
   }
 }
 

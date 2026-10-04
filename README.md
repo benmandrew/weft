@@ -24,7 +24,7 @@ python -m weft build animal     # render the word disc to out/animal.svg
 - `--theme light|dark`, overriding the config file's `theme`, and dark when neither sets it.
 - `--limit N`, the words drawn: the 110 commonest by default, every word at 0. The canvas grows until adjacent labels clear each other, and past 30 inches the type shrinks instead.
 
-`stats` prints the longest chain the category allows and says whether it is provably the longest. `--opening WORD` pins its first word, matched lowercased. A word the category lacks is refused with the nearest word it has, or with a pointer at `weft words <category>` when nothing is near.
+`stats` prints the longest chain the category allows, which is always provably the longest, with the upper bound beside it when the chain falls short of that bound. `--opening WORD` pins its first word, matched lowercased. A word the category lacks is refused with the nearest word it has, or with a pointer at `weft words <category>` when nothing is near.
 
 All four commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance` and `--max-rank`. `--multiword` keeps entries such as *polar bear*, chained on their outer letters. Every command takes `--no-cache` and `--config FILE`, and a flag beats the config file for one run, so `--no-multiword` turns off a file that switched it on.
 

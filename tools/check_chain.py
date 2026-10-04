@@ -11,6 +11,8 @@ A frozen case holds whatever the solver answered when it was frozen, so it
 cannot tell a short chain from the longest. The `oracle` in chains.json can: it
 draws lists small enough to try every chain and holds the solver to the longest,
 free and under an opening word. Both halves draw the same lists from one seed.
+It also runs the branch and bound alone, from nothing to beat, since behind the
+heuristic it runs so rarely that a missing branch would pass unseen.
 
 This is the Python half. `tools/check_web.mjs` runs the same cases through the
 JavaScript. Both name every disagreement rather than stopping at the first.
@@ -20,6 +22,7 @@ Run it with `make check`, or `python tools/check_chain.py`.
 
 from __future__ import annotations
 
+import itertools
 import json
 import sys
 from collections import defaultdict
@@ -27,7 +30,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from weft.graph import longest_chain
+from weft.graph import _INDEX, _hierholzer, _search, letter_matrix, longest_chain
 from weft.lexicon import Word
 
 CASES = Path(__file__).with_name("chains.json")
@@ -96,6 +99,27 @@ def _longest(words: list[str], opening: str | None) -> int:
     return max((on(i) for i in firsts), default=0)
 
 
+def _searched(words: list[str], opening: str | None) -> tuple[list[str], int]:
+    """The chain `_search` finds with no heuristic answer to beat, and how many
+    words the search said it holds, which a walk that missed some falls short of."""
+    counts = letter_matrix([Word(text, 0.0) for text in words])
+    m = [int(counts[u, v]) for u in range(26) for v in range(26)]
+    held: dict[int, list[str]] = defaultdict(list)
+    for text in words:
+        if text != opening:
+            held[_INDEX[text[0]] * 26 + _INDEX[text[-1]]].append(text)
+    start, first = -1, []
+    if opening is not None:
+        m[_INDEX[opening[0]] * 26 + _INDEX[opening[-1]]] -= 1
+        start, first = _INDEX[opening[-1]], [opening]
+    found = _search(m, start, 0)
+    if found is None:
+        return first, len(first)
+    letters = _hierholzer(*found)
+    named = [held[u * 26 + v].pop() for u, v in itertools.pairwise(letters)]
+    return first + named, len(first) + sum(found[0])
+
+
 def _oracle(oracle: dict[str, int]) -> tuple[list[str], int]:
     """Every drawn list the solver chains short of the longest, and how many
     chains were checked."""
@@ -114,6 +138,14 @@ def _oracle(oracle: dict[str, int]) -> tuple[list[str], int]:
                 problems.append(f"oracle: {label} chained {found.length} where {best} exist")
             elif found.bound < best:
                 problems.append(f"oracle: {label} bound {found.bound} under a chain of {best}")
+            alone, said = _searched(words, opening)
+            broken = _legal(alone, words, opening)
+            if len(alone) != said:
+                problems.append(f"oracle: {label} searched to {said} words and walked {len(alone)}")
+            elif broken is not None:
+                problems.append(f"oracle: {label} searched to something unplayable — {broken}")
+            elif len(alone) != best:
+                problems.append(f"oracle: {label} searched to {len(alone)} where {best} exist")
     return problems, checked
 
 

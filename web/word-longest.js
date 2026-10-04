@@ -13,7 +13,9 @@
  * bound is attained and the chain is provably the longest there is. Where they
  * do not, words crossing to the stranded letters are forced back one at a time
  * while that grows the component, then the largest component is kept and the
- * rest solved again, and the gap is reported rather than hidden.
+ * rest solved again. That is a heuristic, and it can stop short, so a chain
+ * under the bound is handed to `search`, a branch and bound over the same
+ * relaxation that either finds a longer chain or proves there is none.
  *
  * graph.py's `longest_chain` is this written a second time, so the browser and
  * the report agree on how far a category runs. A change here has to be made
@@ -24,7 +26,7 @@
  *
  *   const L = chain(["cat", "toad", "dog"]);
  *   L.words        // the chain itself
- *   L.certified    // whether it is provably the longest
+ *   L.certified    // whether it meets the bound; it is the longest either way
  */
 import { LETTERS, matrix } from "./letter-graph.js";
 
@@ -620,6 +622,132 @@ function join(m, x, hold, s, start) {
   return { x, hold };
 }
 
+/** The most words a balanced trail can keep with each pair's count between
+   `lo` and `hi`: the count, the arcs, and the letter it opens on (-1 for a
+   closed circuit), or null where no such set exists. `balanced` with two
+   changes: discards are capped at `hi - lo`, and a one-unit gate lets one
+   letter keep a surplus of one and another a deficit of one for free, which is
+   the open trail's two ends chosen inside the flow rather than priced one pair
+   at a time.
+   @param {Int32Array} lo @param {Int32Array} hi @param {number} start
+   @returns {{ kept: number, x: Int32Array, s: number } | null} */
+function relax(lo, hi, start) {
+  const e = excess(hi);
+  const source = LETTERS,
+    sink = LETTERS + 1,
+    gate = LETTERS + 2,
+    out = LETTERS + 3;
+  const flow = new Flow(LETTERS + 4, CELLS + 3 * LETTERS + 1);
+  const arc = new Int32Array(CELLS).fill(-1);
+  let total = 0;
+  for (let cell = 0; cell < CELLS; cell++) {
+    total += hi[cell];
+    const u = (cell / LETTERS) | 0,
+      v = cell % LETTERS;
+    if (u !== v && hi[cell] > lo[cell]) arc[cell] = flow.add(u, v, hi[cell] - lo[cell], 1);
+  }
+  let need = 0;
+  for (let v = 0; v < LETTERS; v++) {
+    if (e[v] > 0) {
+      flow.add(source, v, e[v], 0);
+      need += e[v];
+    } else if (e[v] < 0) flow.add(v, sink, -e[v], 0);
+  }
+  const opens = new Int32Array(LETTERS).fill(-1);
+  for (let v = 0; v < LETTERS; v++) {
+    if (start < 0 || v === start) opens[v] = flow.add(v, gate, 1, 0);
+    flow.add(out, v, 1, 0);
+  }
+  flow.add(gate, out, 1, 0);
+  const pushed = flow.run(source, sink);
+  if (pushed.flow !== need) return null;
+  const x = Int32Array.from(hi);
+  for (let i = 0; i < CELLS; i++) if (arc[i] >= 0) x[i] -= flow.cap[arc[i] ^ 1];
+  let s = -1;
+  for (let v = 0; v < LETTERS && s < 0; v++) if (opens[v] >= 0 && flow.cap[opens[v] ^ 1]) s = v;
+  return { kept: total - pushed.paid, x, s };
+}
+
+/** The arcs of a chain longer than `best` words and the letter it opens on, the
+   longest there is, or null where `best` is already the longest.
+   Branch and bound over `relax`. A node holds per-pair limits, its relaxation
+   bounds every chain inside them, and a connected answer that touches `start`
+   is a chain by Euler. Otherwise one component C is picked and every chain does
+   exactly one of three things: stays on C's letters, stays off them, or plays a
+   pair between C and the rest. The third is split over the crossing pairs,
+   branch j holding at least one word of pair j and none of the pairs before it.
+   Every chain lands in one branch, and every branch rules out the answer that
+   split it, so the search is exact and it ends.
+   @param {Int32Array} m @param {number} start @param {number} best
+   @returns {{ x: Int32Array, s: number } | null} */
+export function search(m, start, best) {
+  /** @type {{ x: Int32Array, s: number } | null} */
+  let found = null;
+  /** @type {[Int32Array, Int32Array][]} */
+  const stack = [[new Int32Array(CELLS), Int32Array.from(m)]];
+  while (stack.length) {
+    const top = stack.pop();
+    if (!top) break;
+    const [lo, hi] = top;
+    const relaxed = relax(lo, hi, start);
+    if (!relaxed || relaxed.kept <= best) continue;
+    const { kept, x, s } = relaxed;
+    const { find, touched } = components(x);
+    /** @type {number[]} */
+    const roots = [];
+    for (let v = 0; v < LETTERS; v++)
+      if (touched[v] && !roots.includes(find(v))) roots.push(find(v));
+    if (start >= 0 && !touched[start]) {
+      // The gate keeps a word leaving `start` for free, so an untouched start
+      // has none left, and only the empty chain lives here.
+      continue;
+    }
+    if (roots.length === 1) {
+      // A circuit opens wherever it was asked to, or on any letter it has.
+      best = kept;
+      found = { x, s: s >= 0 ? s : start >= 0 ? start : touched.indexOf(1) };
+      continue;
+    }
+    const size = new Int32Array(LETTERS);
+    for (let i = 0; i < CELLS; i++) if (x[i]) size[find((i / LETTERS) | 0)] += x[i];
+    // The smallest piece not holding the opening, since staying off it loses the
+    // least and that branch is tried first.
+    const held = start >= 0 ? find(start) : -1;
+    let root = -1;
+    for (const r of roots)
+      if (r !== held && (root < 0 || size[r] < size[root] || (size[r] === size[root] && r < root)))
+        root = r;
+    const inside = new Uint8Array(LETTERS);
+    for (let v = 0; v < LETTERS; v++) inside[v] = touched[v] && find(v) === root ? 1 : 0;
+    /** @type {number[]} */
+    const crossing = [];
+    for (let i = 0; i < CELLS; i++)
+      if (hi[i] && inside[(i / LETTERS) | 0] !== inside[i % LETTERS]) crossing.push(i);
+    /** @type {[Int32Array, Int32Array][]} */
+    const branches = [];
+    // Off C, then on C, where the opening allows each.
+    for (const on of [0, 1]) {
+      if (start >= 0 && inside[start] !== on) continue;
+      const cut = new Int32Array(CELLS);
+      let other = false;
+      for (let i = 0; i < CELLS; i++) {
+        if (inside[(i / LETTERS) | 0] === on && inside[i % LETTERS] === on) cut[i] = hi[i];
+        else if (lo[i]) other = true; // a pair held at one or more is on the other side
+      }
+      if (!other) branches.push([lo, cut]);
+    }
+    const barred = Int32Array.from(hi);
+    for (const cell of crossing) {
+      const forced = Int32Array.from(lo);
+      forced[cell] = Math.max(forced[cell], 1);
+      branches.push([forced, Int32Array.from(barred)]);
+      barred[cell] = 0;
+    }
+    for (let i = branches.length - 1; i >= 0; i--) stack.push(branches[i]);
+  }
+  return found;
+}
+
 /** The letter sequence of the longest chain found, and the upper bound.
    A fragmented answer is tried again on the letters it did reach, this time at
    full capacity rather than at what the fragment kept, which is what recovers
@@ -664,6 +792,10 @@ export function longest(m, start = -1) {
     current = following;
   }
   if (!best) return { letters: [], bound };
+  if (best.words < bound) {
+    const longer = search(m, start, best.words);
+    if (longer) return { letters: hierholzer(longer.x, longer.s), bound };
+  }
   return { letters: hierholzer(best.x, best.start), bound };
 }
 

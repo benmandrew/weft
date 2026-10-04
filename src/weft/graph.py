@@ -144,7 +144,8 @@ def summary(words: list[Word], opening: str | None = None) -> dict[str, Any]:
         "dead_ends": [s.letter for s in stats if s.is_dead_end],
         "traps": [(s.letter, s.demand, s.supply, s.pressure) for s in traps(words)],
         # How far play can run if every word is chosen perfectly. `chain_bound`
-        # is what the flow relaxation allows; the two meeting is the proof.
+        # is what the flow relaxation allows; the chain is the longest either
+        # way, and `chain_certified` says whether the two meet.
         "longest_chain": chain.words,
         "chain_bound": chain.bound,
         "chain_certified": chain.certified,
@@ -165,7 +166,9 @@ def summary(words: list[Word], opening: str | None = None) -> dict[str, Any]:
 # the bound is attained and the chain is provably the longest there is. Where
 # they do not, words crossing to the stranded letters are forced back one at a
 # time while that grows the component, then the largest component is kept and
-# the rest re-solved, and the gap stays reported rather than hidden.
+# the rest re-solved. That is a heuristic, and it can stop short, so a chain
+# under the bound is handed to `_search`, a branch and bound over the same
+# relaxation that either finds a longer chain or proves there is none.
 #
 # web/word-longest.js is this written a second time, so the browser and the
 # report agree on how long a category runs. A change here has to be made there
@@ -180,7 +183,8 @@ class LongestChain:
     """The longest chain a category allows, and how sure of it we are.
 
     `bound` is what the flow relaxation permits, counting no connectivity.
-    `certified` says the chain reached it, which proves no longer one exists.
+    `certified` says the chain reached it. The chain is the longest there is
+    either way: one under the bound was proved so by `_search`.
     """
 
     words: list[str]
@@ -633,6 +637,106 @@ def _join(m: list[int], x: list[int], held: _Held, s: int, start: int) -> tuple[
     return x, held
 
 
+def _relax(lo: list[int], hi: list[int], start: int) -> tuple[int, list[int], int] | None:
+    """The most words a balanced trail can keep with each pair's count between
+    `lo` and `hi`: the count, the arcs, and the letter it opens on (-1 for a
+    closed circuit). None where no such set exists.
+
+    `_balanced` with two changes. Discards are capped at `hi - lo`, and a
+    one-unit gate lets one letter keep a surplus of one and another a deficit of
+    one for free, which is the open trail's two ends chosen inside the flow
+    rather than priced one pair at a time.
+    """
+    excess = _excess(hi)
+    source, sink, gate, out = 26, 27, 28, 29
+    flow = _Flow(30)
+    arc = [-1] * _CELLS
+    for cell in range(_CELLS):
+        u, v = divmod(cell, 26)
+        if u != v and hi[cell] > lo[cell]:
+            arc[cell] = flow.add(u, v, hi[cell] - lo[cell], 1)
+    need = 0
+    for v in range(26):
+        if excess[v] > 0:
+            flow.add(source, v, excess[v], 0)
+            need += excess[v]
+        elif excess[v] < 0:
+            flow.add(v, sink, -excess[v], 0)
+    opens = [-1] * 26
+    for v in range(26):
+        if start < 0 or v == start:
+            opens[v] = flow.add(v, gate, 1, 0)
+        flow.add(out, v, 1, 0)
+    flow.add(gate, out, 1, 0)
+    pushed, cost = flow.run(source, sink)
+    if pushed != need:
+        return None
+    x = [hi[i] - (flow.cap[arc[i] ^ 1] if arc[i] >= 0 else 0) for i in range(_CELLS)]
+    s = next((v for v in range(26) if opens[v] >= 0 and flow.cap[opens[v] ^ 1]), -1)
+    return sum(hi) - cost, x, s
+
+
+def _search(m: list[int], start: int, best: int) -> tuple[list[int], int] | None:
+    """The arcs of a chain longer than `best` words and the letter it opens on,
+    the longest there is, or None where `best` is already the longest.
+
+    Branch and bound over `_relax`. A node holds per-pair limits, its
+    relaxation bounds every chain inside them, and a connected answer that
+    touches `start` is a chain by Euler. Otherwise one component C is picked and
+    every chain does exactly one of three things: stays on C's letters, stays
+    off them, or plays a pair between C and the rest. The third is split over
+    the crossing pairs, branch j holding at least one word of pair j and none of
+    the pairs before it. Every chain lands in one branch, and every branch rules
+    out the answer that split it, so the search is exact and it ends.
+    """
+    found: tuple[list[int], int] | None = None
+    stack = [([0] * _CELLS, list(m))]
+    while stack:
+        lo, hi = stack.pop()
+        relaxed = _relax(lo, hi, start)
+        if relaxed is None or relaxed[0] <= best:
+            continue
+        kept, x, s = relaxed
+        find, touched = _components(x)
+        roots = {find(v) for v in range(26) if touched[v]}
+        if start >= 0 and not touched[start]:
+            # The gate keeps a word leaving `start` for free, so an untouched
+            # start has none left, and only the empty chain lives here.
+            continue
+        if len(roots) == 1:
+            # A circuit opens wherever it was asked to, or on any letter it has.
+            opener = s if s >= 0 else start if start >= 0 else touched.index(True)
+            best, found = kept, (x, opener)
+            continue
+        size = dict.fromkeys(roots, 0)
+        for i in range(_CELLS):
+            if x[i]:
+                size[find(i // 26)] += x[i]
+        # The smallest piece not holding the opening, since staying off it
+        # loses the least and that branch is tried first.
+        held = find(start) if start >= 0 else -1
+        root = min((r for r in roots if r != held), key=lambda r: (size[r], r))
+        inside = [touched[v] and find(v) == root for v in range(26)]
+        crossing = [i for i in range(_CELLS) if hi[i] and inside[i // 26] != inside[i % 26]]
+        branches: list[tuple[list[int], list[int]]] = []
+        # Off C, then on C, where the opening allows each.
+        for on in (False, True):
+            if start >= 0 and inside[start] != on:
+                continue
+            side = [inside[i // 26] == on and inside[i % 26] == on for i in range(_CELLS)]
+            if any(lo[i] and not side[i] for i in range(_CELLS)):
+                continue  # a pair held at one or more is on the other side
+            branches.append((lo, [hi[i] if side[i] else 0 for i in range(_CELLS)]))
+        barred = list(hi)
+        for cell in crossing:
+            forced = list(lo)
+            forced[cell] = max(forced[cell], 1)
+            branches.append((forced, list(barred)))
+            barred[cell] = 0
+        stack.extend(reversed(branches))
+    return found
+
+
 def _solve_matrix(m: list[int], start: int = -1) -> tuple[list[int], int]:
     """The letter sequence of the longest chain found, and the upper bound.
 
@@ -677,6 +781,10 @@ def _solve_matrix(m: list[int], start: int = -1) -> tuple[list[int], int]:
         current = following
     if best is None:
         return [], bound
+    if best.words < bound:
+        longer = _search(m, start, best.words)
+        if longer is not None:
+            return _hierholzer(*longer), bound
     return _hierholzer(best.x, best.start), bound
 
 

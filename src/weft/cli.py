@@ -156,11 +156,11 @@ def _load(args: argparse.Namespace, category: str | None = None) -> list[Word]:
 
 
 def _longest(facts: dict[str, Any], opening: str | None) -> str:
-    """The perfect round, and whether it is known to be the longest one.
+    """The perfect round, and what proves it the longest one.
 
-    A chain that reaches the bound is proved; one that falls short does so
-    because the words it would need sit in a part of the alphabet it cannot
-    reach, and the gap is printed rather than rounded away.
+    A chain that reaches the flow's bound is proved by it. One that falls short
+    is proved by the search, and the bound is printed beside it, since the gap
+    says the words it would need sit where no chain can reach them.
     """
     chain: list[str] = facts["longest_chain"]
     label = "longest chain" if opening is None else f"longest chain from {opening}"
@@ -171,7 +171,8 @@ def _longest(facts: dict[str, Any], opening: str | None) -> str:
     proof = (
         "provably the longest there is"
         if facts["chain_certified"]
-        else f"against an upper bound of {facts['chain_bound']} nothing reached"
+        else f"provably the longest there is, under a bound of {facts['chain_bound']}"
+        " that no chain reaches"
     )
     return f"{label}: {count}, {ends} — {proof}"
 
