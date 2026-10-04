@@ -220,6 +220,22 @@ export function shipped(frames, k) {
   return done;
 }
 
+/** What each letter still owes once the first `k` augmentations have run:
+   positive for a surplus still to ship, negative for a deficit still to fill,
+   and all zero at the end of a run that settled. The text the element gives a
+   screen reader in place of the two columns.
+   @param {ArrayLike<number>} excess @param {{from: number, to: number, push: number}[]} frames
+   @param {number} k @returns {Int32Array} */
+export function owing(excess, frames, k) {
+  const left = Int32Array.from(excess);
+  const end = Math.max(0, Math.min(k, frames.length));
+  for (let i = 0; i < end; i++) {
+    left[frames[i].from] -= frames[i].push;
+    left[frames[i].to] += frames[i].push;
+  }
+  return left;
+}
+
 /* What a stack of bands is drawn at. Ink accumulates where they cross, so a
    category with four times the augmentations floods the middle of the picture;
    this is letter-graph.js's `fade` in the same shape, over the bands rather than

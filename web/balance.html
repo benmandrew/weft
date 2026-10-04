@@ -24,7 +24,9 @@
 body{background:var(--ground);color:var(--ink);font-family:var(--body);margin:0;
      font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 html,body{height:100%}
-body{overflow:hidden}
+/* auto rather than hidden, so a page zoomed past what the frame can hold
+   scrolls to the rest of it (WCAG 1.4.10) instead of cutting it off. */
+body{overflow:auto}
 .wrap{max-width:1160px;height:100%;margin:0 auto;padding:12px 20px 14px;
       display:flex;flex-direction:column}
 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;
@@ -35,6 +37,7 @@ header .live{margin-left:auto;font-family:var(--data);font-size:11px;color:var(-
 header .live::before{content:"";width:7px;height:7px;border-radius:50%;
   background:var(--faint);transition:background .2s}
 header .live.on::before{background:var(--live)}
+@media (prefers-reduced-motion:reduce){header .live::before{transition:none}}
 
 main{flex:1;min-height:0;display:flex;justify-content:center}
 balance-flow{

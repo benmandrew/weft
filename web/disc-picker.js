@@ -57,6 +57,38 @@ function named(disc) {
   return Boolean(data?.par?.length) && data.names?.length === data.par.length;
 }
 
+// The picker's visible name, and the rule that sets it out. The rule is
+// wrapped in :where, so it weighs nothing and any rule of the host's own for
+// .pick-label wins; a host that writes none gets this one.
+export const LABEL = "Category";
+const LABEL_CSS =
+  ":where(.pick-label){display:block;font-family:var(--_mono,ui-monospace,monospace);" +
+  "font-size:10.5px;line-height:1.5;color:var(--_muted,currentColor);padding-bottom:4px}";
+
+/** A visible label over the select, which an aria-label alone is not (WCAG
+   3.3.2). Built here rather than in each element's template, so all three
+   elements show it with no change of their own; a template already holding a
+   .pick-label keeps it and only has it wired to the select. The rule rides in
+   a <style> inside the picker's box, which applies across the shadow root it
+   sits in and nowhere outside it.
+   @param {HTMLElement} pickEl @param {HTMLSelectElement} catEl */
+function labelFor(pickEl, catEl) {
+  if (!catEl.id) catEl.id = "cat";
+  let label = /** @type {HTMLLabelElement | null} */ (pickEl.querySelector(".pick-label"));
+  if (!label) {
+    const style = document.createElement("style");
+    style.textContent = LABEL_CSS;
+    label = /** @type {HTMLLabelElement} */ (document.createElement("label"));
+    label.className = "pick-label";
+    label.textContent = LABEL;
+    pickEl.prepend(style, label);
+  }
+  label.htmlFor = catEl.id;
+  // The label names it now, and a second name beside it would be the one
+  // read out.
+  catEl.removeAttribute("aria-label");
+}
+
 export class Picker {
   /** @type {HTMLElement} */ #host;
   /** @type {HTMLElement} */ #pickEl;
@@ -91,6 +123,7 @@ export class Picker {
     this.#pickEl = pickEl;
     this.#catEl = catEl;
     this.#to = to;
+    labelFor(pickEl, catEl);
   }
 
   get indexSrc() {

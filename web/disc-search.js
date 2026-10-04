@@ -146,3 +146,30 @@ export class Search {
     return out;
   }
 }
+
+// How far PageDown and PageUp move through a list.
+export const PAGE_STEP = 10;
+
+/** Where a key moves the active row of an `n`-row list from row `at`, -1 being
+   none. Null for a key that moves nothing, so the caller leaves it alone. The
+   first arrow press lands on the first row, whichever way it points, since a
+   list just reached by the keyboard has no row to move from. It stops at the
+   ends rather than wrapping, since a column several hundred rows long that
+   wraps reads as one that started again. Shared by both elements' columns, so
+   they answer the same keys the same way.
+   @param {string} key
+   @param {number} at
+   @param {number} n
+   @returns {number | null} */
+export function step(key, at, n) {
+  if (n < 1) return null;
+  const last = n - 1;
+  if (key === "Home") return 0;
+  if (key === "End") return last;
+  if (at < 0) return /^(Arrow|Page)/.test(key) ? 0 : null;
+  if (key === "ArrowDown" || key === "ArrowRight") return Math.min(last, at + 1);
+  if (key === "ArrowUp" || key === "ArrowLeft") return Math.max(0, at - 1);
+  if (key === "PageDown") return Math.min(last, at + PAGE_STEP);
+  if (key === "PageUp") return Math.max(0, at - PAGE_STEP);
+  return null;
+}

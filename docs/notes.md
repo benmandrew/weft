@@ -64,6 +64,8 @@ animal is the worst case at 344 populated letter pairs, few enough that every ar
 
 Each letter's arc is split into the half words leave from and the half they arrive at, leaving half first clockwise, so direction lives in the geometry rather than in an arrowhead; the target end tapers to 45% of its slot as a second signal. 31% of animal's arcs cover less than a third of the turn and 12 are loops, which is why the pull on a chord varies with its turn, from 0.82 at none to 0.14 at half the circle: at a long chord's pull every one of those short arcs is a spike pointing at the middle.
 
+The canvas has nothing a keyboard can reach, so two selects under it do the pointer's work: a letter, then any arc touching it, each option naming the far letter, the direction and the count. A pick drills in, lights what it chose and is announced; a touch tap pins the same way, since on a phone the readout used to clear as the finger lifted. The old edge, muted at 38%, came to 2.0:1 on the dark ground and 1.7:1 on the light panel; at 85% it is 5.4 and 5.0 on the dark ground and panel, 3.6 and 3.9 on the light ones, and 4.8 and 4.6 on the site's `#141414` and `#191918`.
+
 Hit testing runs in three bands. The ring answers with an arc by binary search over ends that tile it exactly, the band outside answers with a letter, and inside the ring each path is asked through `isPointInPath`, topmost first. `near` refuses three quarters of those before a path is built, since every point of a ribbon lies in the wedge its four turns span, found as the complement of the largest gap between them so an arc wrapping through the top still works.
 
 ## The hypernym disc
@@ -87,6 +89,8 @@ The canvas budget bounds area rather than the device pixel ratio because browser
 The trace takes 0.46 ms on animal, against the plain chain solve's 0.64 ms. animal's 1,582 words leave 26 letters open and 778 words out of balance, cleared in 144 augmentations for 945 discarded; its largest single push is 32 words and its longest path 5 arcs. furniture's 79 words leave 16 letters open and 47 out of balance, cleared in 36 augmentations for 75 discarded. food takes the most augmentations, 156, and all 37 categories settle.
 
 The run has a nine-second budget, so animal's steps run at 62 ms each and furniture's at the 160 ms ceiling. It opens at the balanced state, so a page nobody touches still shows the whole transport. A column can be cut into up to 26 slots, and with the gap set as a share of the span alone, the 25 gaps in animal's column took a sixth of its height. The thinning leaves animal's 144 bands at an alpha of 0.26 and furniture's 36 at the full 0.5.
+
+A screen reader gets the picture as text: the stage names the run's figures, and a visually hidden list says what each letter still owes at the step shown, against what it opened with, and the path that step pushed, a forward arc discarding a word and a reverse one recovering it. The scrub's value reads as `step 37 of 144, A → E, cost 1`. The keys and the end of a run are announced, and nothing is while it plays, which at 62 ms a step would be sixteen announcements a second. Under reduced motion the run steps every 500 ms, so animal takes 72 seconds where it takes nine.
 
 ### Reverse arcs
 

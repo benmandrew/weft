@@ -133,13 +133,39 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   stage's box does not move when the frame widens.
 - `fit` fills the box the host gives, so the host must give one. Blocks under a
   disc are fixed height, so longer text never resizes the disc under the
-  pointer.
+  pointer. Text past the box scrolls inside it rather than being clamped, and
+  `scrollable` gives an overflowing box a tab stop, `role=region` and a name so
+  the keyboard can scroll it. That reads layout, so it runs once, a frame after
+  a committed action, a key or a resize, and never on a pointer move.
 - Refit text when `document.fonts.ready` settles, since canvas text is measured
   and a cached fit replays in the wrong face.
 - The halo is copies of one `fillText`, never a `strokeText`, which is
   positioned by different code and reads as a shadow. Hub baselines centre on
   `HUB_REF` ("Hd"), since per-word ink metrics make the name jump.
 - Hit testing is a binary search over angles; there is no spatial index.
+- Accessibility (WCAG 2.2 AA) in `<hypernym-disc>` and `<word-disc>`:
+  - The host is `role=group` with an `aria-label` unless the page set one, and
+    `.stage` is `role=img` with a short text alternative updated on a zoom or a
+    build.
+  - One visually hidden `.announce` live region per element (`role=status`,
+    polite, atomic). Only a committed action writes to it (a zoom, a play, a
+    refusal), never a hover. `#tell` clears it and puts identical text back a
+    frame later, since a region is read only when its text changes.
+  - The column (`.kids` / `.moves`) is a `role=listbox` with one tab stop and
+    `aria-activedescendant`. `disc-search.js`'s `step` moves the row without
+    wrapping; Enter or Space acts as a click. A keyed row past the paged rows
+    pages the column on to it.
+  - A hover readout ends on the host's `pointerleave`, not the canvas's, and
+    holds over empty canvas, so the pointer can cross to the readout (1.4.13).
+    Escape anywhere reverts it.
+  - `--_edge` is 85% muted in all four elements (80% is the floor), at least
+    3:1 on ground and panel in both palettes, and `--disc-edge` overrides it.
+    The selected-row tint is 10% accent, so every text colour on it keeps
+    4.5:1; a 2px inset accent bar marks the row without relying on the tint.
+  - Rows are at least 24px tall. The crumb's buttons are shorter, and rely on
+    the spacing exception of 2.5.8, since a taller line would take height off
+    the disc. The crumb scrolls to its end on a move rather than wrapping.
+  - The canvas is `touch-action: pan-y`, so a page still scrolls across it.
 
 ### `<hypernym-disc>`
 
@@ -243,6 +269,7 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   work waits: `#showRead` leaves the sentence out and `#shape` leaves the
   column alone until then. The build clears the old column at once, since a
   row clicked before `#later` runs would play whatever word took its index.
+  The keyboard's row (`#mark`) is cleared with it, for the same reason.
 
 ### `<letter-disc>`
 
@@ -258,6 +285,21 @@ Keep the hook idempotent, since direnv re-runs it on every load.
 - `letter-graph.js`'s `near` is a prune, so it must never refuse a point that is
   on the arc. `#preview` never touches `#letter`, so a hover cannot move what a
   click landed on.
+- The letter and arc selects are the keyboard's way to everything the pointer
+  reads, since the canvas has nothing focusable. They and a touch tap go through
+  `#pin`, which drills with `show()` and holds the arc in `#held`. The hub, the
+  readout and the lit arcs all read `#shown()` (hover, then held arc, then
+  letter), so the three cannot differ. A pick is announced; a hover never is.
+- The hover clears on the host's `pointerleave`, not the canvas's, so the
+  pointer can cross to the readout (WCAG 1.4.13). Escape clears a hover, and
+  with focus inside goes back to the category. A tap pins, since a finger has
+  no hover and its readout went as it lifted; a mouse click still does nothing.
+- The canvas is `touch-action:pan-y pinch-zoom`: `none` stopped a phone
+  scrolling past a disc that fills the screen.
+- The readout scrolls rather than clipping, and `#scrollable` makes it a
+  focusable region while it overflows; a held arc names all its words. `--_edge`
+  is muted at 85%, which clears 3:1 on both the ground and the panel in both
+  default palettes and the site's, and `--disc-edge` overrides it.
 
 ### Derived categories
 
@@ -292,6 +334,9 @@ Keep the hook idempotent, since direnv re-runs it on every load.
   share, talking to its element through the `PickerHost` callbacks (`open`,
   `apply`, `ready`, `category`, `fail`). `tree` names a `<hypernym-disc>` by id,
   resolved through `getRootNode()` so an element in a shadow tree finds it.
+  It puts a visible `.pick-label` ("Category") ahead of the select and drops
+  the select's `aria-label`, so no element needs a template change to show it.
+  Its default rule is wrapped in `:where`, so an element's own rule wins.
 - `table()` in `word-source.js` fetches once per `src` and decodes once per tree
   per page, however many elements follow. A failed fetch is not kept, so the
   next ask retries. The table is fetched at the disc's first move or the
@@ -353,6 +398,16 @@ Of the disc rules, `ratio`, the sleep, `fit`, the fonts refit and
   leg doubles back.
 - The element draws the scrub's thumb itself, since a mark must sit on the
   thumb's travel: `--_thumb` places both.
+- The canvas is a `role="img"` with the run's figures, and `.ledger` is a
+  visually hidden list of what each letter still owes (`owing`), written with
+  the readout so the two are of one step. The scrub carries `aria-valuetext`.
+- The keys and a run's end are announced; the scrub is not, since its value text
+  is read and a live region would say each step twice, and nothing is while it
+  plays. `#halt(say)` is that rule: a stop on the way to a key's own step, a
+  scrub or a sleep says nothing.
+- Under `prefers-reduced-motion` a run steps at `STEP_CALM`, 500 ms whatever the
+  category. A step is drawn whole with no tween to drop, so the pace is the
+  motion. The readout and `--_edge` follow `<letter-disc>`'s rules.
 
 ## The longest chain
 

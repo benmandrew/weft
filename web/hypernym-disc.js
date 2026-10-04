@@ -40,7 +40,7 @@
  */
 import { Painter, TAU } from "./disc-paint.js";
 import { layoutTree } from "./disc-layout.js";
-import { Search } from "./disc-search.js";
+import { Search, step } from "./disc-search.js";
 import { fit } from "./disc-label.js";
 import { ratio } from "./disc-ratio.js";
 import { watch } from "./disc-idle.js";
@@ -76,7 +76,15 @@ TPL.innerHTML = `
     --_sat:var(--disc-sat,.55); --_val:var(--disc-val,.88);
     --_font:var(--disc-font,system-ui,sans-serif);
     --_mono:var(--disc-mono,ui-monospace,Menlo,monospace);
-    --_edge:color-mix(in srgb,var(--_muted) 38%,transparent);
+    /* 85% of the muted ink, as in <letter-disc> and <balance-flow>, so the four
+       elements on one page draw their edges alike. 80% is the least that clears
+       3:1 against both the ground and the panel in both palettes here and under
+       a host's warmer one (WCAG 1.4.11); 38% was 2:1. A host's own --disc-edge
+       wins. */
+    --_edge:var(--disc-edge,color-mix(in srgb,var(--_muted) 85%,transparent));
+    /* The tint behind a highlighted row. 10% keeps muted, warn and accent text
+       on it above 4.5:1; the accent rule beside it is what marks the row. */
+    --_tint:color-mix(in srgb,var(--_accent) 10%,transparent);
     color:var(--_ink);font-family:var(--_font)}
   @media (prefers-color-scheme:light){
     :host{--_ground:var(--disc-ground,#eef1f0); --_panel:var(--disc-panel,#fbfcfc);
@@ -113,7 +121,7 @@ TPL.innerHTML = `
     justify-self:center}
   /* The stage spans both rows, so a longer definition costs the suggestions
      their room rather than the disc its height. */
-  :host([fit]) .frame.wide .gloss{grid-area:2/1;height:auto;-webkit-line-clamp:5;
+  :host([fit]) .frame.wide .gloss{grid-area:2/1;height:auto;max-height:7.25em;
     margin-top:0;padding:0 10px 10px}
   :host([fit]) .frame.wide .crumb{grid-area:3/1/4/-1;margin-top:7px}
   .find{position:relative;margin-bottom:8px}
@@ -129,9 +137,12 @@ TPL.innerHTML = `
     background:var(--_panel);border:1px solid var(--_edge);border-radius:2px;
     box-shadow:0 8px 26px rgba(0,0,0,.32)}
   .hits[hidden]{display:none}
-  .hits li{display:flex;gap:10px;align-items:baseline;padding:3px 6px;
-    border-radius:2px;cursor:pointer;font-size:12.5px;white-space:nowrap}
-  .hits li[aria-selected="true"]{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
+  .hits li{box-sizing:border-box;min-height:24px;display:flex;gap:10px;
+    align-items:baseline;padding:3px 6px;border-radius:2px;cursor:pointer;
+    font-size:12.5px;line-height:1.5;white-space:nowrap}
+  /* A tint alone was 1.3:1 against the panel, so the rule down the left is
+     what says which row is picked (WCAG 1.4.11). */
+  .hits li[aria-selected="true"]{background:var(--_tint);box-shadow:inset 2px 0 0 var(--_accent)}
   .hits .n{overflow:hidden;text-overflow:ellipsis}
   .hits .n b{font-weight:600;color:var(--_accent)}
   .hits .p{margin-left:auto;font-family:var(--_mono);font-size:10.5px;
@@ -152,11 +163,13 @@ TPL.innerHTML = `
   .kids .list{margin:0;padding:3px;list-style:none;flex:1 1 auto;min-height:0;
     overflow-y:auto;scrollbar-width:thin;background:var(--_panel);
     border:1px solid var(--_edge);border-radius:2px}
+  .kids .list:focus-visible{outline:2px solid var(--_accent);outline-offset:-2px}
   /* Colour and leading are set on the row rather than inherited: a list that
      draws no text should depend on as little from outside it as it can. */
-  .kids li{box-sizing:border-box;display:flex;gap:8px;align-items:baseline;
-    color:var(--_ink);font-size:12.5px;line-height:1.5;padding:2px 5px;
-    border-radius:2px;cursor:pointer}
+  /* 24 px at the least, the smallest target WCAG 2.5.8 allows. */
+  .kids li{box-sizing:border-box;min-height:24px;display:flex;gap:8px;
+    align-items:baseline;color:var(--_ink);font-size:12.5px;line-height:1.5;
+    padding:3px 5px;border-radius:2px;cursor:pointer}
   .kids li .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* Right-aligned against the column's edge rather than the longest name, so
      the figures read down as a column of their own. */
@@ -165,46 +178,65 @@ TPL.innerHTML = `
   /* A leaf is not a way in, so it reads muted and the cursor stays an arrow
      over it. */
   .kids li.leaf{color:var(--_muted);cursor:default}
-  .kids li:hover{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
+  .kids li:hover{background:var(--_tint)}
+  /* The row the keyboard is on, marked as the picked suggestion is, and only
+     while the list has focus: a row left marked after it was would read as a
+     selection the list does not have. */
+  .kids .list:focus li[aria-selected="true"]{background:var(--_tint);
+    box-shadow:inset 2px 0 0 var(--_accent)}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-  canvas.over{cursor:pointer;touch-action:none}
+  /* pan-y so a finger dragged down the disc scrolls the page, which none
+     stopped on a phone; nothing here is a gesture, and a tap is a click. */
+  canvas.over{cursor:pointer;touch-action:pan-y}
   :host([readout="off"]) .gloss,:host([readout="off"]) .crumb{display:none}
   /* The gloss and the crumb are children of the frame rather than a block of
      their own, since grid placement moves the gloss into the search column and
      can only place a child of the grid. Stacked, it is a fixed two lines, so
-     zooming to a longer definition never resizes the disc under the pointer. */
+     zooming to a longer definition never resizes the disc under the pointer.
+     A longer one scrolls rather than being cut off, and so does one a
+     reader's own text spacing has pushed past the box (WCAG 1.4.12). */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
-    margin-top:7px;overflow:hidden;
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    margin-top:7px;overflow-y:auto;scrollbar-width:thin}
+  .gloss:focus-visible{outline:2px solid var(--_accent);outline-offset:1px}
   .gloss:empty{display:none}
   .crumb{font-family:var(--_mono);font-size:11px;color:var(--_muted);line-height:1.6;
     margin-top:3px;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
   .gloss:empty + .crumb{margin-top:7px}
   .crumb::-webkit-scrollbar{display:none}
-  .crumb button{font:inherit;color:var(--_accent);background:none;border:0;padding:0;
-    cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  /* The padding is what the inset ring sits in, and the margin hands it
+     back, so the line is laid out as it was. Inset, since the line scrolls
+     and would clip a ring drawn outside the button. */
+  .crumb button{font:inherit;color:var(--_accent);background:none;border:0;
+    padding:0 2px;margin:0 -2px;cursor:pointer;text-decoration:underline;
+    text-underline-offset:2px}
+  .crumb button:focus-visible{outline:2px solid var(--_accent);outline-offset:-2px}
   .crumb .now{color:var(--_ink)}
   .crumb em{font-style:normal}
   .crumb i{font-style:normal;color:var(--_muted);opacity:.5;padding:0 4px}
   .crumb .head i:first-child{padding-left:0}
   .crumb b{color:var(--_ink);font-weight:600}
+  .announce{position:absolute;width:1px;height:1px;overflow:hidden;
+    clip-path:inset(50%);white-space:nowrap}
 </style>
 <div class="frame">
   <div class="find">
     <input class="q" type="search" role="combobox" autocomplete="off"
            spellcheck="false" aria-controls="hits" aria-expanded="false"
-           aria-autocomplete="list" placeholder="Waiting for names…" disabled>
-    <ul class="hits" id="hits" role="listbox" hidden></ul>
-    <div class="kids"><div class="why"></div><ul class="list"></ul></div>
+           aria-autocomplete="list" aria-label="Search names"
+           placeholder="Waiting for names…" disabled>
+    <ul class="hits" id="hits" role="listbox" aria-label="Matching names" hidden></ul>
+    <div class="kids"><div class="why"></div>
+      <ul class="list" role="listbox" tabindex="0" aria-label="Below"></ul></div>
   </div>
-  <div class="stage">
+  <div class="stage" role="img" aria-label="Nested rings of the tree">
     <canvas class="base" aria-hidden="true"></canvas>
     <canvas class="over" aria-hidden="true"></canvas>
   </div>
   <div class="gloss"></div>
   <div class="crumb"><span class="head"></span><span class="tail"></span></div>
-</div>`;
+</div>
+<div class="announce" role="status" aria-live="polite" aria-atomic="true"></div>`;
 
 class HypernymDisc extends HTMLElement {
   static observedAttributes = [
@@ -235,6 +267,18 @@ class HypernymDisc extends HTMLElement {
   // follow as the column is scrolled.
   #below = [];
   #listed = 0;
+  // The row of #below the keyboard is on, -1 for none. Reset by every
+  // rebuild, since a new ring has no row the reader chose.
+  #active = -1;
+  // Set while the suggestions are the ring below rather than a search's
+  // answer, which is how the stacked layout, with no column, browses it.
+  #browsing = false;
+  #stage;
+  // The live region, and a count of what was said to it, so a repeat put off
+  // to the next frame is dropped when something newer has been said since.
+  #announce;
+  #told = 0;
+  #readCheck = false;
   #frame;
   #glossEl;
   // Built on the first query rather than when the names land, so a page that
@@ -337,11 +381,21 @@ class HypernymDisc extends HTMLElement {
     this.#listEl = this.#kidsEl.querySelector(".list");
     this.#frame = this.#sr.querySelector(".frame");
     this.#glossEl = this.#sr.querySelector(".gloss");
+    this.#stage = this.#sr.querySelector(".stage");
+    this.#announce = this.#sr.querySelector(".announce");
   }
 
   connectedCallback() {
+    // A name for the whole element, unless the page gave it one.
+    if (!this.hasAttribute("role")) this.setAttribute("role", "group");
+    if (!this.hasAttribute("aria-label") && !this.hasAttribute("aria-labelledby"))
+      this.setAttribute("aria-label", "Hypernym disc");
     this.#over.addEventListener("pointermove", this.#onMove);
-    this.#over.addEventListener("pointerleave", this.#onLeave);
+    /* Off the element as a whole rather than off the canvas, so the pointer can
+       leave the disc for the definition and the column and still find there
+       what it was showing (WCAG 1.4.13). Escape anywhere puts it back. */
+    this.addEventListener("pointerleave", this.#onLeave);
+    document.addEventListener("keydown", this.#onEscape);
     this.#over.addEventListener("click", this.#onClick);
     this.#crumb.addEventListener("click", e => {
       const b = e.target.closest("button");
@@ -374,11 +428,15 @@ class HypernymDisc extends HTMLElement {
       const i = +li.dataset.i;
       if (i !== this.#hover) this.#preview(i);
     });
-    this.#listEl.addEventListener("pointerleave", () => this.#preview(-1));
     this.#listEl.addEventListener("click", e => {
       const li = e.target.closest("li[data-i]");
-      if (li) this.#go(+li.dataset.i);
+      if (!li) return;
+      // The keyboard carries on from the row clicked. A branch zooms and
+      // rebuilds the list, which drops it again.
+      this.#mark(+li.dataset.k);
+      this.#go(+li.dataset.i);
     });
+    this.#listEl.addEventListener("keydown", this.#onKidsKey);
     this.#listEl.addEventListener("scroll", () => {
       const el = this.#listEl;
       if (el.scrollTop + el.clientHeight > el.scrollHeight - KIDS_NEAR) this.#page();
@@ -405,6 +463,7 @@ class HypernymDisc extends HTMLElement {
     this.#idle = watch(this, this.#sleep, this.#wake);
   }
   disconnectedCallback() {
+    document.removeEventListener("keydown", this.#onEscape);
     this.#ro?.disconnect();
     this.#idle?.disconnect();
     this.#idle = null;
@@ -549,7 +608,10 @@ class HypernymDisc extends HTMLElement {
   }
   set glosses(v) {
     this.#glosses = new Lines(v);
-    if (this.#ready) this.#showGloss();
+    if (this.#ready) {
+      this.#showGloss();
+      this.#checkRead();
+    }
   }
 
   #setNames(v) {
@@ -557,7 +619,7 @@ class HypernymDisc extends HTMLElement {
     this.#search = null;
     this.#closeFind();
     this.#q.disabled = this.#names.length === 0;
-    if (!this.#q.disabled) this.#q.placeholder = "Search names…";
+    if (!this.#q.disabled) this.#q.placeholder = "Search names, or ↓ to browse";
   }
   #label(i) {
     return this.#names[i] ?? `#${i}`;
@@ -586,12 +648,15 @@ class HypernymDisc extends HTMLElement {
      than kept behind display:none. */
   #showKids() {
     if (!this.#ready) return;
+    this.#active = -1;
+    this.#listEl.removeAttribute("aria-activedescendant");
     if (!this.#frame.classList.contains("wide")) {
       if (this.#listEl.childElementCount) this.#listEl.replaceChildren();
       this.#below = [];
       this.#listed = 0;
       return;
     }
+    this.#listEl.setAttribute("aria-label", `Below ${this.#label(this.#root)}`);
     const off = this.#kidOff;
     const all = Array.from(this.#kidIdx.subarray(off[this.#root], off[this.#root + 1]));
     let open = 0;
@@ -636,7 +701,10 @@ class HypernymDisc extends HTMLElement {
     for (let k = this.#listed; k < to; k++) {
       const i = this.#below[k];
       const li = document.createElement("li");
+      li.id = `kid-${k}`;
+      li.setAttribute("role", "option");
       li.dataset.i = i;
+      li.dataset.k = k;
       const name = document.createElement("span");
       name.className = "n";
       name.textContent = this.#label(i);
@@ -657,6 +725,52 @@ class HypernymDisc extends HTMLElement {
     // A page that did not fill the column leaves no scrollbar to ask for the
     // next one, so it asks here instead. Bounded by the list.
     if (this.#listEl.scrollHeight <= this.#listEl.clientHeight) this.#page();
+  }
+
+  /* The column's keys: the arrows, Home, End and the page keys move the row,
+     which previews it as a pointer would, and Enter or Space takes it as a
+     click would. One tab stop for the whole ring, however long, with the row
+     named through aria-activedescendant. */
+  #onKidsKey = ev => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      if (this.#active < 0) return;
+      ev.preventDefault();
+      this.#go(this.#below[this.#active]);
+      return;
+    }
+    if (ev.key === "Escape") {
+      if (this.#active < 0) return;
+      ev.preventDefault();
+      this.#mark(-1);
+      this.#preview(-1);
+      return;
+    }
+    const k = step(ev.key, this.#active, this.#below.length);
+    if (k === null) return;
+    ev.preventDefault();
+    this.#mark(k);
+    this.#preview(this.#below[k]);
+    this.#checkRead();
+  };
+
+  /* Puts the keyboard on row k, paging the column on as far as it, or on no
+     row at all. */
+  #mark(k) {
+    this.#listEl.children[this.#active]?.removeAttribute("aria-selected");
+    this.#active = k;
+    if (k < 0) {
+      this.#listEl.removeAttribute("aria-activedescendant");
+      return;
+    }
+    for (let was = -1; this.#listed <= k && was !== this.#listed; ) {
+      was = this.#listed;
+      this.#page();
+    }
+    const li = this.#listEl.children[k];
+    if (!li) return;
+    li.setAttribute("aria-selected", "true");
+    this.#listEl.setAttribute("aria-activedescendant", li.id);
+    li.scrollIntoView({ block: "nearest" });
   }
 
   /* disc-layout.js lays the tree out, so a copy drawn elsewhere is this one. */
@@ -797,6 +911,7 @@ class HypernymDisc extends HTMLElement {
     this.#fits.clear();
     this.#draw();
     this.#overlay();
+    this.#checkRead();
   };
 
   /* Read once and held: getComputedStyle flushes pending style and the overlay
@@ -1068,11 +1183,29 @@ class HypernymDisc extends HTMLElement {
     return [ev.offsetX, ev.offsetY];
   }
   #onMove = ev => {
-    const h = this.#hit(...this.#at(ev));
+    const [px, py] = this.#at(ev);
+    const h = this.#hit(px, py);
     if (h === this.#hover) return;
+    /* On no wedge, the readout holds what it showed, as the column holds over
+       a seam: the way from a wedge to the definition crosses the empty outer
+       rings and the stage's corners, and clearing there left nothing to read
+       on arrival (WCAG 1.4.13). The hub alone clears it, being where the root
+       is named. */
+    if (h < 0 && Math.hypot(px - this.#cx, py - this.#cy) >= this.#r0) return;
     this.#preview(h);
   };
-  #onLeave = () => this.#preview(-1);
+  #onLeave = () => {
+    if (this.#hover < 0) return;
+    this.#preview(-1);
+    this.#checkRead();
+  };
+  /* The pointer's readout back to rest, wherever focus is. A key some control
+     of the element has already answered is left alone. */
+  #onEscape = ev => {
+    if (ev.key !== "Escape" || ev.defaultPrevented || this.#hover < 0) return;
+    this.#preview(-1);
+    this.#checkRead();
+  };
   /* Everything a pointer over node i does, and nothing else: the highlighted
      path, the hub, the readout, the event. The search box calls this so a
      picked suggestion looks exactly like a hover, -1 to put it back. */
@@ -1098,6 +1231,7 @@ class HypernymDisc extends HTMLElement {
      and requestAnimationFrame is throttled in a background tab. */
   #onQuery = () => {
     if (!this.#ready || !this.#names.length) return;
+    this.#browsing = false;
     this.#search ??= new Search(this.#names);
     this.#sug = this.#search.query(this.#q.value, 12);
     this.#pick = -1;
@@ -1109,6 +1243,11 @@ class HypernymDisc extends HTMLElement {
 
   #onFindKey = ev => {
     const n = this.#sug.length;
+    if (ev.key === "ArrowDown" && !n && !this.#q.value.trim()) {
+      ev.preventDefault();
+      this.#browse();
+      return;
+    }
     if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
       if (!n) return;
       ev.preventDefault();
@@ -1127,6 +1266,22 @@ class HypernymDisc extends HTMLElement {
     }
   };
 
+  /* The ring below the root as suggestions, for ArrowDown in an empty box. It
+     is the keyboard's way down the tree where the stacked layout builds no
+     column, and costs nothing until asked for: city, the widest node, has 508
+     children. */
+  #browse() {
+    if (!this.#ready) return;
+    const off = this.#kidOff;
+    const all = this.#kidIdx.subarray(off[this.#root], off[this.#root + 1]);
+    if (!all.length) return;
+    this.#browsing = true;
+    this.#sug = Array.from(all, i => ({ i, name: this.#label(i), score: 0 }));
+    this.#pick = -1;
+    this.#drawHits();
+    this.#setPick(0);
+  }
+
   /* The click, for a node reached by name. Zooming into a leaf would show an
      empty disc, so a leaf goes to its parent with the cursor left on the leaf:
      the word stays highlighted and named in the hub. Focus stays in the box,
@@ -1142,6 +1297,8 @@ class HypernymDisc extends HTMLElement {
       if (this.#par[i] !== this.#root) this.zoomTo(this.#par[i]);
       this.#cursor = i;
       this.#overlay();
+      this.#tell(this.#withGloss(i, `${this.#label(i)}, in ${this.#label(this.#par[i])}.`));
+      this.#checkRead();
     }
   }
 
@@ -1157,8 +1314,9 @@ class HypernymDisc extends HTMLElement {
         const name = document.createElement("span");
         name.className = "n";
         // Marks the run the query matched outright. A fuzzy hit has no such run,
-        // and is left plain rather than marked letter by letter.
-        const at = hit.name.toLowerCase().indexOf(q);
+        // and is left plain rather than marked letter by letter, and a row of
+        // the ring below answers no query at all.
+        const at = this.#browsing ? -1 : hit.name.toLowerCase().indexOf(q);
         if (at < 0) name.textContent = hit.name;
         else {
           const b = document.createElement("b");
@@ -1169,7 +1327,13 @@ class HypernymDisc extends HTMLElement {
         // called "bank" and only their parents tell them apart.
         const par = document.createElement("span");
         par.className = "p";
-        par.textContent = this.#par[hit.i] >= 0 ? this.#label(this.#par[hit.i]) : "";
+        // Browsing, every row's parent is the root, so the row says what the
+        // column would: its share of the ring, or nothing for a leaf.
+        if (this.#browsing)
+          par.textContent = this.#isLeaf(hit.i)
+            ? ""
+            : this.#weight(hit.i, this.#leaves[this.#root] || 1);
+        else par.textContent = this.#par[hit.i] >= 0 ? this.#label(this.#par[hit.i]) : "";
         li.append(name, par);
         return li;
       }),
@@ -1193,10 +1357,12 @@ class HypernymDisc extends HTMLElement {
     this.#q.setAttribute("aria-activedescendant", `hit-${k}`);
     this.#hits.children[k].scrollIntoView({ block: "nearest" });
     this.#preview(this.#sug[k].i);
+    this.#checkRead();
   }
 
   #closeFind = () => {
     if (this.#pick >= 0) this.#preview(-1);
+    this.#browsing = false;
     this.#sug = [];
     this.#pick = -1;
     this.#hits.replaceChildren();
@@ -1215,6 +1381,9 @@ class HypernymDisc extends HTMLElement {
     this.#overlay();
     this.#crumbs();
     this.#showKids();
+    const n = this.#kidOff[i + 1] - this.#kidOff[i];
+    this.#tell(this.#withGloss(i, `${this.#label(i)}, ${n ? `${n} below` : "nothing below"}.`));
+    this.#checkRead();
     this.#emit("disc-zoom", { index: i, name: this.#label(i), path: this.path(i) });
   }
   up() {
@@ -1246,8 +1415,51 @@ class HypernymDisc extends HTMLElement {
      letter is a capital, which stops "cDNA copy…" becoming "CDNA". */
   #showGloss() {
     const sel = this.#focus();
-    const g = this.#glosses.at(sel >= 0 ? sel : this.#root);
-    this.#glossEl.textContent = /^[a-z](?![A-Z])/.test(g) ? g[0].toUpperCase() + g.slice(1) : g;
+    this.#glossEl.textContent = this.#glossOf(sel >= 0 ? sel : this.#root);
+  }
+  #glossOf(i) {
+    const g = this.#glosses.at(i);
+    return /^[a-z](?![A-Z])/.test(g) ? g[0].toUpperCase() + g.slice(1) : g;
+  }
+
+  /* What a zoom or a leaf picked says, followed by the definition where there
+     is one, since the definition is otherwise only where the eye goes. */
+  #withGloss(i, said) {
+    const g = this.#glossOf(i);
+    return g ? `${said} ${g}` : said;
+  }
+
+  /* The live region. Only a committed action writes to it, never a hover. A
+     region is read when its text changes, so the same words twice are cleared
+     and put back a frame later. */
+  #tell(text) {
+    const el = this.#announce;
+    const n = ++this.#told;
+    if (el.textContent !== text) {
+      el.textContent = text;
+      return;
+    }
+    el.textContent = "";
+    const put = () => {
+      if (n === this.#told) el.textContent = text;
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(put);
+    else setTimeout(put, 0);
+  }
+
+  /* Whether the definition overflows its box, and if so a tab stop and a
+     named region, so the keyboard can scroll it (WCAG 2.1.1). Read a frame
+     later, and only after a committed action or a key, never on a pointer
+     move: it reads layout, and a mouse can scroll the box without it. */
+  #checkRead() {
+    if (this.#readCheck) return;
+    this.#readCheck = true;
+    const run = () => {
+      this.#readCheck = false;
+      scrollable(this.#glossEl, "Definition", this.#sr.activeElement);
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    else setTimeout(run, 0);
   }
   #crumbs() {
     const path = [];
@@ -1266,6 +1478,14 @@ class HypernymDisc extends HTMLElement {
     this.#failed = false;
     this.#crumbSel = -2;
     this.#showTail();
+    // The line scrolls rather than wraps, since a second line would take
+    // height off the disc, so it is scrolled to its end, where the root is.
+    // On a zoom only: the tail moves with the pointer, and this reads layout.
+    this.#crumb.scrollLeft = this.#crumb.scrollWidth;
+    this.#stage.setAttribute(
+      "aria-label",
+      `Nested rings of everything below ${this.#label(this.#root)}`,
+    );
   }
 
   /* The chain of whatever the hub is naming, carried on past the root, muted
@@ -1283,4 +1503,21 @@ class HypernymDisc extends HTMLElement {
     this.#tailEl.innerHTML = tail.map(i => `<i>›</i><em>${this.#label(i)}</em>`).join("");
   }
 }
+/* A box that scrolls gets a tab stop and a name while it overflows, and gives
+   them up when it no longer does, unless it holds focus at the time.
+   @param {HTMLElement} el @param {string} name @param {Element | null} focused */
+function scrollable(el, name, focused) {
+  const over = el.scrollHeight > el.clientHeight + 1;
+  if (over === el.hasAttribute("tabindex") || (!over && focused === el)) return;
+  if (over) {
+    el.setAttribute("tabindex", "0");
+    el.setAttribute("role", "region");
+    el.setAttribute("aria-label", name);
+  } else {
+    el.removeAttribute("tabindex");
+    el.removeAttribute("role");
+    el.removeAttribute("aria-label");
+  }
+}
+
 customElements.define("hypernym-disc", HypernymDisc);

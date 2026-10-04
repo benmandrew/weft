@@ -20,6 +20,8 @@
  *             group (hosts sharing it take the reader's category together),
  *             readout="off", fit
  * Properties: data, stats, letter, arc. Methods: show(letter), repaint().
+ * Keyboard: the letter and arc selects under the disc reach everything the
+ *           pointer does; Escape returns to the whole category.
  * Events: letter-hover {kind:"arc",from,to,words}
  *                  or {kind:"letter",letter,starts,ends,arcs},
  *         letter-pick {letter,arcs},
@@ -63,8 +65,25 @@ const SCRIM = 0.74,
 // The arriving half of a letter's ring band, against the leaving half's full
 // weight: bright is where play sets out from and dim where it lands.
 const IN_DIM = 0.38;
-// Words named in the readout before it says how many are left instead.
+// Words named in the readout before it says how many are left instead. An arc
+// picked from the keyboard or by a tap names all of them, since the reader
+// asked for that arc and the readout scrolls.
 const NAMED = 14;
+// Letters the text alternative names as the busiest.
+const BUSIEST = 3;
+
+/** @param {string} s */
+const esc = s => s.replace(/[&<>]/g, c => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
+/** The readout as a sentence for the live region: no markup, and the arrow
+   spelt out, since a screen reader names the glyph rather than reading it.
+   @param {string} html */
+const spoken = html =>
+  html
+    .replace(/<[^>]*>/g, "")
+    .replace(/ → /g, " to ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 
 const TPL = document.createElement("template");
 TPL.innerHTML = `
@@ -76,7 +95,10 @@ TPL.innerHTML = `
     --_sat:var(--disc-sat,.55); --_val:var(--disc-val,.88);
     --_font:var(--disc-font,system-ui,sans-serif);
     --_mono:var(--disc-mono,ui-monospace,Menlo,monospace);
-    --_edge:color-mix(in srgb,var(--_muted) 38%,transparent);
+    /* 3:1 or better against both the ground and the panel, which is what a
+       control's edge needs (WCAG 1.4.11): 5.4 and 5.0 on the dark defaults,
+       3.6 and 3.9 on the light ones. 38% came out at 2.0 and 1.7. */
+    --_edge:var(--disc-edge,color-mix(in srgb,var(--_muted) 85%,transparent));
     color:var(--_ink);font-family:var(--_font)}
   @media (prefers-color-scheme:light){
     :host{--_ground:var(--disc-ground,#eef1f0); --_panel:var(--disc-panel,#fbfcfc);
@@ -91,40 +113,66 @@ TPL.innerHTML = `
      with no index named the picker's row measures nothing. */
   :host([fit]) .frame.wide{display:grid;column-gap:18px;
     grid-template-columns:minmax(200px,280px) minmax(0,1fr);
-    grid-template-rows:auto minmax(0,1fr) auto}
+    grid-template-rows:auto auto minmax(0,1fr)}
   /* No box around this column, where both other discs draw one: a border
      round a picker and one paragraph is a tall empty rectangle. */
   :host([fit]) .frame.wide .pick{grid-area:1/1;margin-bottom:0}
   :host([fit]) .frame.wide .stage{grid-area:1/2/4/3;height:100%;min-height:0;
     justify-self:center}
-  :host([fit]) .frame.wide .gloss{grid-area:3/1;height:auto;-webkit-line-clamp:5;
-    margin-top:0}
+  :host([fit]) .frame.wide .tour{grid-area:2/1;margin-top:0}
+  /* The column's foot, as long as it needs and no longer than the column: the
+     stage spans every row, so this one growing cannot move the disc. */
+  :host([fit]) .frame.wide .gloss{grid-area:3/1;align-self:end;height:auto;
+    max-height:100%;margin-top:0}
   .pick{margin-bottom:8px}
   .pick[hidden]{display:none}
-  .pick select{width:100%;font-family:var(--_font);font-size:12.5px;line-height:1.5;
-    color:var(--_ink);background:var(--_panel);border:1px solid var(--_edge);
-    border-radius:2px;padding:5px 9px}
-  .pick select:focus-visible{outline:2px solid var(--_accent);outline-offset:-1px}
+  .pick select,.tour select{width:100%;font-family:var(--_font);font-size:12.5px;
+    line-height:1.5;color:var(--_ink);background:var(--_panel);
+    border:1px solid var(--_edge);border-radius:2px;padding:5px 9px}
+  .pick select:focus-visible,.tour select:focus-visible{outline:2px solid var(--_accent);
+    outline-offset:-1px}
+  /* The keyboard's way to everything the pointer reads off the disc: a letter,
+     then any arc touching it. Visible, since a pointer reader can use it too. */
+  .tour{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:8px}
+  /* The letter select as wide as a letter, so the arc beside it has the room
+     its options need to be read closed. */
+  .tour label{display:flex;align-items:center;gap:6px;flex:0 0 auto;min-width:0;
+    color:var(--_muted);font-size:12.5px}
+  .tour label:last-child{flex:1 1 150px}
+  .tour select{flex:1;min-width:0}
+  .tour select:disabled{color:var(--_muted)}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-  /* The arrow throughout: pointing highlights and a click does nothing. */
-  canvas.over{cursor:default;touch-action:none}
+  /* The arrow throughout: pointing highlights and a click does nothing. A
+     vertical swipe still scrolls the page and a pinch still zooms it; a
+     sideways drag is left to the pointer, which reads arcs as it goes. */
+  canvas.over{cursor:default;touch-action:pan-y pinch-zoom}
   :host([readout="off"]) .gloss{display:none}
   /* Held to a height whatever it holds, which stops the disc moving under the
-     pointer: with fit set the stage takes what this leaves. */
+     pointer: with fit set the stage takes what this leaves. What does not fit
+     scrolls rather than being cut, so a long arc's words and text spaced out
+     by the reader (WCAG 1.4.12) can still be read; #scrollable makes it a
+     focusable region whenever it overflows. */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
-    margin-top:7px;overflow:hidden;
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    margin-top:7px;overflow-y:auto}
+  .gloss:focus-visible{outline:2px solid var(--_accent);outline-offset:2px}
   .gloss b{font-family:var(--_mono);font-weight:600}
   .gloss .w{color:var(--_muted);font-size:13px}
+  .announce{position:absolute;width:1px;height:1px;overflow:hidden;
+    clip-path:inset(50%);white-space:nowrap}
 </style>
 <div class="frame">
   <div class="pick" hidden><select class="cat" aria-label="category"></select></div>
-  <div class="stage">
+  <div class="stage" role="img" aria-label="Letter graph">
     <canvas class="base" aria-hidden="true"></canvas>
     <canvas class="over" aria-hidden="true"></canvas>
   </div>
+  <div class="tour">
+    <label>letter <select class="letter"></select></label>
+    <label>arc <select class="pair" disabled></select></label>
+  </div>
   <div class="gloss"></div>
+  <div class="announce" role="status" aria-live="polite" aria-atomic="true"></div>
 </div>`;
 
 class LetterDisc extends HTMLElement {
@@ -137,6 +185,10 @@ class LetterDisc extends HTMLElement {
   #frame;
   #pickEl;
   #catEl;
+  #stage;
+  #letterEl;
+  #pairEl;
+  #announceEl;
   #ro;
   // Set while the disc is more than a screen away and its canvases have been
   // given back. #pw is 0 with it, which is what every draw path already tests.
@@ -156,6 +208,10 @@ class LetterDisc extends HTMLElement {
      hover moves this and never #letter. */
   #kind = 0;
   #on = -1;
+  /* The arc picked from the arc select or by a tap, -1 for none. It outlives
+     the pointer leaving, which is what a hover never does, and is always an arc
+     touching #letter. */
+  #held = -1;
   #ready = false;
   #loadedSrc = null;
   #picker;
@@ -190,6 +246,10 @@ class LetterDisc extends HTMLElement {
     this.#frame = this.#sr.querySelector(".frame");
     this.#pickEl = this.#sr.querySelector(".pick");
     this.#catEl = this.#sr.querySelector(".cat");
+    this.#stage = this.#sr.querySelector(".stage");
+    this.#letterEl = this.#sr.querySelector(".letter");
+    this.#pairEl = this.#sr.querySelector(".pair");
+    this.#announceEl = this.#sr.querySelector(".announce");
     this.#picker = new Picker(this, this.#pickEl, this.#catEl, {
       open: src => {
         // Opened even where it is the file already held, since the tree's
@@ -212,9 +272,25 @@ class LetterDisc extends HTMLElement {
   }
 
   connectedCallback() {
+    // Named as one thing, unless the page has named it already.
+    if (!this.hasAttribute("role")) this.setAttribute("role", "group");
+    if (!this.hasAttribute("aria-label") && !this.hasAttribute("aria-labelledby")) {
+      this.setAttribute("aria-label", "Letter graph");
+    }
     this.#over.addEventListener("pointermove", this.#onMove);
-    this.#over.addEventListener("pointerleave", this.#onLeave);
-    this.#ro = new ResizeObserver(() => this.#fit());
+    this.#over.addEventListener("pointerup", this.#onTap);
+    /* Off the whole element rather than the canvas, so the pointer can leave
+       the disc for the readout and still read it (WCAG 1.4.13). */
+    this.addEventListener("pointerleave", this.#onLeave);
+    this.#letterEl.addEventListener("change", this.#onLetter);
+    this.#pairEl.addEventListener("change", this.#onPair);
+    // The document's, since Escape has to clear a hover with focus anywhere.
+    // The stub DOM in check_web.mjs has no document listeners, hence the `?.`.
+    document.addEventListener?.("keydown", this.#onKey);
+    this.#ro = new ResizeObserver(() => {
+      this.#fit();
+      this.#scrollable();
+    });
     /* Watch the stage, whose box sizes the canvases, and the frame too: the
        stacked stage's box does not move when the frame is dragged wider, so
        the way out of the stacked layout would never be heard of. */
@@ -234,6 +310,7 @@ class LetterDisc extends HTMLElement {
   }
   disconnectedCallback() {
     this.#picker.disconnect();
+    document.removeEventListener?.("keydown", this.#onKey);
     this.#ro?.disconnect();
     this.#idle?.disconnect();
     this.#idle = null;
@@ -289,8 +366,9 @@ class LetterDisc extends HTMLElement {
     return this.#letter < 0 ? "" : String.fromCharCode(65 + this.#letter);
   }
   get arc() {
-    if (this.#kind !== 2 || !this.#L) return null;
-    const e = this.#L.edges[this.#on];
+    const [kind, on] = this.#shown();
+    if (kind !== 2 || !this.#L) return null;
+    const e = this.#L.edges[on];
     return e ? { from: this.#name(e.from), to: this.#name(e.to), words: e.n } : null;
   }
   get stats() {
@@ -317,6 +395,9 @@ class LetterDisc extends HTMLElement {
     this.#letter = -1;
     this.#kind = 0;
     this.#on = -1;
+    this.#held = -1;
+    this.#tour();
+    this.#describe();
     if (this.#pw) {
       this.#geometry();
       this.#draw();
@@ -533,16 +614,28 @@ class LetterDisc extends HTMLElement {
       g.globalAlpha = 1;
       this.#arcs(g, lit, LIT);
       this.#rings(g, 1);
-      this.#letters(g, 1, this.#kind === 1 ? this.#on : -1);
+      const [kind, on] = this.#shown();
+      this.#letters(g, 1, kind === 1 ? on : -1);
     }
     this.#hub(g);
+  }
+
+  /* What the picture, the hub and the readout are of: the pointer's letter or
+     arc while it is on one, otherwise the held arc, otherwise the drilled-into
+     letter, otherwise nothing. As [kind, on], kind as #kind counts it. */
+  #shown() {
+    if (this.#kind) return [this.#kind, this.#on];
+    if (this.#held >= 0) return [2, this.#held];
+    if (this.#letter >= 0) return [1, this.#letter];
+    return [0, -1];
   }
 
   /* Which arcs are lit, and null for the resting picture: a letter lights
      everything touching it in either direction, an arc lights itself. */
   #lit() {
-    if (this.#kind === 1) return new Set(this.#L.byLetter[this.#on]);
-    if (this.#kind === 2) return new Set([this.#on]);
+    const [kind, on] = this.#shown();
+    if (kind === 1) return new Set(this.#L.byLetter[on]);
+    if (kind === 2) return new Set([on]);
     return null;
   }
 
@@ -599,12 +692,12 @@ class LetterDisc extends HTMLElement {
      middle and the readout below can never be of different things. */
   #named() {
     const ink = this.#tok("--_ink", "#e7eded");
-    if (this.#kind === 2) {
-      const e = this.#L.edges[this.#on];
+    const [kind, on] = this.#shown();
+    if (kind === 2) {
+      const e = this.#L.edges[on];
       return { text: `${this.#name(e.from)}→${this.#name(e.to)}`, ink };
     }
-    if (this.#kind === 1) return { text: this.#name(this.#on), ink };
-    if (this.#letter >= 0) return { text: this.#name(this.#letter), ink };
+    if (kind === 1) return { text: this.#name(on), ink };
     return { text: this.#category || "the letters", ink: this.#tok("--_muted", "#90a1a1") };
   }
 
@@ -661,8 +754,177 @@ class LetterDisc extends HTMLElement {
     this.#preview(kind, on);
   };
   #onLeave = () => {
-    this.#preview(0, -1);
+    if (this.#kind) this.#preview(0, -1);
   };
+  /* A touch has no hover, and the readout a finger raised would clear as it
+     lifted, so a tap pins what it landed on as the selects would. A mouse
+     click still does nothing: the mouse has the hover. */
+  #onTap = ev => {
+    if (ev.pointerType === "mouse" || !this.#ready || !this.#pw) return;
+    const [kind, on] = this.#hit(...this.#at(ev));
+    this.#pin(kind, on);
+  };
+  #onLetter = () => {
+    const v = this.#letterEl.value;
+    this.#pin(v === "" ? 0 : 1, v === "" ? -1 : Number(v));
+  };
+  #onPair = () => {
+    const v = this.#pairEl.value;
+    if (v === "") this.#pin(1, this.#letter);
+    else this.#pin(2, Number(v));
+  };
+  /* Escape takes a hover off first, so the pointer's readout can be dismissed
+     without moving the pointer, and otherwise, with focus in here, puts the
+     disc back on the whole category. */
+  #onKey = ev => {
+    if (ev.key !== "Escape") return;
+    if (this.#kind) {
+      this.#preview(0, -1);
+      return;
+    }
+    if (document.activeElement !== this) return;
+    if (this.#letter >= 0 || this.#held >= 0) this.#pin(0, -1);
+  };
+
+  /* A committed choice, from a select or a tap: a letter drills into it, an arc
+     drills into the letter it leaves and holds the arc, nothing goes back to
+     the whole category. Unlike a hover it is announced and it stays. */
+  #pin(kind, on) {
+    if (!this.#L) return;
+    const was = `${this.#letter}/${this.#held}`;
+    if (kind === 2) {
+      const e = this.#L.edges[on];
+      // Kept on the letter the reader was on where the arc touches it, so
+      // picking an arriving arc does not move the letter select under them.
+      const at = this.#letter === e.to ? e.to : e.from;
+      this.show(at);
+      this.#held = on;
+    } else {
+      this.show(kind === 1 ? on : -1);
+    }
+    this.#syncTour();
+    this.#overlay();
+    // A tap on nothing with nothing pinned changes nothing, and says nothing.
+    if (`${this.#letter}/${this.#held}` !== was) this.#announce(spoken(this.#readout(NAMED)));
+  }
+
+  /* The live region. Polite, and only ever written after a committed choice.
+     The same text twice is cleared and set a frame later, since a region that
+     does not change says nothing. */
+  #announce(text) {
+    const el = this.#announceEl;
+    if (!el) return;
+    if (el.textContent !== text) {
+      el.textContent = text;
+      return;
+    }
+    el.textContent = "";
+    (globalThis.requestAnimationFrame ?? setTimeout)(() => {
+      el.textContent = text;
+    });
+  }
+
+  /* The letter select: one option a letter some word touches, after one for
+     the whole category. The letter alone, since the readout gives its counts. Rebuilt with the words, as is the arc select under
+     it. */
+  #tour() {
+    const L = this.#L;
+    if (!this.#letterEl || !L) return;
+    const opt = (value, text) => {
+      const o = document.createElement("option");
+      o.value = value;
+      o.textContent = text;
+      return o;
+    };
+    this.#letterEl.replaceChildren(
+      opt("", "all"),
+      ...L.live.map(k => opt(String(k), this.#name(k))),
+    );
+    this.#syncTour();
+  }
+
+  /* Both selects onto #letter and #held, and the arc select's options onto the
+     letter's arcs: its loop, the arcs leaving it, then the arcs arriving, each
+     run in alphabetical order of the letter at the far end. */
+  #syncTour() {
+    const L = this.#L;
+    if (!this.#letterEl || !L) return;
+    this.#letterEl.value = this.#letter < 0 ? "" : String(this.#letter);
+    const at = this.#letter;
+    const opts = [];
+    const opt = (value, text) => {
+      const o = document.createElement("option");
+      o.value = value;
+      o.textContent = text;
+      opts.push(o);
+    };
+    if (at < 0) opt("", "pick a letter first");
+    else {
+      opt("", `all ${L.byLetter[at].length} arcs`);
+      const words = n => `${n} word${n === 1 ? "" : "s"}`;
+      const byFar = (k, far) => [k, far(L.edges[k])];
+      const ways = [
+        ...L.out[at].filter(k => L.edges[k].to === at).map(k => [k, "loop back to"]),
+        ...L.out[at]
+          .filter(k => L.edges[k].to !== at)
+          .map(k => byFar(k, e => e.to))
+          .sort((x, y) => x[1] - y[1])
+          .map(([k]) => [k, "to"]),
+        ...L.into[at]
+          .filter(k => L.edges[k].from !== at)
+          .map(k => byFar(k, e => e.from))
+          .sort((x, y) => x[1] - y[1])
+          .map(([k]) => [k, "from"]),
+      ];
+      for (const [k, way] of ways) {
+        const e = L.edges[k];
+        const far = way === "from" ? e.from : e.to;
+        opt(String(k), `${way} ${this.#name(far)} · ${words(e.n)}`);
+      }
+    }
+    // Disabling the focused control drops focus on the page, so it goes back
+    // to the letter select, the one that can be used next.
+    const held = this.#sr.activeElement === this.#pairEl;
+    this.#pairEl.replaceChildren(...opts);
+    this.#pairEl.disabled = at < 0;
+    if (held && at < 0) this.#letterEl.focus();
+    this.#pairEl.value = this.#held < 0 ? "" : String(this.#held);
+  }
+
+  /* The drawing's text alternative, the counts the resting readout gives and
+     the letters doing the most, since the picture says that at a glance. */
+  #describe() {
+    const L = this.#L;
+    if (!this.#stage || !L) return;
+    const busy = [...L.live]
+      .sort((x, y) => L.starts[y] + L.ends[y] - (L.starts[x] + L.ends[x]) || x - y)
+      .slice(0, BUSIEST)
+      .map(k => this.#name(k));
+    const list =
+      busy.length > 1 ? `${busy.slice(0, -1).join(", ")} and ${busy[busy.length - 1]}` : busy[0];
+    this.#stage.setAttribute(
+      "aria-label",
+      `Letter graph${this.#category ? ` of ${this.#category}` : ""}: ${L.words.toLocaleString("en-GB")} words over ` +
+        `${L.live.length} letters, drawn as ${L.pairs.toLocaleString("en-GB")} arcs from first letter to last` +
+        (busy.length ? `; the busiest letter${busy.length > 1 ? "s are" : " is"} ${list}.` : "."),
+    );
+  }
+
+  /* The readout as a keyboard reader reaches it: focusable and named only while
+     it holds more than it shows, so a short one is not a tab stop for nothing. */
+  #scrollable() {
+    const g = this.#glossEl;
+    if (!g) return;
+    if (g.scrollHeight > g.clientHeight + 1) {
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "region");
+      g.setAttribute("aria-label", "letter graph readout");
+    } else {
+      g.removeAttribute("tabindex");
+      g.removeAttribute("role");
+      g.removeAttribute("aria-label");
+    }
+  }
 
   /* Everything pointing at a thing does and nothing else. It never touches
      #letter, so a hover cannot move what show() drilled into. */
@@ -689,13 +951,21 @@ class LetterDisc extends HTMLElement {
   }
 
   /* The letter the disc is drilled into, as a letter or an index, and -1 for
-     the whole category. The only way in: a click on the disc does nothing. */
+     the whole category. The only way in: a mouse click on the disc does
+     nothing, and the selects and a tap come here through #pin. */
   show(letter) {
     if (!this.#L) return;
     const L = typeof letter === "string" ? letter.toLowerCase().charCodeAt(0) - 97 : letter;
     const want = Number.isInteger(L) && L >= 0 && L < LETTERS ? L : -1;
-    if (want === this.#letter) return;
+    // A held arc belongs to the letter it was picked under.
+    this.#held = -1;
+    if (want === this.#letter) {
+      this.#syncTour();
+      this.#overlay();
+      return;
+    }
     this.#letter = want;
+    this.#syncTour();
     this.#overlay();
     this.#emit("letter-pick", {
       letter: this.letter,
@@ -725,38 +995,46 @@ class LetterDisc extends HTMLElement {
 
   /* One line saying what the middle names, off the state the hub reads, so
      the two cannot differ. For an arc it names the words rather than counting
-     them. */
+     them: all of them for a held arc, NAMED of them for a hover. */
   #showRead() {
     if (!this.#ready) return;
+    this.#glossEl.innerHTML = this.#readout(!this.#kind && this.#held >= 0 ? Infinity : NAMED);
+    this.#scrollable();
+  }
+
+  /* What #showRead writes, naming at most `cap` of an arc's words. */
+  #readout(cap) {
     const L = this.#L;
-    if (this.#kind === 2) {
-      const e = L.edges[this.#on];
-      const on = this.#words.filter(
+    const [kind, on] = this.#shown();
+    if (kind === 2) {
+      const e = L.edges[on];
+      const words = this.#words.filter(
         w => w && w.charCodeAt(0) - 97 === e.from && w.charCodeAt(w.length - 1) - 97 === e.to,
       );
-      on.sort();
-      const shown = on.slice(0, NAMED).join(", ");
-      const rest = on.length - Math.min(on.length, NAMED);
-      this.#glossEl.innerHTML =
+      words.sort();
+      const shown = esc(words.slice(0, cap).join(", "));
+      const rest = words.length - Math.min(words.length, cap);
+      return (
         `<b>${this.#name(e.from)} → ${this.#name(e.to)}</b> · ${e.n} word${e.n === 1 ? "" : "s"}` +
         `${e.from === e.to ? " back to the letter they started on" : ""} · ` +
-        `<span class="w">${shown}${rest ? ` and ${rest} more` : ""}</span>`;
-      return;
+        `<span class="w">${shown}${rest ? ` and ${rest} more` : ""}</span>`
+      );
     }
-    const L2 = this.#kind === 1 ? this.#on : this.#letter;
-    if (L2 >= 0) {
+    if (kind === 1) {
+      const L2 = on;
       const out = L.starts[L2],
         into = L.ends[L2];
-      this.#glossEl.innerHTML =
+      return (
         `<b>${this.#name(L2)}</b> · ${out} word${out === 1 ? "" : "s"} start here · ` +
         `${into} end here · ${L.out[L2].length} arc${L.out[L2].length === 1 ? "" : "s"} out, ` +
-        `${L.into[L2].length} in`;
-      return;
+        `${L.into[L2].length} in`
+      );
     }
-    this.#glossEl.innerHTML =
+    return (
       `<b>${L.words}</b> words over <b>${L.live.length}</b> letters, drawn as ` +
       `<b>${L.pairs}</b> arcs${L.loops ? `, ${L.loops} of them back to their own letter` : ""}. ` +
-      `Point at an arc to read the words on it.`;
+      `Point at an arc, or pick a letter, to read the words on it.`
+    );
   }
 }
 customElements.define("letter-disc", LetterDisc);

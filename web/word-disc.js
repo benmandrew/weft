@@ -42,7 +42,7 @@ import { hsv, TAU } from "./disc-colour.js";
 import { Picker } from "./disc-picker.js";
 import { band, baseline, fit, halo, HALO, HALO_MIN, HUB_DROP } from "./disc-label.js";
 import { ratio } from "./disc-ratio.js";
-import { Search } from "./disc-search.js";
+import { Search, step } from "./disc-search.js";
 import { Chain } from "./word-chain.js";
 import { longest } from "./word-longest.js";
 import { watch } from "./disc-idle.js";
@@ -137,7 +137,15 @@ TPL.innerHTML = `
     --_sat:var(--disc-sat,.55); --_val:var(--disc-val,.88);
     --_font:var(--disc-font,system-ui,sans-serif);
     --_mono:var(--disc-mono,ui-monospace,Menlo,monospace);
-    --_edge:color-mix(in srgb,var(--_muted) 38%,transparent);
+    /* 85% of the muted ink, as in <letter-disc> and <balance-flow>, so the four
+       elements on one page draw their edges alike. 80% is the least that clears
+       3:1 against both the ground and the panel in both palettes here and under
+       a host's warmer one (WCAG 1.4.11); 38% was 2:1. A host's own --disc-edge
+       wins. */
+    --_edge:var(--disc-edge,color-mix(in srgb,var(--_muted) 85%,transparent));
+    /* The tint behind a highlighted row. 10% keeps muted, warn and accent text
+       on it above 4.5:1; the accent rule beside it is what marks the row. */
+    --_tint:color-mix(in srgb,var(--_accent) 10%,transparent);
     color:var(--_ink);font-family:var(--_font)}
   @media (prefers-color-scheme:light){
     :host{--_ground:var(--disc-ground,#eef1f0); --_panel:var(--disc-panel,#fbfcfc);
@@ -172,9 +180,10 @@ TPL.innerHTML = `
     flex:0 1 auto;min-height:0;max-height:none}
   :host([fit]) .frame.wide .hits li{display:block}
   :host([fit]) .frame.wide .hits .p{display:block;margin-left:0}
+  :host([fit]) .frame.wide .hits .tag{margin-left:.6em}
   :host([fit]) .frame.wide .stage{grid-area:1/2/4/3;height:100%;min-height:0;
     justify-self:center}
-  :host([fit]) .frame.wide .gloss{grid-area:3/1;height:auto;-webkit-line-clamp:5;
+  :host([fit]) .frame.wide .gloss{grid-area:3/1;height:auto;max-height:7.25em;
     margin-top:0;padding:0 10px 10px}
   :host([fit]) .frame.wide .crumb{grid-area:4/1/5/-1;margin-top:7px}
   /* The category picker, on where the host names an index. search="off" is
@@ -200,9 +209,12 @@ TPL.innerHTML = `
     background:var(--_panel);border:1px solid var(--_edge);border-radius:2px;
     box-shadow:0 8px 26px rgba(0,0,0,.32)}
   .hits[hidden]{display:none}
-  .hits li{display:flex;gap:10px;align-items:baseline;padding:3px 6px;
-    border-radius:2px;cursor:pointer;font-size:12.5px;white-space:nowrap}
-  .hits li[aria-selected="true"]{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
+  .hits li{box-sizing:border-box;min-height:24px;display:flex;gap:10px;
+    align-items:baseline;padding:3px 6px;border-radius:2px;cursor:pointer;
+    font-size:12.5px;line-height:1.5;white-space:nowrap}
+  /* A tint alone was 1.3:1 against the panel, so the rule down the left is
+     what says which row is picked (WCAG 1.4.11). */
+  .hits li[aria-selected="true"]{background:var(--_tint);box-shadow:inset 2px 0 0 var(--_accent)}
   .hits .n{overflow:hidden;text-overflow:ellipsis}
   .hits .n b{font-weight:600;color:var(--_accent)}
   .hits .p{margin-left:auto;font-family:var(--_mono);font-size:10.5px;
@@ -212,6 +224,10 @@ TPL.innerHTML = `
   .hits li.no .n{color:var(--_muted)}
   /* A word already used reads on the list as it does on the disc. */
   .hits li.used .n{color:var(--_warn)}
+  /* And each says so in words too, since a colour says nothing to a reader
+     who cannot see it (WCAG 1.4.1). */
+  .hits .tag{flex:none;font-family:var(--_mono);font-size:10.5px;color:var(--_muted)}
+  .hits li.used .tag{color:var(--_warn)}
   /* Every word that could be played next, in the column the search box
      otherwise leaves empty. Landscape only: the stacked layout has no column,
      and there the suggestions are a dropdown over the disc. It is the only
@@ -234,33 +250,43 @@ TPL.innerHTML = `
   .moves .list{margin:0;padding:3px;list-style:none;flex:1 1 auto;min-height:0;
     overflow-y:auto;scrollbar-width:thin;line-height:0;background:var(--_panel);
     border:1px solid var(--_edge);border-radius:2px}
+  .moves .list:focus-visible{outline:2px solid var(--_accent);outline-offset:-2px}
   /* border-box because the page's own box-sizing rule does not cross into a
      shadow root, and content-box would put two halves and their padding past
      the width and wrap every second word onto a line of its own. No margin
      between the pair, which would be dead ground between two hover targets;
      they come to 2 px short of the width, so no rounding can wrap them. */
+  /* 24 px tall at the least, the smallest target WCAG 2.5.8 allows. */
   .moves li{box-sizing:border-box;display:inline-block;vertical-align:top;
-    width:calc(50% - 1px);
+    width:calc(50% - 1px);min-height:24px;
     color:var(--_ink);font-size:12.5px;line-height:1.5;
-    padding:2px 5px;border-radius:2px;cursor:pointer;
+    padding:3px 5px;border-radius:2px;cursor:pointer;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .moves li:hover{background:color-mix(in srgb,var(--_accent) 18%,transparent)}
+  .moves li:hover{background:var(--_tint)}
+  /* The row the keyboard is on, marked as the picked suggestion is, and only
+     while the list has focus. */
+  .moves .list:focus li[aria-selected="true"]{background:var(--_tint);
+    box-shadow:inset 2px 0 0 var(--_accent)}
   .stage{position:relative;width:100%;aspect-ratio:1}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
   /* The arrow is the resting state and #onMove lifts it to a pointer over
      what a click would actually take: a legal word, or the hub with a chain
-     to wind back. A word already used looks like any other to the cursor. */
-  canvas.over{cursor:default;touch-action:none}
+     to wind back. A word already used looks like any other to the cursor.
+     pan-y so a finger dragged down the disc scrolls the page, which none
+     stopped on a phone; nothing here is a gesture, and a tap is a click. */
+  canvas.over{cursor:default;touch-action:pan-y}
   :host([readout="off"]) .gloss,:host([readout="off"]) .crumb{display:none}
   /* Both are held to a height whatever they hold, which is what stops the disc
      moving under the pointer: with the fit attribute set the frame is a flex
      column and the stage takes what these two leave, so a block that grows by
      a line takes a line off the disc's height and, the stage being square, as
      much off its width. Both show blank rather than hiding while empty, for
-     the same reason. A host that wants neither has readout="off". */
+     the same reason. A host that wants neither has readout="off". What does
+     not fit scrolls rather than being cut off, and so does a line a reader's
+     own text spacing has pushed past the box (WCAG 1.4.12). */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
-    margin-top:7px;overflow:hidden;
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    margin-top:7px;overflow-y:auto;scrollbar-width:thin}
+  .gloss:focus-visible{outline:2px solid var(--_accent);outline-offset:1px}
   .gloss .warn{color:var(--_warn)}
   /* The word's own last letter, which is what decides what can follow it: a
      rule as well as a colour, since colour alone says nothing to a reader who
@@ -271,8 +297,13 @@ TPL.innerHTML = `
     min-height:1.6em;margin-top:3px;white-space:nowrap;overflow-x:auto;
     scrollbar-width:none}
   .crumb::-webkit-scrollbar{display:none}
-  .crumb button{font:inherit;color:var(--_accent);background:none;border:0;padding:0;
-    cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  /* The padding is what the inset ring sits in, and the margin hands it
+     back, so the line is laid out as it was. Inset, since the line scrolls
+     and would clip a ring drawn outside the button. */
+  .crumb button{font:inherit;color:var(--_accent);background:none;border:0;
+    padding:0 2px;margin:0 -2px;cursor:pointer;text-decoration:underline;
+    text-underline-offset:2px}
+  .crumb button:focus-visible{outline:2px solid var(--_accent);outline-offset:-2px}
   .crumb .now{color:var(--_ink)}
   .crumb em{font-style:normal}
   .crumb i{font-style:normal;color:var(--_muted);opacity:.5;padding:0 4px}
@@ -289,23 +320,28 @@ TPL.innerHTML = `
   .crumb button.root{text-decoration:none}
   .crumb button.root:hover,.crumb button.root:focus-visible{color:var(--_accent);
     text-decoration:underline;text-underline-offset:2px}
+  .announce{position:absolute;width:1px;height:1px;overflow:hidden;
+    clip-path:inset(50%);white-space:nowrap}
 </style>
 <div class="frame">
   <div class="pick" hidden><select class="cat" aria-label="category"></select></div>
   <div class="find">
     <input class="q" type="search" role="combobox" autocomplete="off"
            spellcheck="false" aria-controls="hits" aria-expanded="false"
-           aria-autocomplete="list" placeholder="Waiting for words…" disabled>
-    <ul class="hits" id="hits" role="listbox" hidden></ul>
-    <div class="moves"><div class="why"></div><ul class="list"></ul></div>
+           aria-autocomplete="list" aria-label="Search words"
+           placeholder="Waiting for words…" disabled>
+    <ul class="hits" id="hits" role="listbox" aria-label="Matching words" hidden></ul>
+    <div class="moves"><div class="why"></div>
+      <ul class="list" role="listbox" tabindex="0" aria-label="Possible moves"></ul></div>
   </div>
-  <div class="stage">
+  <div class="stage" role="img" aria-label="Word disc">
     <canvas class="base" aria-hidden="true"></canvas>
     <canvas class="over" aria-hidden="true"></canvas>
   </div>
   <div class="gloss"></div>
   <div class="crumb"><span class="head"></span><span class="tail"></span></div>
-</div>`;
+</div>
+<div class="announce" role="status" aria-live="polite" aria-atomic="true"></div>`;
 
 class WordDisc extends HTMLElement {
   static observedAttributes = ["src", "index-src", "tree", "limit"];
@@ -330,6 +366,17 @@ class WordDisc extends HTMLElement {
   // as the column is scrolled.
   #moves = [];
   #listed = 0;
+  // The row of #moves the keyboard is on, -1 for none. Reset whenever the
+  // column is rebuilt, which is every move.
+  #active = -1;
+  #stage;
+  // The live region, and a count of what was said to it; see #tell.
+  #announce;
+  #told = 0;
+  #readCheck = false;
+  // Whether the pointer's last move was off the disc, where the readout holds
+  // and a click does nothing, so the cursor must not offer one.
+  #away = false;
   #ro;
   #mq;
 
@@ -458,6 +505,8 @@ class WordDisc extends HTMLElement {
     this.#listEl = this.#movesEl.querySelector(".list");
     this.#pickEl = this.#sr.querySelector(".pick");
     this.#catEl = this.#sr.querySelector(".cat");
+    this.#stage = this.#sr.querySelector(".stage");
+    this.#announce = this.#sr.querySelector(".announce");
     this.#picker = new Picker(this, this.#pickEl, this.#catEl, {
       open: src => {
         // Opened even where it is the file already held, since the tree's
@@ -481,8 +530,16 @@ class WordDisc extends HTMLElement {
   }
 
   connectedCallback() {
+    // A name for the whole element, unless the page gave it one.
+    if (!this.hasAttribute("role")) this.setAttribute("role", "group");
+    if (!this.hasAttribute("aria-label") && !this.hasAttribute("aria-labelledby"))
+      this.setAttribute("aria-label", "Word chain disc");
     this.#over.addEventListener("pointermove", this.#onMove);
-    this.#over.addEventListener("pointerleave", this.#onLeave);
+    /* Off the element as a whole rather than off the canvas, so the pointer can
+       leave the disc for the readout and the column and still find there what
+       it was showing (WCAG 1.4.13). Escape anywhere puts it back. */
+    this.addEventListener("pointerleave", this.#onLeave);
+    document.addEventListener("keydown", this.#onEscape);
     this.#over.addEventListener("click", this.#onClick);
     this.#crumb.addEventListener("click", e => {
       const b = e.target.closest("button");
@@ -515,11 +572,11 @@ class WordDisc extends HTMLElement {
       const i = +li.dataset.i;
       if (i !== this.#hover) this.#preview(i);
     });
-    this.#listEl.addEventListener("pointerleave", () => this.#preview(-1));
     this.#listEl.addEventListener("click", e => {
       const li = e.target.closest("li[data-i]");
       if (li) this.play(+li.dataset.i);
     });
+    this.#listEl.addEventListener("keydown", this.#onMovesKey);
     this.#listEl.addEventListener("scroll", () => {
       const el = this.#listEl;
       if (el.scrollTop + el.clientHeight > el.scrollHeight - MOVES_NEAR) this.#page();
@@ -551,6 +608,7 @@ class WordDisc extends HTMLElement {
     this.#idle = watch(this, this.#sleep, this.#wake);
   }
   disconnectedCallback() {
+    document.removeEventListener("keydown", this.#onEscape);
     this.#picker.disconnect();
     this.#ro?.disconnect();
     this.#idle?.disconnect();
@@ -691,6 +749,11 @@ class WordDisc extends HTMLElement {
     this.#closeFind();
     this.#q.disabled = this.#words.length === 0;
     if (!this.#q.disabled) this.#q.placeholder = "Search words…";
+    const count = this.#words.length;
+    this.#stage.setAttribute(
+      "aria-label",
+      `Disc of ${count.toLocaleString("en-GB")} word${count === 1 ? "" : "s"} in ${this.#category || "the category"}`,
+    );
 
     this.#turn = turns(this.#L);
 
@@ -701,6 +764,7 @@ class WordDisc extends HTMLElement {
     this.#whyEl.replaceChildren();
     this.#moves = [];
     this.#listed = 0;
+    this.#mark(-1);
     this.#later();
     if (this.#pw) {
       this.#measure();
@@ -723,6 +787,7 @@ class WordDisc extends HTMLElement {
       this.#settled = true;
       this.#showMoves();
       this.#showRead();
+      this.#checkRead();
     };
     if (typeof requestAnimationFrame === "function" && document.visibilityState !== "hidden")
       requestAnimationFrame(() => setTimeout(run, 0));
@@ -836,6 +901,7 @@ class WordDisc extends HTMLElement {
     this.#geometry(Math.min(b.w, b.h));
     this.#draw();
     this.#overlay();
+    this.#checkRead();
   };
 
   /* The widest word, in pixels per pixel of font size, the labels being set in
@@ -1403,6 +1469,15 @@ class WordDisc extends HTMLElement {
   #onMove = ev => {
     const [px, py] = this.#at(ev);
     const d = Math.hypot(px - this.#cx, py - this.#cy);
+    // Off the disc, in the stage's corners, the readout holds what it showed,
+    // since that is the way from the disc to the readout under it. The
+    // cursor still turns over, a click there doing nothing.
+    this.#away = d > this.#outer + (this.#labelPx ? 0 : 10);
+    if (this.#away) {
+      this.#inHub = false;
+      this.#showCursor();
+      return;
+    }
     /* The anchor is taken before the hit, so the word held is the one the
        pointer was on outside rather than whatever the chords answer. It is let
        go the moment the pointer is back among the dots, and never taken where
@@ -1419,9 +1494,23 @@ class WordDisc extends HTMLElement {
   };
   #onLeave = () => {
     this.#inHub = false;
+    this.#away = false;
     this.#held = -1;
     this.#preview(-1);
     this.#showCursor();
+    this.#checkRead();
+  };
+  /* The pointer's readout and the search's highlight back to rest, wherever
+     focus is. A key some control of the element already answered is left
+     alone. */
+  #onEscape = ev => {
+    if (ev.key !== "Escape" || ev.defaultPrevented) return;
+    if (this.#hover < 0 && this.#cursor < 0) return;
+    this.#held = -1;
+    this.#cursor = -1;
+    this.#preview(-1);
+    this.#showCursor();
+    this.#checkRead();
   };
 
   /* The cursor says what a click would do, which is one of the three ways a
@@ -1430,9 +1519,11 @@ class WordDisc extends HTMLElement {
      word makes it used with the pointer still on it. Written only when it turns
      over, since a pointer move fires several times a wedge. */
   #showCursor() {
-    const on = this.#inHub
-      ? this.#chain.length > 0
-      : this.#hover >= 0 && this.#chain.legal(this.#hover);
+    const on = this.#away
+      ? false
+      : this.#inHub
+        ? this.#chain.length > 0
+        : this.#hover >= 0 && this.#chain.legal(this.#hover);
     if (on === this.#points) return;
     this.#points = on;
     this.#over.style.cursor = on ? "pointer" : "default";
@@ -1500,6 +1591,15 @@ class WordDisc extends HTMLElement {
     this.#cursor = i;
     this.#hover = -1;
     this.#overlay();
+    // Said as well as shown, since a refusal heard as nothing reads as a
+    // broken key too.
+    this.#tell(
+      this.#chain.played(i)
+        ? `${this.#words[i]} is not a move: already played.`
+        : `${this.#words[i]} is not a move: the next word starts with ` +
+            `${String.fromCharCode(65 + this.#chain.letter)}.`,
+    );
+    this.#checkRead();
   }
 
   #drawHits() {
@@ -1511,8 +1611,18 @@ class WordDisc extends HTMLElement {
         li.dataset.k = k;
         li.setAttribute("role", "option");
         li.setAttribute("aria-selected", "false");
-        if (this.#chain.played(hit.i)) li.classList.add("used");
-        else if (!this.#chain.legal(hit.i)) li.classList.add("no");
+        // Not a move, which the row says in a word as well as a colour, and
+        // aria-disabled says to assistive technology. Enter still answers on
+        // it, with the reason why.
+        let tag = "";
+        if (this.#chain.played(hit.i)) {
+          li.classList.add("used");
+          tag = "played";
+        } else if (!this.#chain.legal(hit.i)) {
+          li.classList.add("no");
+          tag = "no move";
+        }
+        if (tag) li.setAttribute("aria-disabled", "true");
         const name = document.createElement("span");
         name.className = "n";
         const at = hit.name.toLowerCase().indexOf(q);
@@ -1526,7 +1636,14 @@ class WordDisc extends HTMLElement {
         const to = document.createElement("span");
         to.className = "p";
         to.textContent = `→ ${String.fromCharCode(65 + this.#L.tail[hit.i])}`;
-        li.append(name, to);
+        li.append(name);
+        if (tag) {
+          const t = document.createElement("span");
+          t.className = "tag";
+          t.textContent = tag;
+          li.append(t);
+        }
+        li.append(to);
         return li;
       }),
     );
@@ -1547,6 +1664,7 @@ class WordDisc extends HTMLElement {
     this.#q.setAttribute("aria-activedescendant", `hit-${k}`);
     this.#hits.children[k].scrollIntoView({ block: "nearest" });
     this.#preview(this.#sug[k].i);
+    this.#checkRead();
   }
 
   #closeFind = () => {
@@ -1561,10 +1679,11 @@ class WordDisc extends HTMLElement {
   };
 
   play(i) {
-    const step = this.#chain?.play(i);
-    if (!step) return false;
+    const played = this.#chain?.play(i);
+    if (!played) return false;
     this.#cursor = -1;
     this.#after();
+    this.#tell(`Played ${this.#words[i]}. ${this.#where()}`);
     this.#emit("word-play", { index: i, word: this.#words[i], chain: this.chain });
     return true;
   }
@@ -1572,16 +1691,73 @@ class WordDisc extends HTMLElement {
     if (!this.#chain?.length) return;
     this.#chain.undo();
     this.#after();
+    this.#tell(this.#back());
   }
   rewind(k) {
     if (!this.#chain) return;
     this.#chain.rewind(k);
     this.#after();
+    this.#tell(this.#back());
   }
   clear() {
     if (!this.#chain) return;
     this.#chain.clear();
     this.#after();
+    this.#tell(this.#back());
+  }
+
+  /* What the live region says after a move: the chain as it now stands and
+     what can follow it, which is what the line under the disc and the fan
+     show the eye. */
+  #where() {
+    const end = this.#chain.end;
+    if (end < 0) return "Any word opens the chain.";
+    const to = this.#L.tail[end];
+    const letter = String.fromCharCode(65 + to);
+    const left = this.#chain.replies(end, this.#L.byHead);
+    const ever = this.#L.byHead[to].length - (this.#L.head[end] === to ? 1 : 0);
+    const next = left
+      ? `Next word starts with ${letter}: ${left} possible.`
+      : `No possible next words: ${ever ? `every ${letter} word is used` : `nothing starts with ${letter}`}.`;
+    return `Chain: ${this.chain.join(", ")}. ${next}`;
+  }
+  #back() {
+    return this.#chain.length
+      ? `Back to ${this.#words[this.#chain.end]}. ${this.#where()}`
+      : `Chain cleared. ${this.#where()}`;
+  }
+
+  /* The live region. Only a committed action writes to it, never a hover. A
+     region is read when its text changes, so the same words twice are cleared
+     and put back a frame later. */
+  #tell(text) {
+    const el = this.#announce;
+    const n = ++this.#told;
+    if (el.textContent !== text) {
+      el.textContent = text;
+      return;
+    }
+    el.textContent = "";
+    const put = () => {
+      if (n === this.#told) el.textContent = text;
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(put);
+    else setTimeout(put, 0);
+  }
+
+  /* Whether the readout overflows its box, and if so a tab stop and a named
+     region, so the keyboard can scroll it (WCAG 2.1.1). Read a frame later,
+     and only after a move, a key or a resize, never on a pointer move: it
+     reads layout, and a mouse can scroll the box without it. */
+  #checkRead() {
+    if (this.#readCheck) return;
+    this.#readCheck = true;
+    const run = () => {
+      this.#readCheck = false;
+      scrollable(this.#glossEl, "Readout", this.#sr.activeElement);
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    else setTimeout(run, 0);
   }
   /* Call after the host changes theme by any means other than
      prefers-color-scheme, which the element already watches. */
@@ -1608,6 +1784,7 @@ class WordDisc extends HTMLElement {
     this.#overlay();
     this.#showMoves();
     this.#showCursor();
+    this.#checkRead();
     this.#emit("word-chain", {
       chain: this.chain,
       words: this.#words.length,
@@ -1726,6 +1903,7 @@ class WordDisc extends HTMLElement {
      where it would be several hundred elements behind display:none. */
   #showMoves() {
     if (!this.#ready) return;
+    this.#mark(-1);
     if (!this.#frame.classList.contains("wide")) {
       if (this.#listEl.childElementCount) this.#listEl.replaceChildren();
       this.#moves = [];
@@ -1761,6 +1939,8 @@ class WordDisc extends HTMLElement {
     const rows = [];
     for (let k = this.#listed; k < to; k++) {
       const li = document.createElement("li");
+      li.id = `move-${k}`;
+      li.setAttribute("role", "option");
       li.dataset.i = this.#moves[k];
       li.textContent = this.#words[this.#moves[k]];
       rows.push(li);
@@ -1770,6 +1950,54 @@ class WordDisc extends HTMLElement {
     // A page that did not fill the column leaves no scrollbar to ask for the
     // next one, so it asks here instead. Bounded by the move count.
     if (this.#listEl.scrollHeight <= this.#listEl.clientHeight) this.#page();
+  }
+
+  /* The column's keys: the arrows, Home, End and the page keys move the row,
+     which previews it as a pointer would, and Enter or Space plays it as a
+     click would. Left and right are a step as up and down are, so the order
+     is the reading order a screen reader hears rather than the two-up grid.
+     One tab stop for the whole column, the row named through
+     aria-activedescendant. */
+  #onMovesKey = ev => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      if (this.#active < 0) return;
+      ev.preventDefault();
+      this.play(this.#moves[this.#active]);
+      return;
+    }
+    if (ev.key === "Escape") {
+      if (this.#active < 0) return;
+      ev.preventDefault();
+      this.#mark(-1);
+      this.#preview(-1);
+      return;
+    }
+    const k = step(ev.key, this.#active, this.#moves.length);
+    if (k === null) return;
+    ev.preventDefault();
+    this.#mark(k);
+    this.#preview(this.#moves[k]);
+    this.#checkRead();
+  };
+
+  /* Puts the keyboard on row k, paging the column on as far as it, or on no
+     row at all. */
+  #mark(k) {
+    this.#listEl.children[this.#active]?.removeAttribute("aria-selected");
+    this.#active = k;
+    if (k < 0) {
+      this.#listEl.removeAttribute("aria-activedescendant");
+      return;
+    }
+    for (let was = -1; this.#listed <= k && was !== this.#listed; ) {
+      was = this.#listed;
+      this.#page();
+    }
+    const li = this.#listEl.children[k];
+    if (!li) return;
+    li.setAttribute("aria-selected", "true");
+    this.#listEl.setAttribute("aria-activedescendant", li.id);
+    li.scrollIntoView({ block: "nearest" });
   }
 
   /* The chain, each step a button that winds play back to just after it, and
@@ -1798,6 +2026,10 @@ class WordDisc extends HTMLElement {
     this.#headEl.innerHTML = parts.join("");
     this.#crumbSel = -2;
     this.#showTail();
+    // The line scrolls rather than wraps, since a second line would take
+    // height off the disc, so it is scrolled to its end, where play stands.
+    // On a move only: the tail moves with the pointer, and this reads layout.
+    this.#crumb.scrollLeft = this.#crumb.scrollWidth;
   }
 
   /* The move the pointer is offering, carried on past the chain the way playing
@@ -1814,6 +2046,23 @@ class WordDisc extends HTMLElement {
       show < 0 ? "" : `${this.#chain.length ? "<i>›</i>" : ""}<em>${this.#words[show]}</em>`;
   }
 }
+/* A box that scrolls gets a tab stop and a name while it overflows, and gives
+   them up when it no longer does, unless it holds focus at the time.
+   @param {HTMLElement} el @param {string} name @param {Element | null} focused */
+function scrollable(el, name, focused) {
+  const over = el.scrollHeight > el.clientHeight + 1;
+  if (over === el.hasAttribute("tabindex") || (!over && focused === el)) return;
+  if (over) {
+    el.setAttribute("tabindex", "0");
+    el.setAttribute("role", "region");
+    el.setAttribute("aria-label", name);
+  } else {
+    el.removeAttribute("tabindex");
+    el.removeAttribute("role");
+    el.removeAttribute("aria-label");
+  }
+}
+
 /* A spelling handed in with the data, if it fits it: one place per word, each
    a whole number below SPELL_MAX, which bounds what alphabetical allocates. */
 function places(spell, n) {

@@ -29,6 +29,10 @@
  *             readout="off", fit
  * Properties: data, stats, step, frames. Methods: seek(k), play(), pause(),
  *             repaint().
+ * Text: the picture is a role="img" with the run's figures, and a visually
+ *       hidden list under it says what each letter still owes at the step
+ *       shown. A step chosen with the keys, and the end of a run, are
+ *       announced; nothing is while it plays.
  * Events: balance-step {step, frames, push, cost, from, to, shipped, need},
  *         balance-render {category, words, frames, reversed, need, paid,
  *                         settled, solveMs, drawMs}, after every draw and
@@ -36,7 +40,17 @@
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
  *          --disc-sat --disc-val --disc-font --disc-mono
  */
-import { ALPHA, banks, bands, reverses, route, shipped, thin, walk } from "./balance-bank.js";
+import {
+  ALPHA,
+  banks,
+  bands,
+  owing,
+  reverses,
+  route,
+  shipped,
+  thin,
+  walk,
+} from "./balance-bank.js";
 import { hsv } from "./disc-colour.js";
 import { watch } from "./disc-idle.js";
 import { halo, HALO, HALO_MIN } from "./disc-label.js";
@@ -140,6 +154,11 @@ function ribbon(g, pts, h, edge = 0) {
 const RUN_MS = 9000,
   STEP_MIN = 60,
   STEP_MAX = 160;
+/* Under prefers-reduced-motion, one fixed pace and a slow one, whatever the
+   category: the picture changes at every step, and at 60 ms that is sixteen
+   changes a second across the whole figure. There is no tween to drop — each
+   step is drawn whole — so the pace is the motion. */
+const STEP_CALM = 500;
 
 const RESIZE_HOLD = 60;
 
@@ -153,7 +172,10 @@ TPL.innerHTML = `
     --_sat:var(--disc-sat,.55); --_val:var(--disc-val,.88);
     --_font:var(--disc-font,system-ui,sans-serif);
     --_mono:var(--disc-mono,ui-monospace,Menlo,monospace);
-    --_edge:color-mix(in srgb,var(--_muted) 38%,transparent);
+    /* 3:1 or better against both the ground and the panel (WCAG 1.4.11): 5.4
+       and 5.0 on the dark defaults, 3.6 and 3.9 on the light ones. 38% came
+       out at 2.0 and 1.7, which left the scrub's track barely there. */
+    --_edge:var(--disc-edge,color-mix(in srgb,var(--_muted) 85%,transparent));
     color:var(--_ink);font-family:var(--_font)}
   @media (prefers-color-scheme:light){
     :host{--_ground:var(--disc-ground,#eef1f0); --_panel:var(--disc-panel,#fbfcfc);
@@ -184,7 +206,7 @@ TPL.innerHTML = `
   .keys button{font-family:var(--_mono);font-size:12px;line-height:1;color:var(--_ink);
     background:var(--_panel);border:1px solid var(--_edge);border-radius:2px;
     padding:6px 9px;min-width:30px;cursor:pointer}
-  .keys button:hover{border-color:var(--_muted)}
+  .keys button:hover{border-color:var(--_ink)}
   .keys button:focus-visible{outline:2px solid var(--_accent);outline-offset:1px}
   /* The scrub is drawn rather than left to accent-color, because the marks
      under it have to sit where the thumb will: a range's thumb travels from half
@@ -196,7 +218,7 @@ TPL.innerHTML = `
     --_thumb:13px}
   .slide::before{content:"";position:absolute;left:0;right:0;top:50%;height:4px;
     margin-top:-2px;border-radius:2px;background:var(--_edge)}
-  .scrub{position:relative;width:100%;height:20px;margin:0;cursor:pointer;
+  .scrub{position:relative;width:100%;height:24px;margin:0;cursor:pointer;
     appearance:none;-webkit-appearance:none;background:transparent}
   .scrub::-webkit-slider-runnable-track{height:4px;background:transparent}
   .scrub::-moz-range-track{height:4px;background:transparent}
@@ -220,19 +242,29 @@ TPL.innerHTML = `
     border-radius:1px;background:var(--_ink);transform:translateX(-50%)}
   :host([readout="off"]) .gloss{display:none}
   /* Held to a height whatever it holds, so the picture above it cannot move
-     under the pointer as the readout changes length. */
+     under the pointer as the readout changes length. What does not fit scrolls
+     rather than being cut: at 320 px the head line wraps and the path line
+     falls below the fold, and text spaced out by the reader (WCAG 1.4.12)
+     overflows at any width. #scrollable makes it a focusable region then. */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
-    margin-top:7px;overflow:hidden}
+    margin-top:7px;overflow-y:auto}
+  .gloss:focus-visible{outline:2px solid var(--_accent);outline-offset:2px}
   .gloss b{font-family:var(--_mono);font-weight:600}
-  /* The path the step took, which is the one thing here that is about arcs. */
+  /* The path the step took, which is the one thing here that is about arcs.
+     Wrapped rather than cut at the edge, since the block scrolls. */
   .gloss .path{display:block;font-family:var(--_mono);font-size:12.5px;
-    color:var(--_muted);letter-spacing:.06em;white-space:nowrap;overflow:hidden}
+    color:var(--_muted);letter-spacing:.06em;overflow-wrap:anywhere}
+  .ledger,.announce{position:absolute;width:1px;height:1px;overflow:hidden;
+    clip-path:inset(50%);white-space:nowrap}
   .gloss .fwd{color:var(--_accent)}
   .gloss .rev{color:var(--_muted)}
 </style>
 <div class="frame">
   <div class="pick" hidden><select class="cat" aria-label="category"></select></div>
-  <div class="stage"><canvas class="base" aria-hidden="true"></canvas></div>
+  <div class="stage" role="img" aria-label="Balancing flow">
+    <canvas class="base" aria-hidden="true"></canvas>
+  </div>
+  <div class="ledger"></div>
   <div class="rail">
     <div class="keys">
       <button class="first" type="button" aria-label="first step">|&lt;</button>
@@ -248,6 +280,7 @@ TPL.innerHTML = `
     </div>
   </div>
   <div class="gloss"></div>
+  <div class="announce" role="status" aria-live="polite" aria-atomic="true"></div>
 </div>`;
 
 class BalanceFlow extends HTMLElement {
@@ -262,6 +295,8 @@ class BalanceFlow extends HTMLElement {
   /** @type {HTMLInputElement} */ #scrub;
   /** @type {HTMLElement} */ #marksEl;
   /** @type {HTMLElement} */ #playEl;
+  /** @type {HTMLElement} */ #ledgerEl;
+  /** @type {HTMLElement} */ #announceEl;
   /** @type {ResizeObserver | null} */ #ro = null;
   /** @type {{disconnect: () => void} | null} */ #idle = null;
   /** @type {MediaQueryList | null} */ #mq = null;
@@ -336,9 +371,16 @@ class BalanceFlow extends HTMLElement {
     this.#scrub = /** @type {HTMLInputElement} */ (find(".scrub"));
     this.#marksEl = /** @type {HTMLElement} */ (find(".marks"));
     this.#playEl = /** @type {HTMLElement} */ (find(".play"));
+    this.#ledgerEl = /** @type {HTMLElement} */ (find(".ledger"));
+    this.#announceEl = /** @type {HTMLElement} */ (find(".announce"));
   }
 
   connectedCallback() {
+    // Named as one thing, unless the page has named it already.
+    if (!this.hasAttribute("role")) this.setAttribute("role", "group");
+    if (!this.hasAttribute("aria-label") && !this.hasAttribute("aria-labelledby")) {
+      this.setAttribute("aria-label", "Balancing flow");
+    }
     this.#scrub.addEventListener("input", this.#onScrub);
     /** @type {[string, () => void][]} */
     const keys = [
@@ -349,12 +391,16 @@ class BalanceFlow extends HTMLElement {
     ];
     for (const [sel, go] of keys) {
       this.#sr.querySelector(sel)?.addEventListener("click", () => {
-        this.pause();
+        this.#halt(false);
         go();
+        this.#announce(this.#spoken());
       });
     }
     this.#playEl.addEventListener("click", this.#onPlay);
-    this.#ro = new ResizeObserver(() => this.#fit());
+    this.#ro = new ResizeObserver(() => {
+      this.#fit();
+      this.#scrollable();
+    });
     /* The stage alone, where the discs watch their frame as well: nothing here
        changes layout with the frame's shape, so the stage's own box moving is
        the whole of what a resize means. */
@@ -374,7 +420,7 @@ class BalanceFlow extends HTMLElement {
 
   disconnectedCallback() {
     this.#picker.disconnect();
-    this.pause();
+    this.#halt(false);
     this.#ro?.disconnect();
     this.#idle?.disconnect();
     this.#idle = null;
@@ -459,7 +505,7 @@ class BalanceFlow extends HTMLElement {
   }
 
   #build() {
-    this.pause();
+    this.#halt(false);
     const t0 = performance.now();
     this.#trace = trace(this.#words);
     this.#solveMs = performance.now() - t0;
@@ -472,6 +518,8 @@ class BalanceFlow extends HTMLElement {
     this.#scrub.max = String(this.#frames.length);
     this.#scrub.value = String(this.#step);
     this.#scrub.disabled = this.#frames.length === 0;
+    this.#valued();
+    this.#describe();
     this.#ticks();
     /* Asleep, a screen away, there are no pixels to draw into, but a host's
        prose quoting these figures may be in view above the element while it
@@ -538,7 +586,7 @@ class BalanceFlow extends HTMLElement {
   #sleep = () => {
     if (this.#asleep) return;
     this.#asleep = true;
-    this.pause();
+    this.#halt(false);
     if (!this.#pw) return;
     this.#base.width = 0;
     this.#base.height = 0;
@@ -592,6 +640,7 @@ class BalanceFlow extends HTMLElement {
      one crawling and a very large one blurring.
      @returns {number} */
   #rate() {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return STEP_CALM;
     const n = this.#frames.length || 1;
     return Math.min(STEP_MAX, Math.max(STEP_MIN, RUN_MS / n));
   }
@@ -606,6 +655,22 @@ class BalanceFlow extends HTMLElement {
     else this.play();
   };
 
+  /* A run stopping is said once, where it stopped. Not said where the stop is
+     on the way to something the reader will hear instead — a key's own step,
+     the scrub's value — or is not the reader's doing at all. */
+  /** @param {boolean} say @returns {void} */
+  #halt(say) {
+    if (!this.#timer) return;
+    clearInterval(this.#timer);
+    this.#timer = 0;
+    this.#playEl.textContent = "▶";
+    this.#playEl.setAttribute("aria-label", "play");
+    if (say) {
+      const at = this.#spoken();
+      this.#announce(this.#step >= this.#frames.length ? at : `Paused. ${at}`);
+    }
+  }
+
   /** Run from where it stands, rewinding first where it is already balanced.
      @returns {void} */
   play() {
@@ -618,19 +683,17 @@ class BalanceFlow extends HTMLElement {
 
   /** @returns {void} */
   pause() {
-    if (!this.#timer) return;
-    clearInterval(this.#timer);
-    this.#timer = 0;
-    this.#playEl.textContent = "▶";
-    this.#playEl.setAttribute("aria-label", "play");
+    this.#halt(true);
   }
 
   get playing() {
     return this.#timer !== 0;
   }
 
+  /* Not announced: the scrub's own aria-valuetext is read as it moves, and a
+     live region on top would say each step twice. */
   #onScrub = () => {
-    this.pause();
+    this.#halt(false);
     this.seek(Number(this.#scrub.value));
   };
 
@@ -642,6 +705,7 @@ class BalanceFlow extends HTMLElement {
     const want = Math.max(0, Math.min(n, Math.round(k)));
     this.#step = want;
     this.#scrub.value = String(want);
+    this.#valued();
     this.#draw();
     if (want === this.#said) return;
     this.#said = want;
@@ -830,6 +894,141 @@ class BalanceFlow extends HTMLElement {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
 
+  /** The live region. Polite, and only ever written after a committed choice
+     or a run's end. The same text twice is cleared and set a frame later, since
+     a region that does not change says nothing.
+     @param {string} text @returns {void} */
+  #announce(text) {
+    const el = this.#announceEl;
+    if (el.textContent !== text) {
+      el.textContent = text;
+      return;
+    }
+    el.textContent = "";
+    (globalThis.requestAnimationFrame ?? setTimeout)(() => {
+      el.textContent = text;
+    });
+  }
+
+  /** The step shown, as a sentence: the same figures as the readout's head
+     line, with the arrow spelt out.
+     @returns {string} */
+  #spoken() {
+    const t = this.#trace;
+    if (!t) return "";
+    const n = this.#frames.length;
+    const num = /** @param {number} x */ x => x.toLocaleString("en-GB");
+    const s = /** @param {number} x */ x => (x === 1 ? "" : "s");
+    if (this.#step === 0) {
+      return (
+        `Step 0 of ${n}: ${t.excess.reduce((k, e) => k + (e === 0 ? 0 : 1), 0)} letters ` +
+        `open ${num(t.need)} words out of balance, nothing shipped yet.`
+      );
+    }
+    const f = this.#frames[this.#step - 1];
+    const head =
+      `Step ${this.#step} of ${n}: ${this.#name(f.from)} to ${this.#name(f.to)}, ` +
+      `push ${f.push}, cost ${f.cost}, ${num(shipped(this.#frames, this.#step))} of ` +
+      `${num(t.need)} shipped.`;
+    return this.#step === n
+      ? `Balanced after ${n} augmentation${s(n)}, ${num(t.paid)} word${s(t.paid)} discarded. ${head}`
+      : head;
+  }
+
+  /** The scrub's value as words, so a screen reader moving it hears the step
+     rather than a bare number.
+     @returns {void} */
+  #valued() {
+    const n = this.#frames.length;
+    const k = this.#step;
+    const f = k > 0 ? this.#frames[k - 1] : null;
+    this.#scrub.setAttribute(
+      "aria-valuetext",
+      f
+        ? `step ${k} of ${n}, ${this.#name(f.from)} → ${this.#name(f.to)}, cost ${f.cost}` +
+            (k === n ? ", balanced" : "")
+        : `step 0 of ${n}, nothing shipped`,
+    );
+  }
+
+  /** The picture's text alternative: what it is of, in the figures it opens on.
+     @returns {void} */
+  #describe() {
+    const t = this.#trace;
+    if (!t) return;
+    const n = this.#frames.length;
+    const open = t.excess.reduce((k, e) => k + (e === 0 ? 0 : 1), 0);
+    this.#stage.setAttribute(
+      "aria-label",
+      `Balancing flow${this.#category ? ` of ${this.#category}` : ""}: ${open} letters ` +
+        `open ${t.need.toLocaleString("en-GB")} words out of balance, surplus letters down the left and deficit ` +
+        `letters down the right, cleared in ${n} augmenting path${n === 1 ? "" : "s"} ` +
+        `drawn as bands between them, for ${t.paid.toLocaleString("en-GB")} words discarded.`,
+    );
+  }
+
+  /** The step shown, as text a screen reader can walk: what each surplus letter
+     still has to ship and each deficit letter still to take, against what it
+     opened with, and the path the step pushed. Kept with the readout, so the
+     two are always of one step.
+     @returns {void} */
+  #ledger() {
+    const t = this.#trace;
+    if (!t) return;
+    const left = owing(t.excess, this.#frames, this.#step);
+    /** @param {number} sign */
+    const side = sign => {
+      const got = [];
+      for (let v = 0; v < t.excess.length; v++) {
+        if (Math.sign(t.excess[v]) !== sign) continue;
+        got.push(`${this.#name(v)} ${Math.abs(left[v])} of ${Math.abs(t.excess[v])}`);
+      }
+      return got.length ? got.join(", ") : "none";
+    };
+    const f = this.#step > 0 ? this.#frames[this.#step - 1] : null;
+    const items = [
+      `Step ${this.#step} of ${this.#frames.length}.`,
+      `Surplus still to ship: ${side(1)}.`,
+      `Deficit still to fill: ${side(-1)}.`,
+      f ? `Path pushed: ${f.push} words at cost ${f.cost}, ${this.#walked(f)}.` : "No path yet.",
+    ];
+    const ul = document.createElement("ul");
+    for (const text of items) {
+      const li = document.createElement("li");
+      li.textContent = text;
+      ul.append(li);
+    }
+    this.#ledgerEl.replaceChildren(ul);
+  }
+
+  /** A path in words: a forward arc discards a word, a reverse arc recovers one.
+     @param {import("./word-longest.js").Augmentation} f @returns {string} */
+  #walked(f) {
+    const seq = walk(f.steps);
+    if (!seq.length) return "";
+    let out = this.#name(seq[0]);
+    for (const [i, s] of f.steps.entries()) {
+      out += `${s > 0 ? ", forward to " : ", back to "}${this.#name(seq[i + 1])}`;
+    }
+    return out;
+  }
+
+  /** The readout as a keyboard reader reaches it: focusable and named only
+     while it holds more than it shows, so a short one is no tab stop.
+     @returns {void} */
+  #scrollable() {
+    const g = this.#glossEl;
+    if (g.scrollHeight > g.clientHeight + 1) {
+      g.setAttribute("tabindex", "0");
+      g.setAttribute("role", "region");
+      g.setAttribute("aria-label", "balancing flow readout");
+    } else {
+      g.removeAttribute("tabindex");
+      g.removeAttribute("role");
+      g.removeAttribute("aria-label");
+    }
+  }
+
   /** A failed fetch, written where the readout would otherwise be. #showRead
      returns on #ready, so a words failure holds this line for good.
      @param {string} html @returns {void} */
@@ -851,6 +1050,8 @@ class BalanceFlow extends HTMLElement {
         `<b>${letters}</b> letters open <b>${num(t.need)}</b> words out of balance, ` +
         `cleared in <b>${n}</b> augmentation${n === 1 ? "" : "s"}. ` +
         `<span class="path">nothing shipped yet</span>`;
+      this.#ledger();
+      this.#scrollable();
       return;
     }
     const f = this.#frames[this.#step - 1];
@@ -862,6 +1063,8 @@ class BalanceFlow extends HTMLElement {
         : `step <b>${this.#step}</b> of ${n} · <b>${this.#name(f.from)} → ${this.#name(f.to)}</b>` +
           ` · <b>${num(done)}</b> of ${num(t.need)} shipped`;
     this.#glossEl.innerHTML = `${head}<span class="path">${this.#path(f)}</span>`;
+    this.#ledger();
+    this.#scrollable();
   }
 
   /** The letters the step walked, with the arcs between them: a forward arc

@@ -338,18 +338,36 @@ const fragment = () => {
   slide.append(new El("div", "marks"), new El("input", "scrub"));
   rail.append(keys, slide);
   frame.append(pick, find, stage, rail, new El("div", "gloss"), crumb);
+  // <letter-disc>'s keyboard way in, a letter select and an arc select, and
+  // <balance-flow>'s text of the step it stands at.
+  const tour = new El("div", "tour");
+  tour.append(new El("select", "letter"), new El("select", "pair"));
+  frame.append(tour, new El("div", "ledger"));
   // <word-run> holds no frame at all: one line, and the rest of this is what
   // the discs reach for.
   const root = new El("div", "");
-  root.append(new El("style", ""), frame, new El("div", "run"));
+  // The live region, a sibling of the frame so the wide grid never places it.
+  root.append(new El("style", ""), frame, new El("div", "run"), new El("div", "announce"));
   return root;
 };
 
 /* Elements by id, filled as one is set rather than by walking a tree, since
    the stub has no tree to walk. */
 const BY_ID = new Map();
+/* Listeners on the document itself, kept so a key pressed with focus nowhere in
+   particular can be delivered: Escape dismisses a hover readout from there. */
+const DOC_ON = new Map();
 globalThis.document = {
   getElementById: id => BY_ID.get(id) ?? null,
+  addEventListener(type, fn) {
+    (DOC_ON.get(type) ?? DOC_ON.set(type, []).get(type)).push(fn);
+  },
+  removeEventListener(type, fn) {
+    DOC_ON.set(
+      type,
+      (DOC_ON.get(type) ?? []).filter(f => f !== fn),
+    );
+  },
   // Resolved, so the elements' document.fonts.ready callbacks are run rather
   // than only parsed. Awaited once below, after the word disc's draw counts.
   fonts: { ready: Promise.resolve() },
@@ -2011,8 +2029,9 @@ check(over.drew.inStroke > 0, "the fan was let go of on a second move inside");
 
 /* A pointer that was on nothing holds nothing, and the middle then answers on
    the way back alone: what lies under it is the resting bundle, every chord the
-   disc has as a pair of words rather than a move, which no pointer rate hits. */
-fire(over, "pointerleave", {});
+   disc has as a pair of words rather than a move, which no pointer rate hits.
+   The pointer leaves the element, not the canvas, which is what ends a hover. */
+fire(disc, "pointerleave", {});
 over.drew.inStroke = 0;
 fire(over, "pointermove", { offsetX: BOX / 2, offsetY: BOX / 2 });
 check(over.drew.inStroke === 0, "the middle asked a fan with nothing held");
@@ -2067,8 +2086,9 @@ check(listed().includes("tiger"), `winding back did not put tiger back: ${listed
 
 /* Hovering a row is hovering its dot, and the seam between two rows is not a
    place the hover ends: a pointermove targeting the list rather than a row must
-   hold the highlight, or it blinks between every pair. Only leaving the list
-   clears it, and the seam is exactly the event a browser sends. */
+   hold the highlight, or it blinks between every pair. Only leaving the element
+   clears it, so the pointer can cross to the readout (WCAG 1.4.13), and the
+   seam is exactly the event a browser sends. */
 disc.clear();
 point("cat");
 const onToad = '<b>toa<span class="last">d</span></b>';
@@ -2080,8 +2100,8 @@ check(
   gloss.innerHTML.includes(onToad),
   `the seam between two rows dropped the hover: ${gloss.innerHTML}`,
 );
-fire(list, "pointerleave", {});
-check(!gloss.innerHTML.includes(onToad), `leaving the list kept the hover: ${gloss.innerHTML}`);
+fire(disc, "pointerleave", {});
+check(!gloss.innerHTML.includes(onToad), `leaving the element kept the hover: ${gloss.innerHTML}`);
 
 /* A wedge run dry says so rather than emptying without a word. */
 disc.clear();
@@ -3346,10 +3366,11 @@ const lShadow = ld._shadow;
 const lBase = lShadow.querySelector(".base");
 const lOver = lShadow.querySelector(".over");
 const lGloss = lShadow.querySelector(".gloss");
-/* This disc carries no search box, no list and no crumb line. Read off the
-   module's own text rather than the shadow root, because the stub builds one
-   fragment for all three templates and every element gets a search box in it
-   whether its own markup names one or not. */
+/* This disc carries no search box, no list and no crumb line; its keyboard way
+   in is two selects, tested below. Read off the module's own text rather than
+   the shadow root, because the stub builds one fragment for all three templates
+   and every element gets a search box in it whether its own markup names one or
+   not. */
 {
   const tpl = readFileSync(new URL("../web/letter-disc.js", import.meta.url), "utf8");
   for (const gone of ['class="q"', 'class="hits"', 'class="arcs"', 'class="crumb"']) {
@@ -3430,7 +3451,9 @@ check(lOver.drew.inPath > 0, "the pointer in the middle never asked the arcs");
 /* The hub, disc-label.js's halo and baseline rather than a second copy: nothing
    stroked, the ground copies of the ink's own call ringed at one radius about
    the point the ink goes down at, and the ink last. */
-fire(lOver, "pointerleave", {});
+// Off the host, which is where the element listens: see the accessibility
+// block near the end for why the canvas leaving is not enough.
+fire(ld, "pointerleave", {});
 ld.show(-1);
 lOver.drew.strokeText = 0;
 lOver.text = { fill: [], stroke: [] };
@@ -4213,6 +4236,356 @@ bKey(".play");
 bf.disconnectedCallback();
 check(!bf.playing, "a disconnected element left its run going");
 
+/* ===== Accessibility: <letter-disc> and <balance-flow> =====================
+   The keyboard and screen-reader paths of the two elements, kept together so
+   they can be read as one account of what those paths promise. Each element is
+   built fresh here, since the blocks above leave theirs asleep, moved and
+   disconnected. */
+{
+  const { owing } = await import(mod("balance-bank.js"));
+  // Escape is heard on the document, so this block swaps in a pair that
+  // collects keydown listeners where the press below can reach them, and puts
+  // the stub's own pair back at the end.
+  const DOC_KEYS = [];
+  const docOn = document.addEventListener;
+  const docOff = document.removeEventListener;
+  document.addEventListener = (type, fn) => {
+    if (type === "keydown") DOC_KEYS.push(fn);
+  };
+  document.removeEventListener = (_type, fn) => {
+    const i = DOC_KEYS.indexOf(fn);
+    if (i >= 0) DOC_KEYS.splice(i, 1);
+  };
+  const press = key => {
+    for (const fn of DOC_KEYS.slice()) fn({ key });
+  };
+  const tick = () => new Promise(r => setTimeout(r, 0));
+
+  /* <letter-disc>. The words on one arc run past NAMED, which is what tells a
+     held arc, which names all of them, from a hover, which names fourteen. */
+  const many = Array.from({ length: 20 }, (_, i) => `c${String.fromCharCode(97 + i)}t`);
+  const AWORDS = [...LWORDS, ...many];
+  const AL = letterLayout(matrix(AWORDS));
+  const ad = new LetterDisc();
+  ad.setAttribute("aria-label", "the page's own name");
+  ad.connectedCallback();
+  ad.data = { category: "a11y", words: AWORDS };
+  const aSr = ad._shadow;
+  const aGloss = aSr.querySelector(".gloss");
+  const aOver = aSr.querySelector(".over");
+  const aSay = aSr.querySelector(".announce");
+  const aLetter = aSr.querySelector(".letter");
+  const aPair = aSr.querySelector(".pair");
+  const aStage = aSr.querySelector(".stage");
+
+  check(ad.getAttribute("role") === "group", "the letter disc's host is no group");
+  check(
+    ad.getAttribute("aria-label") === "the page's own name",
+    `the letter disc overwrote the page's name with "${ad.getAttribute("aria-label")}"`,
+  );
+  {
+    const plain = new LetterDisc();
+    plain.connectedCallback();
+    check(
+      plain.getAttribute("aria-label") === "Letter graph",
+      `an unnamed letter disc is called "${plain.getAttribute("aria-label")}"`,
+    );
+    plain.disconnectedCallback();
+  }
+  /* The drawing's text alternative counts what the resting readout counts and
+     names the busiest letters, which here is C by a distance. */
+  const said = aStage.getAttribute("aria-label") ?? "";
+  check(
+    said.includes("a11y") && said.includes(`${AL.words} words`) && said.includes("C"),
+    `the letter graph's text alternative is "${said}"`,
+  );
+
+  // One option a live letter, after the whole category.
+  check(
+    aLetter.children.length === AL.live.length + 1 && aLetter.children[0].value === "",
+    `the letter select has ${aLetter.children.length} options for ${AL.live.length} letters`,
+  );
+  check(aPair.disabled, "the arc select is usable with no letter to take arcs from");
+
+  // A letter picked from the keyboard drills in, offers its arcs and is said.
+  const C = 2;
+  aLetter.value = String(C);
+  fire(aLetter, "change", {});
+  check(ad.letter === "C", `picking C from the select drilled to "${ad.letter}"`);
+  check(
+    !aPair.disabled && aPair.children.length === AL.byLetter[C].length + 1,
+    `C's ${AL.byLetter[C].length} arcs came out as ${aPair.children.length - 1} options`,
+  );
+  check(
+    aSay.textContent.startsWith("C ") && !aSay.textContent.includes("<"),
+    `picking C announced "${aSay.textContent}"`,
+  );
+  // Every arc option names its far letter, its direction and its count.
+  check(
+    aPair.children
+      .slice(1)
+      .every(o => /^(to|from|loop back to) [A-Z] · \d+ words?$/.test(o.textContent)),
+    `an arc option reads "${aPair.children.slice(1).find(o => !/^(to|from|loop)/.test(o.textContent))?.textContent}"`,
+  );
+
+  // An arc picked from the keyboard is held, and names every word on it.
+  const ct = AL.edges.findIndex(e => e.from === C && e.to === 19);
+  aPair.value = String(ct);
+  fire(aPair, "change", {});
+  check(ad.arc?.from === "C" && ad.arc?.to === "T", `the held arc is ${JSON.stringify(ad.arc)}`);
+  check(
+    many.every(w => aGloss.innerHTML.includes(w)) && !aGloss.innerHTML.includes("more"),
+    `a held arc of ${AL.edges[ct].n} words reads "${aGloss.innerHTML}"`,
+  );
+  check(
+    aSay.textContent.startsWith("C to T") && aSay.textContent.includes("more"),
+    `the held arc announced "${aSay.textContent}", not the arrow spelt out and fourteen words`,
+  );
+
+  /* A hover over the held arc names fourteen; the pointer leaving the canvas
+     for the readout keeps it, and only leaving the element puts the held arc
+     back (WCAG 1.4.13). */
+  const G = lsolve(BOX);
+  const mid = BOX / 2;
+  const onRing = k => {
+    const a = Math.PI / 2 - (AL.turn[k] + AL.upto[k]) / 2;
+    return { offsetX: mid + Math.cos(a) * G.r, offsetY: mid - Math.sin(a) * G.r };
+  };
+  const end = [...AL.slotEdge].indexOf(ct);
+  fire(aOver, "pointermove", onRing(end));
+  check(aGloss.innerHTML.includes(" more</span>"), `a hover on C→T reads "${aGloss.innerHTML}"`);
+  const before = aSay.textContent;
+  fire(aOver, "pointerleave", {});
+  check(aGloss.innerHTML.includes(" more</span>"), "leaving the canvas for the readout cleared it");
+  check(aSay.textContent === before, "a hover wrote to the live region");
+  fire(ad, "pointerleave", {});
+  check(
+    !aGloss.innerHTML.includes("more") && ad.arc?.to === "T",
+    `leaving the element did not go back to the held arc: "${aGloss.innerHTML}"`,
+  );
+
+  /* Escape takes a hover off without the pointer moving, and with focus inside
+     puts the disc back on the whole category. */
+  fire(aOver, "pointermove", onRing(end));
+  press("Escape");
+  check(
+    !aGloss.innerHTML.includes("more") && ad.letter === "C",
+    "Escape on a hover did more, or less, than take the hover off",
+  );
+  press("Escape");
+  check(ad.letter === "C", "Escape with focus elsewhere cleared the reader's pick");
+  document.activeElement = ad;
+  press("Escape");
+  delete document.activeElement;
+  check(
+    ad.letter === "" && ad.arc === null && aPair.disabled,
+    `Escape with focus inside left the disc on "${ad.letter}"`,
+  );
+  check(aGloss.innerHTML.includes("words over"), "Escape did not bring the resting readout back");
+
+  /* A tap pins what it lands on, since a finger has no hover to read by; a
+     mouse click still does nothing. */
+  aSay.textContent = "";
+  fire(aOver, "pointerup", { offsetX: 1, offsetY: 1, pointerType: "touch" });
+  check(
+    aSay.textContent === "",
+    `a tap on nothing, with nothing pinned, said "${aSay.textContent}"`,
+  );
+  fire(aOver, "pointerup", { ...onRing(end), pointerType: "mouse" });
+  check(ad.letter === "" && ad.arc === null, "a mouse click pinned an arc");
+  fire(aOver, "pointerup", { ...onRing(end), pointerType: "touch" });
+  check(ad.arc?.from === "C" && ad.arc?.to === "T", `a tap pinned ${JSON.stringify(ad.arc)}`);
+  check(aLetter.value === String(C) && aPair.value === String(ct), "a tap left the selects behind");
+  fire(ad, "pointerleave", {});
+  check(ad.arc?.to === "T", "the tap's arc went as the finger lifted");
+
+  // show() from the host moves the selects but says nothing: it is no reader's pick.
+  aSay.textContent = "";
+  ad.show("t");
+  check(aLetter.value === "19" && aSay.textContent === "", "show() announced, or left the select");
+
+  // The same text twice is cleared and set again a frame later.
+  ad.show(-1);
+  aLetter.value = "19";
+  fire(aLetter, "change", {});
+  const first = aSay.textContent;
+  ad.show(-1);
+  aLetter.value = "19";
+  fire(aLetter, "change", {});
+  check(
+    aSay.textContent === "",
+    `a repeated announcement was not cleared first: "${first}" then "${aSay.textContent}"`,
+  );
+  await tick();
+  check(aSay.textContent === first, `a repeated announcement came back as "${aSay.textContent}"`);
+
+  // A readout holding more than it shows is a focusable, named region.
+  Object.defineProperty(aGloss, "scrollHeight", { value: 500, configurable: true });
+  ad.show(-1);
+  check(
+    aGloss.getAttribute("tabindex") === "0" && aGloss.getAttribute("role") === "region",
+    "an overflowing readout cannot be reached from the keyboard",
+  );
+  delete aGloss.scrollHeight;
+  ad.show("c");
+  check(aGloss.getAttribute("tabindex") === null, "a readout that fits is still a tab stop");
+  ad.disconnectedCallback();
+  check(DOC_KEYS.length === 0, "a disconnected letter disc still hears Escape");
+
+  /* The rules a stub without CSS cannot see, read off the module's text: the
+     readout scrolls rather than clipping, the canvas leaves a vertical swipe to
+     the page, and the edge takes the host's override. */
+  for (const file of ["letter-disc.js", "balance-flow.js"]) {
+    const text = readFileSync(new URL(`../web/${file}`, import.meta.url), "utf8");
+    const gloss = /\n\s*\.gloss\{[^}]*\}/.exec(text)?.[0] ?? "";
+    check(
+      gloss.includes("overflow-y:auto") && !/line-clamp|overflow:hidden/.test(gloss),
+      `${file}'s readout clips: ${gloss.trim()}`,
+    );
+    check(!text.includes("touch-action:none"), `${file} still takes every touch from the page`);
+    check(text.includes("--_edge:var(--disc-edge,"), `${file}'s edge ignores --disc-edge`);
+    check(text.includes('role="status"'), `${file} carries no live region`);
+  }
+
+  /* <balance-flow>. `owing` is the text the columns become: what each letter
+     still owes at a step, which runs from the excess down to nothing. */
+  check(
+    owing(BTR.excess, BTR.frames, 0).every((x, i) => x === BTR.excess[i]),
+    "nothing run already owes less than the excess",
+  );
+  check(
+    owing(BTR.excess, BTR.frames, BTR.frames.length).every(x => x === 0),
+    "a settled run still owes something",
+  );
+  for (let k = 0; k <= BTR.frames.length; k++) {
+    const left = owing(BTR.excess, BTR.frames, k).reduce((n, x) => n + Math.max(0, x), 0);
+    check(
+      left === BTR.need - shipped(BTR.frames, k),
+      `at step ${k} the surplus left is ${left}, against ${BTR.need - shipped(BTR.frames, k)} unshipped`,
+    );
+  }
+
+  const af = new BalanceFlow();
+  af.connectedCallback();
+  af._shadow.querySelector(".stage")._rect = { width: BOX + 300, height: BOX };
+  af.data = { category: "a11y", words: RWORDS };
+  const fSr = af._shadow;
+  const fSay = fSr.querySelector(".announce");
+  const fScrub = fSr.querySelector(".scrub");
+  const fLedger = fSr.querySelector(".ledger");
+  const fKey = cls => fire(fSr.querySelector(cls), "click", {});
+  const n = af.frames;
+  check(
+    af.getAttribute("role") === "group" && af.getAttribute("aria-label") === "Balancing flow",
+    "the balancing flow's host is not a named group",
+  );
+  {
+    const alt = fSr.querySelector(".stage").getAttribute("aria-label") ?? "";
+    check(
+      alt.includes("a11y") && alt.includes(`${RTR.need} words`) && alt.includes(`${n} augmenting`),
+      `the balancing flow's text alternative is "${alt}"`,
+    );
+  }
+  // The scrub's value in words, at the balanced end it opens on and after a seek.
+  check(
+    fScrub.getAttribute("aria-valuetext")?.startsWith(`step ${n} of ${n}`),
+    `the scrub opens saying "${fScrub.getAttribute("aria-valuetext")}"`,
+  );
+  af.seek(2);
+  {
+    const f = RTR.frames[1];
+    const want = `step 2 of ${n}, ${String.fromCharCode(65 + f.from)} → ${String.fromCharCode(65 + f.to)}, cost ${f.cost}`;
+    check(
+      fScrub.getAttribute("aria-valuetext") === want,
+      `after seek(2) the scrub says "${fScrub.getAttribute("aria-valuetext")}", not "${want}"`,
+    );
+  }
+  check(fSay.textContent === "", "a seek from the host was announced");
+  // The ledger is of the step the picture shows, letter by letter.
+  {
+    const items = fLedger.children[0]?.children.map(li => li.textContent) ?? [];
+    const left = owing(RTR.excess, RTR.frames, 2);
+    const s = RTR.excess.findIndex(x => x > 0);
+    check(
+      items[0] === `Step 2 of ${n}.` &&
+        items[1]?.includes(`${String.fromCharCode(65 + s)} ${left[s]} of ${RTR.excess[s]}`),
+      `the ledger at step 2 reads ${JSON.stringify(items)}`,
+    );
+    check(items[3]?.startsWith("Path pushed"), `the ledger names no path: ${items[3]}`);
+  }
+
+  // The keys are announced, and the scrub is not, its value text being read.
+  fKey(".next");
+  check(
+    fSay.textContent.startsWith(`Step 3 of ${n}`),
+    `the next key announced "${fSay.textContent}"`,
+  );
+  fScrub.value = "5";
+  fire(fScrub, "input", {});
+  check(fSay.textContent.startsWith("Step 3"), "the scrub wrote to the live region");
+  fKey(".last");
+  check(fSay.textContent.startsWith("Balanced"), `the last key announced "${fSay.textContent}"`);
+
+  /* Nothing is said while a run plays, and it is said once where it stops.
+     A key pressed mid-run says its own step rather than the pause. */
+  fKey(".play");
+  check(af.playing, "the play key did not start a run");
+  fSay.textContent = "";
+  await new Promise(r => setTimeout(r, 400));
+  check(af.step > 0 && fSay.textContent === "", `a running flow said "${fSay.textContent}"`);
+  fKey(".play");
+  check(fSay.textContent.startsWith("Paused. Step"), `stopping announced "${fSay.textContent}"`);
+  fKey(".play");
+  {
+    // Every write, since the pause and the step land in one task and only the
+    // last would be left to read.
+    const writes = [];
+    Object.defineProperty(fSay, "textContent", {
+      configurable: true,
+      get: () => writes[writes.length - 1] ?? "",
+      set: v => writes.push(String(v)),
+    });
+    fKey(".prev");
+    delete fSay.textContent;
+    fSay.textContent = writes[writes.length - 1] ?? "";
+    check(
+      writes.length === 1 && writes[0].startsWith("Step"),
+      `a key that stopped the run said ${JSON.stringify(writes)}`,
+    );
+  }
+  fKey(".first");
+  fKey(".play");
+  await new Promise(r => setTimeout(r, 160 * n + 200));
+  check(!af.playing, "a run did not stop at its end");
+  check(fSay.textContent.startsWith("Balanced"), `a run's end announced "${fSay.textContent}"`);
+
+  /* Reduced motion: one slow pace whatever the category. The interval is read
+     off a spy rather than timed. */
+  const realMedia = globalThis.matchMedia;
+  const realInterval = globalThis.setInterval;
+  let pace = 0;
+  globalThis.setInterval = (fn, ms) => {
+    pace = ms;
+    return realInterval(fn, ms);
+  };
+  globalThis.matchMedia = q => ({
+    ...realMedia(q),
+    matches: q.includes("prefers-reduced-motion"),
+  });
+  fKey(".play");
+  fKey(".play");
+  const calm = pace;
+  globalThis.matchMedia = realMedia;
+  fKey(".play");
+  fKey(".play");
+  globalThis.setInterval = realInterval;
+  check(calm >= 400 && pace <= 160, `reduced motion paced ${calm} ms a step, against ${pace}`);
+  af.disconnectedCallback();
+  document.addEventListener = docOn;
+  document.removeEventListener = docOff;
+}
+/* ===== end of the <letter-disc> and <balance-flow> accessibility block ===== */
+
 /* embed.html names its modules, elements and data files by hand where web-dist
    finds the modules by glob, so the glob's guarantee stops at the directory's
    edge: a module renamed here would be copied and left unreferenced. */
@@ -4279,6 +4652,195 @@ for (const tag of ["word-disc.js", "letter-disc.js", "balance-flow.js"]) {
     `${tag} does not observe src, so embed.html's category control cannot reach it`,
   );
 }
+
+/* ==========================================================================
+   Accessibility: <hypernym-disc>, <word-disc> and the shared picker.
+   The keyboard's way through each column, what the live region says after a
+   committed action, and the picker's visible label. Fresh elements throughout,
+   so nothing above leaves state these depend on.
+   ========================================================================== */
+
+/* `step` moves a row without wrapping, and the first press lands on the top
+   row whichever way it points, as a listbox with nothing selected does. */
+const { step: a11yStep, PAGE_STEP } = await import(mod("disc-search.js"));
+check(a11yStep("ArrowDown", -1, 5) === 0, "the first ArrowDown did not land on row 0");
+check(a11yStep("ArrowUp", -1, 5) === 0, "the first ArrowUp did not land on row 0");
+check(a11yStep("ArrowDown", 4, 5) === 4, "ArrowDown wrapped past the last row");
+check(a11yStep("ArrowUp", 0, 5) === 0, "ArrowUp wrapped past the first row");
+check(a11yStep("End", 1, 5) === 4 && a11yStep("Home", 3, 5) === 0, "Home or End missed");
+check(
+  a11yStep("PageDown", 0, 50) === PAGE_STEP && a11yStep("PageDown", 45, 50) === 49,
+  "PageDown did not step a page and stop at the end",
+);
+check(a11yStep("a", 2, 5) === null, "a letter key was taken as a move");
+check(a11yStep("ArrowDown", -1, 0) === null, "an empty column took a row");
+
+/* The live region, read the way the test reads it: after any repeat has been
+   put back. A repeat is cleared and restored a tick later. */
+const told = el => el._shadow.querySelector(".announce").textContent;
+const tick = () => new Promise(r => setTimeout(r, 0));
+const key = k => ({ key: k, preventDefault() {}, defaultPrevented: false });
+
+/* The picker's label, put in by the shared picker so every element has one. */
+const a11yWord = new WordDisc();
+a11yWord.connectedCallback();
+const a11yPick = a11yWord._shadow.querySelector(".pick");
+const a11yLabel = a11yPick.querySelector(".pick-label");
+const a11yCat = a11yPick.querySelector(".cat");
+check(a11yLabel !== null, "the picker put no visible label over its select");
+check(a11yLabel?.textContent === "Category", `the picker's label reads ${a11yLabel?.textContent}`);
+check(
+  Boolean(a11yCat.id) && a11yLabel?.htmlFor === a11yCat.id,
+  "the picker's label is not tied to its select",
+);
+check(!a11yCat.hasAttribute("aria-label"), "the select keeps an aria-label beside its label");
+
+/* Host naming, unless the page already gave one. */
+check(a11yWord.getAttribute("role") === "group", "word-disc's host is not a group");
+check(a11yWord.getAttribute("aria-label") === "Word chain disc", "word-disc's host has no name");
+const named = new WordDisc();
+named.setAttribute("aria-label", "Animals");
+named.connectedCallback();
+check(named.getAttribute("aria-label") === "Animals", "word-disc overwrote the page's name");
+
+/* <word-disc>'s column from the keyboard: the arrows move a row, Enter plays
+   it, and the play is said. */
+a11yWord.setAttribute("fit", "");
+a11yWord._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
+a11yWord.data = { category: "test", words: WORDS, zipf: WORDS.map((_, i) => 8 - i) };
+await painted();
+const wList = a11yWord._shadow.querySelector(".moves").querySelector(".list");
+fire(wList, "keydown", key("ArrowDown"));
+fire(wList, "keydown", key("ArrowDown"));
+check(
+  wList.getAttribute("aria-activedescendant") === "move-1",
+  `two ArrowDowns put the column on ${wList.getAttribute("aria-activedescendant")}`,
+);
+check(
+  wList.children[1].getAttribute("aria-selected") === "true" &&
+    !wList.children[0].hasAttribute("aria-selected"),
+  "the column's selected row is not the one the keyboard is on",
+);
+const firstPlay = wList.children[1].dataset.i;
+fire(wList, "keydown", key("Enter"));
+check(
+  a11yWord.chain.length === 1 && a11yWord.chain[0] === a11yWord.words[firstPlay],
+  `Enter on a row played ${a11yWord.chain}`,
+);
+check(
+  told(a11yWord).startsWith(`Played ${a11yWord.words[firstPlay]}. Chain: `),
+  `a play was announced as "${told(a11yWord)}"`,
+);
+check(
+  /Next word starts with [A-Z]|No possible next words/.test(told(a11yWord)),
+  "a play did not say what can follow",
+);
+check(!wList.hasAttribute("aria-activedescendant"), "the rebuilt column kept the old row");
+
+/* A word the chain cannot take, reached by name: the row is marked disabled and
+   tagged, and Enter says why rather than doing nothing. */
+const wq = a11yWord._shadow.querySelector(".q");
+const wHits = a11yWord._shadow.querySelector(".hits");
+wq.value = a11yWord.chain[0];
+fire(wq, "input", {});
+const usedRow = wHits.children[0];
+check(
+  usedRow?.getAttribute("aria-disabled") === "true",
+  "a played word's row is not aria-disabled",
+);
+check(
+  usedRow?.children.some(c => c.className === "tag" && c.textContent === "played"),
+  "a played word's row carries no visible tag",
+);
+fire(wq, "keydown", key("Enter"));
+const refusal = `${a11yWord.chain[0]} is not a move: already played.`;
+check(told(a11yWord) === refusal, `Enter on a played word said "${told(a11yWord)}"`);
+check(a11yWord.chain.length === 1, "Enter on a played word changed the chain");
+/* The same refusal twice must be heard twice: cleared, then put back. */
+fire(wq, "input", {});
+fire(wq, "keydown", key("Enter"));
+check(told(a11yWord) === "", "a repeated announcement was not cleared first");
+await tick();
+check(told(a11yWord) === refusal, `a repeated announcement came back as "${told(a11yWord)}"`);
+
+/* Undo is said too, and Escape anywhere drops a hover readout. */
+a11yWord.clear();
+check(told(a11yWord).startsWith("Chain cleared."), `clearing said "${told(a11yWord)}"`);
+await painted();
+const wGloss = a11yWord._shadow.querySelector(".gloss");
+const pressEscape = () => {
+  for (const fn of (DOC_ON.get("keydown") ?? []).slice()) fn(key("Escape"));
+};
+/* The refused word above is still highlighted, and Escape drops that too. */
+pressEscape();
+const atRest = wGloss.innerHTML;
+check(atRest.includes("8 words in test"), `Escape left the refused word up: ${atRest}`);
+fire(wList, "pointermove", { target: wList.children[0] });
+check(wGloss.innerHTML !== atRest, "hovering a row left the readout at rest");
+pressEscape();
+check(wGloss.innerHTML === atRest, `Escape left the hover readout: ${wGloss.innerHTML}`);
+/* The host's pointerleave does the same, the canvas's no longer being the
+   edge a hover ends at. */
+fire(wList, "pointermove", { target: wList.children[0] });
+fire(a11yWord, "pointerleave", {});
+check(wGloss.innerHTML === atRest, `leaving the host left the readout: ${wGloss.innerHTML}`);
+const docKeys = (DOC_ON.get("keydown") ?? []).length;
+a11yWord.disconnectedCallback();
+check(
+  (DOC_ON.get("keydown") ?? []).length === docKeys - 1,
+  "a disconnected disc left its Escape listener on the document",
+);
+
+/* <hypernym-disc>'s ring below from the keyboard. */
+const a11yNest = new HypernymDisc();
+a11yNest.connectedCallback();
+a11yNest.setAttribute("fit", "");
+a11yNest._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
+a11yNest.data = { par: TREE, names: TREE_NAMES };
+check(a11yNest.getAttribute("role") === "group", "hypernym-disc's host is not a group");
+const hList = a11yNest._shadow.querySelector(".kids").querySelector(".list");
+fire(hList, "keydown", key("ArrowDown"));
+fire(hList, "keydown", key("ArrowDown"));
+check(
+  hList.getAttribute("aria-activedescendant") === "kid-1",
+  `two ArrowDowns put the ring on ${hList.getAttribute("aria-activedescendant")}`,
+);
+fire(hList, "keydown", key("Enter"));
+check(a11yNest.index === 2, `Enter on a branch row left the disc at ${a11yNest.index}`);
+check(told(a11yNest).startsWith("moss, 2 below."), `a zoom was announced as "${told(a11yNest)}"`);
+fire(hList, "keydown", key("End"));
+fire(hList, "keydown", key("Enter"));
+check(a11yNest.index === 2, `Enter on a leaf row moved the disc to ${a11yNest.index}`);
+check(
+  told(a11yNest).startsWith("moss stem, in moss."),
+  `a leaf pick was announced as "${told(a11yNest)}"`,
+);
+fire(hList, "keydown", key("Escape"));
+check(!hList.hasAttribute("aria-activedescendant"), "Escape left the ring's row selected");
+
+/* Stacked, there is no column, so ArrowDown in an empty search box lists the
+   ring below in the suggestions instead. */
+const stacked = new HypernymDisc();
+stacked.connectedCallback();
+stacked.data = { par: TREE, names: TREE_NAMES };
+const sq = stacked._shadow.querySelector(".q");
+const sHits = stacked._shadow.querySelector(".hits");
+sq.value = "";
+fire(sq, "keydown", key("ArrowDown"));
+check(
+  sHits.children.length === 3 && !sHits.hidden,
+  `ArrowDown in an empty box listed ${sHits.children.length} rows`,
+);
+check(
+  sq.getAttribute("aria-activedescendant") === "hit-0",
+  "browsing did not select the first row",
+);
+fire(sq, "keydown", key("ArrowDown"));
+fire(sq, "keydown", key("Enter"));
+check(stacked.index === 2, `browsing to moss left the disc at ${stacked.index}`);
+check(told(stacked).startsWith("moss, 2 below."), `a browsed zoom said "${told(stacked)}"`);
+a11yNest.disconnectedCallback();
+stacked.disconnectedCallback();
 
 if (problems.length) {
   for (const said of problems) console.error(`web: ${said}`);
