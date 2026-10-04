@@ -1,8 +1,10 @@
-# weft
+# Weft
 
-`weft` draws WordNet as circular diagrams: the *hypernym* taxonomy as nested arcs, the word chain game on one category's words, and the 26-letter graph under that category. In the chain game each word starts with the letter the previous one ended on, as in *cat*, *tiger*, *rat*, *toad*. A word is therefore an edge from its first letter to its last, so the game lives on a 26-node graph whatever the size of the vocabulary.
+`weft` draws diagrams of category hierarchies: the *hypernym* taxonomy as nested arcs, the word chain game on one category's words, and the 26-letter graph under that category. In the chain game each word starts with the letter the previous one ended on, as in *cat*, *tiger*, *rat*, *toad*. A word is therefore an edge from its first letter to its last, so the game lives on a 26-node graph whatever the size of the vocabulary. The project's name comes from the [warp and weft](https://en.wikipedia.org/wiki/Warp_and_weft) of weaving.
 
-The command line renders the word chain disc to a file. The browser draws every view as a *custom element*.
+A demonstration can be seen at https://benmandrew.com/articles/winning-the-categories-game-with-min-cost-flow.
+
+![Word disc](docs/wordnet.png)
 
 ## Setup
 
