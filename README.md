@@ -12,7 +12,7 @@ The project uses a Nix flake. `direnv allow` activates it on entering the direct
 
 ```
 python -m weft categories       # the 37 categories, with word counts
-python -m weft stats animal     # the letter analysis and the longest chain
+python -m weft stats animal     # the letter analysis
 python -m weft words animal     # the word list with Zipf frequencies
 python -m weft build animal     # render the word disc to out/animal.svg
 ```
@@ -24,7 +24,7 @@ python -m weft build animal     # render the word disc to out/animal.svg
 - `--theme light|dark`, overriding the config file's `theme`, and dark when neither sets it.
 - `--limit N`, the words drawn: the 110 commonest by default, every word at 0. The canvas grows until adjacent labels clear each other, and past 30 inches the type shrinks instead.
 
-`stats` prints the longest chain the category allows, which is always provably the longest, with the upper bound beside it when the chain falls short of that bound. `--opening WORD` pins its first word, matched lowercased. A word the category lacks is refused with the nearest word it has, or with a pointer at `weft words <category>` when nothing is near.
+`stats` prints the letter analysis: the letters in play, the core play can circle in forever, the dead ends and the worst traps. The longest chain is the browser's to compute, in `web/word-longest.js`, and `<word-disc>` and `<word-run>` show it.
 
 All four commands share the filters that decide which words a category yields, among them `--min-zipf`, `--target`, `--min-dominance` and `--max-rank`. `--multiword` keeps entries such as *polar bear*, chained on their outer letters. Every command takes `--no-cache` and `--config FILE`, and a flag beats the config file for one run, so `--no-multiword` turns off a file that switched it on.
 

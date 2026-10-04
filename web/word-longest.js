@@ -17,12 +17,9 @@
  * under the bound is handed to `search`, a branch and bound over the same
  * relaxation that either finds a longer chain or proves there is none.
  *
- * graph.py's `longest_chain` is this written a second time, so the browser and
- * the report agree on how far a category runs. A change here has to be made
- * there as well, and tools/chains.json is what holds the two to the same
- * answers — including the tie-breaks, since two chains of different length can
- * price identically and the order candidates are tried in decides which is
- * found.
+ * tools/chains.json pins the answers word for word, including the tie-breaks,
+ * since two chains of different length can price identically and the order
+ * candidates are tried in decides which is found.
  *
  *   const L = chain(["cat", "toad", "dog"]);
  *   L.words        // the chain itself
@@ -457,10 +454,8 @@ function solveOn(m, start) {
       if (s !== t && dist[s] < INF && (start < 0 || s === start))
         candidates.push([base.cost + dist[s] - pi[t] + pi[s], s, t]);
   }
-  // Sorted on all three rather than on the cost alone: graph.py sorts tuples
-  // and neither language promises anything about ties, so a total order is what
-  // stops the two halves ever having to agree by luck. No word list here needs
-  // it — 37 categories and 3,000 random ones answer the same either way.
+  // Sorted on all three rather than on the cost alone, so the order never rests
+  // on the order candidates were priced in; the frozen chains name the tie-break.
   candidates.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
   const bound = total - candidates[0][0];
 
@@ -472,7 +467,7 @@ function solveOn(m, start) {
     // Sorted by discards, so no later candidate can keep more than this one.
     // It also decides which component tier 2 runs on, and a smaller fragment
     // there can free more words than a larger one: river chains 64 words with
-    // this break and 63 without. graph.py stops on the same test.
+    // this break and 63 without.
     if (fragment && total - discards <= fragment.words) break;
     const y = Int32Array.from(base.y);
     if (s >= 0) walkBack(res, paths[t], y, s, t);
@@ -884,7 +879,7 @@ export function chain(words, opening) {
 
 /** The solve `chain` already does, with the working shown. Nothing here moves
    an answer — the trace is read off the paths the flow takes anyway — so
-   graph.py needs no counterpart and tools/chains.json holds nothing about it.
+   tools/chains.json holds nothing about it.
    @param {Iterable<string>} words @returns {Trace} */
 export function trace(words) {
   const m = Int32Array.from(matrix(words).count);

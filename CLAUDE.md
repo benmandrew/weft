@@ -380,8 +380,8 @@ Of the disc rules, `ratio`, the sleep, `fit`, the fonts refit and
 `disc-colour.js` hold; hit testing, the hub and watching the frame do not.
 
 - `trace(words)` reads the augmenting paths off `balanced()` rather than
-  solving again, so it moves no answer and `graph.py` and `tools/chains.json`
-  need no counterpart. A step is signed `cell + 1` for a discard and
+  solving again, so it moves no answer and `tools/chains.json` needs no
+  counterpart. A step is signed `cell + 1` for a discard and
   `-(cell + 1)` for a recovery, since cell 0 has no sign.
 - A solve while asleep still fires `balance-render`, with `drawMs` 0, since a
   host's prose quoting the figures can be in view while the element is not.
@@ -412,49 +412,46 @@ Of the disc rules, `ratio`, the sleep, `fit`, the fonts refit and
 
 ## The longest chain
 
-- `graph.longest_chain` and `web/word-longest.js`'s `chain` are one algorithm
-  written twice, so a change to either is a change to both.
-  `tools/chains.json` holds them together: 25 frozen cases, each with the chain
-  it must produce word for word, its bound and whether it certified, plus an
-  optional `opening` and `like`. `tools/check_chain.py` runs the Python half and
-  `check_web.mjs` the JavaScript. The word lists are a snapshot; do not
-  regenerate them on a corpus change.
+- `web/word-longest.js` is the one solver. A Python copy fed `weft stats`
+  until October 2026 and was removed, since only `web-dist` ships; do not
+  bring one back without asking.
+- `tools/chains.json` pins it: 25 frozen cases, each with the chain it must
+  produce word for word, its bound and whether it certified, plus an optional
+  `opening` and `like`. `check_web.mjs` runs them, and a drifted case prints
+  the whole chain it now makes, which is also how a new case gets its chain.
+  The word lists are a snapshot; do not regenerate them on a corpus change.
 - A frozen case records what the solver answered, so it cannot catch a short
-  chain. The file's `oracle` can: both halves draw the same small lists from
-  one seed and one 31-bit generator and hold each chain to exhaustive search.
-  It was added after the solver had been short on fabric and 237 openings
-  unseen. Keep the two generators identical, and keep the loop bias, since a
-  loop is what the flow strands. It runs `search` alone as well, from a best
-  of zero, and checks its walk plays every word it reports: behind the
-  heuristic the search runs too rarely for a missing branch to show.
+  chain. The file's `oracle` can: it draws small lists from one seed and a
+  31-bit generator and holds each chain to exhaustive search. It was added
+  after the solver had been short on fabric and 237 openings unseen. Keep the
+  loop bias, since a loop is what the flow strands. It runs `search` alone as
+  well, from a best of zero, and checks its walk plays every word it reports:
+  behind the heuristic the search runs too rarely for a missing branch to show.
 - The heuristic (the scan, the join, the retry rounds) is not exact, so a chain
-  under the bound goes to `_search` / `search`, a branch and bound over
-  `_relax` / `relax` that is. Never return a heuristic chain under the bound
-  unsearched, and do not patch the heuristic to stop a miss: it is only the
-  first chain the search must beat, and speed is all it buys.
+  under the bound goes to `search`, a branch and bound over `relax` that is.
+  Never return a heuristic chain under the bound unsearched, and do not patch
+  the heuristic to stop a miss: it is only the first chain the search must
+  beat, and speed is all it buys.
 - The model is in docs/notes.md: a min-cost transshipment on 26 letters, one
   arc per letter pair, Dijkstra pricing every opening and ending, union-find
-  certifying the answer or reporting the gap.
+  certifying the answer, and the search proving the rest.
 - A loop never enters the flow, so the flow can strand one on a letter it cut
-  off for free. `_join` / `join` forces crossing words back, priced as residual
-  cycles off the candidate's own optimal flow. Do not go back to a fresh flow
-  solve per word tried: it took language's constrained solve from 0.5 ms to
-  18 ms. Joins run only after the scan found nothing whole, and a join that
-  loses a word is a fragment, never a certificate.
-- The candidate scan's early break is load-bearing: it decides which component
-  the next round runs on, and removing it changes answers. Both halves stop on
-  the same test. Candidates sort on the whole tuple, since neither language
-  orders ties.
+  off for free. `join` forces crossing words back, priced as residual cycles
+  off the candidate's own optimal flow. Do not go back to a fresh flow solve
+  per word tried: it took language's constrained solve from 0.5 ms to 18 ms.
+  Joins run only after the scan found nothing whole, and a join that loses a
+  word is a fragment, never a certificate.
+- The candidate scan's early break decides which component the next round runs
+  on, so removing it changes which chain comes out and how often the search
+  runs. Candidates sort on the whole tuple, so their order never rests on the
+  order they were priced in.
 - A forced opening word is spent, solved from the letter it ends on and put
   back on the front, so the bound covers the whole chain. Candidates opening
   elsewhere are dropped except the closed circuit, which rotates onto any letter
   it touches (the `touched` guard). An opening not in the words is refused.
-- `<word-disc>` prints the count without its certificate, since under a forced
-  opening a missing certificate is usually a loose bound.
+- `<word-disc>` prints the count without its certificate, since a missing
+  certificate is only a loose bound: the search has proved the chain longest.
 - `buckets` keeps word text as it came in, so "polar bear" keeps its spelling.
-- `--opening WORD` sits on `stats` alone. A word the category does not yield is
-  refused with the nearest `difflib` match, since the unpinned chain under a
-  pinned heading is a wrong answer printed confidently.
 
 ## Build and distribution
 
@@ -518,7 +515,7 @@ small box names only some letters.
 
 `make check` must pass before a commit: `ruff check`, `ruff format --check` and
 `mypy` over `src/` and `tools/`, then `taplo check`, `tools/check_schema.py`,
-`tools/check_chain.py`, `biome lint`, `biome format`, `make web` and
+`biome lint`, `biome format`, `make web` and
 `make types`. mypy is strict, with `mypy_path = src` because `tools/` is not
 part of the package; nltk, wordfreq, pyvis and networkx are declared untyped in
 `mypy.ini`, and values crossing them are annotated by hand.
@@ -608,7 +605,6 @@ CLI is not in the flake.
     tools/serve.py                 serves web/ and reloads it on save
     tools/check_web.mjs            loads and drives web/ as a browser does
     tools/check_words.mjs          holds the table to the 37 category files
-    tools/check_chain.py           the Python half of the chain cross-check
     tools/chains.json              the 25 frozen cases and the oracle's draw
 
 ## Style

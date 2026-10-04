@@ -1063,13 +1063,12 @@ dry.rewind(2);
 check(!dry.stuck(L.byHead), "winding back off a dead end left the chain stuck");
 check(dry.legal(at("toad")) && !dry.legal(at("trout")), "the wound-back move set is wrong");
 
-/* How far the category runs if every word is chosen perfectly, which is
-   graph.py's `longest_chain` written a second time. The two halves drift
-   quietly — both keep answering with a playable chain, one of them just stops
-   finding the longest — so tools/chains.json pins the answer word for word and
-   tools/check_chain.py runs the same cases through the Python. Every case is
-   also played out here, so a fixture and an implementation that have drifted
-   together still fail. */
+/* How far the category runs if every word is chosen perfectly. A change to the
+   solver drifts quietly — it keeps answering with a playable chain and just
+   stops finding the longest — so tools/chains.json pins the answer word for
+   word. Every case is also played out here, so a fixture and a solver that have
+   drifted together still fail. A drifted case prints the whole chain it now
+   makes, which is also how a new case gets its expected chain. */
 const {
   buckets: chainBuckets,
   chain: longestChain,
@@ -1114,7 +1113,8 @@ for (const kase of CHAINS.cases) {
       ` ${kase.chain.length}` +
       (parted < 0
         ? ""
-        : `, and parts from it at ${parted}: ${got.words[parted]} for ${kase.chain[parted]}`),
+        : `, and parts from it at ${parted}: ${got.words[parted]} for ${kase.chain[parted]}`) +
+      `\n  it now makes ${JSON.stringify(got.words)}`,
   );
   check(
     got.bound === kase.bound,
@@ -1229,8 +1229,8 @@ for (let trial = 0; trial < 200; trial++) {
 /* A frozen case holds whatever the solver answered when it was frozen, so it
    cannot tell a short chain from the longest. The oracle in chains.json can: it
    draws lists small enough to try every chain and holds the solver to the
-   longest, free and under an opening word. check_chain.py draws the same lists
-   from the same seed, with the same 31-bit linear congruential step. */
+   longest, free and under an opening word. The lists come from one seed and a
+   31-bit linear congruential step, so every run draws the same ones. */
 const ORACLE = CHAINS.oracle;
 let oracleState = ORACLE.seed;
 /** @param {number} n */
@@ -4983,6 +4983,6 @@ console.log(
     ` merge to ${dense.drawn.toLocaleString("en-GB")} arcs,` +
     ` ${WORDS.length} words lay out in ${L.live.length} wedges and play,` +
     ` ${LWORDS.length} words make ${LL.pairs} letter arcs,` +
-    ` ${CHAINS.cases.length} chains match graph.py, ${chained} more come off random lists` +
+    ` ${CHAINS.cases.length} chains match chains.json, ${chained} more come off random lists` +
     ` and ${oracled} are the longest there is`,
 );

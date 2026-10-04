@@ -155,35 +155,12 @@ def _load(args: argparse.Namespace, category: str | None = None) -> list[Word]:
         sys.exit(f"no such category: {name}\ntry one of: {', '.join(catalogue())}")
 
 
-def _longest(facts: dict[str, Any], opening: str | None) -> str:
-    """The perfect round, and what proves it the longest one.
-
-    A chain that reaches the flow's bound is proved by it. One that falls short
-    is proved by the search, and the bound is printed beside it, since the gap
-    says the words it would need sit where no chain can reach them.
-    """
-    chain: list[str] = facts["longest_chain"]
-    label = "longest chain" if opening is None else f"longest chain from {opening}"
-    if not chain:
-        return f"{label}: none, since nothing in the list is playable"
-    count = f"{len(chain)} word" + ("" if len(chain) == 1 else "s")
-    ends = f"{chain[0]} … {chain[-1]}" if len(chain) > 1 else chain[0]
-    proof = (
-        "provably the longest there is"
-        if facts["chain_certified"]
-        else f"provably the longest there is, under a bound of {facts['chain_bound']}"
-        " that no chain reaches"
-    )
-    return f"{label}: {count}, {ends} — {proof}"
-
-
-def _report(category: str, words: list[Word], opening: str | None = None) -> str:
-    facts = summary(words, opening)
+def _report(category: str, words: list[Word]) -> str:
+    facts = summary(words)
     stats = {s.letter: s for s in letter_stats(words)}
     lines = [
         f"{category} — {facts['words']} words, {facts['edges']} playable moves between them",
         f"letter pairs in use: {facts['letter_pairs']} of a possible 676",
-        _longest(facts, opening),
         "",
         "  letters in play   " + " ".join(letter.upper() for letter in facts["live_letters"]),
         "  endless core      " + " ".join(letter.upper() for letter in facts["core"]),
@@ -235,32 +212,7 @@ def _cmd_categories(args: argparse.Namespace) -> None:
 
 def _cmd_stats(args: argparse.Namespace) -> None:
     words = _load(args)
-    print(_report(args.category, words, _opening(args, words)))
-
-
-def _opening(args: argparse.Namespace, words: list[Word]) -> str | None:
-    """The word `--opening` names, refused rather than ignored if it is not one.
-
-    Naming a word the category does not yield would otherwise report the
-    unpinned chain under a pinned heading, which is the wrong answer printed
-    confidently. The list runs to thousands, so a miss names the nearest word
-    rather than every one of them.
-    """
-    if args.opening is None:
-        return None
-    from difflib import get_close_matches
-
-    wanted: str = args.opening.strip().lower()
-    texts = [word.text for word in words]
-    if wanted in texts:
-        return wanted
-    near = get_close_matches(wanted, texts, n=1, cutoff=0.6)
-    hint = (
-        f"did you mean {near[0]}?"
-        if near
-        else f"`weft words {args.category}` prints the {len(texts)} it has"
-    )
-    sys.exit(f"{args.category} has no word {wanted!r}\n{hint}")
+    print(_report(args.category, words))
 
 
 def _cmd_words(args: argparse.Namespace) -> None:
@@ -316,13 +268,6 @@ def main(argv: list[str] | None = None) -> None:
     categories.set_defaults(func=_cmd_categories)
 
     stats = sub.add_parser("stats", help="print the letter analysis")
-    stats.add_argument(
-        "--opening",
-        metavar="WORD",
-        help="pin the chain's first word, which asks how far play can still "
-        "run from there rather than how far it can run at all; the word has to "
-        "be one the category yields",
-    )
     _selection_args(stats)
     stats.set_defaults(func=_cmd_stats)
 

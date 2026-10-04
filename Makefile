@@ -52,9 +52,9 @@ $(OUT)/%.svg: $(SOURCES)
 	$(BUILD) $* --out $(OUT)
 
 # Everything that has to pass before a commit. taplo validates weft.toml
-# against the schema as an editor would, check_schema.py reads that schema back
-# against config.py, and check_chain.py holds graph.py's longest_chain to the
-# answers in tools/chains.json, which check_web.mjs holds word-longest.js to.
+# against the schema as an editor would, and check_schema.py reads that schema
+# back against config.py. check_web.mjs holds word-longest.js to the answers in
+# tools/chains.json.
 #
 # Biome is named web/ tools/ rather than `.`: config discovery runs before
 # `files.includes` filters, so from the root Biome finds the biome.jsonc inside
@@ -65,7 +65,6 @@ check: web types
 	@mypy
 	@RUST_LOG=warn taplo check
 	@python tools/check_schema.py
-	@python tools/check_chain.py
 	@biome lint web/ tools/
 	@biome format web/ tools/
 
