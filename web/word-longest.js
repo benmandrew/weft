@@ -8,18 +8,15 @@
  * Every cost is non-negative and the matrix is totally unimodular, so the answer
  * comes back integral with no solver.
  *
- * The relaxation says nothing about whether the arcs it keeps form one connected
- * run, so it answers with an upper bound. Where they do come back connected the
- * bound is attained and the chain is provably the longest there is. Where they
- * do not, words crossing to the stranded letters are forced back one at a time
- * while that grows the component, then the largest component is kept and the
- * rest solved again. That is a heuristic, and it can stop short, so a chain
- * under the bound is handed to `search`, a branch and bound over the same
- * relaxation that either finds a longer chain or proves there is none.
+ * The relaxation ignores whether the kept arcs form one connected run, so it
+ * gives an upper bound, attained where they do. Where they do not, a heuristic
+ * joins stranded letters back and retries on the largest component, and a chain
+ * it leaves under the bound goes to `search`, a branch and bound that is exact.
+ * docs/notes.md, "The longest chain", holds the model and the figures.
  *
  * tools/chains.json pins the answers word for word, including the tie-breaks,
- * since two chains of different length can price identically and the order
- * candidates are tried in decides which is found.
+ * since candidates can price identically and the order they are tried in
+ * decides which chain is found.
  *
  *   const L = chain(["cat", "toad", "dog"]);
  *   L.words        // the chain itself
@@ -431,18 +428,14 @@ function solveOn(m, start) {
   const res = residual(m, base.y);
   const pi = potentials(res);
 
-  // Every start and end option priced off that one solve. A chain from s to t
-  // moves supply by a unit at each end, so it costs the balanced answer plus
-  // the shortest residual path t -> s; 26 Dijkstras cover the 26 * 25 pairs of
-  // distinct letters, and one more candidate is the closed circuit, which starts
-  // and ends nowhere. A chain whose two ends are the same letter costs exactly
-  // the balanced answer, so the diagonal is that circuit and the `s !== t` guard
-  // below skips it rather than pricing it 26 times over.
+  // A chain from s to t costs the balanced answer plus the shortest residual
+  // path t -> s, so 26 Dijkstras price every opening and ending. Equal ends
+  // cost the balanced answer alone, which is the circuit candidate, so
+  // `s !== t` skips the diagonal.
   //
-  // An opening letter drops every candidate that opens elsewhere. The circuit
-  // survives whatever the letter is, since a closed walk can be rotated to open
-  // on any letter it touches, and the `touched` guard below is what decides
-  // whether this one does.
+  // An opening letter drops every candidate that opens elsewhere except the
+  // circuit, which rotates onto any letter it touches; `held`'s `touched` check
+  // decides whether this one does.
   /** @type {[number, number, number][]} */
   const candidates = [[base.cost, -1, -1]];
   /** @type {Int32Array[]} */
@@ -465,9 +458,8 @@ function solveOn(m, start) {
   const split = [];
   for (const [discards, s, t] of candidates) {
     // Sorted by discards, so no later candidate can keep more than this one.
-    // It also decides which component tier 2 runs on, and a smaller fragment
-    // there can free more words than a larger one: river chains 64 words with
-    // this break and 63 without.
+    // Keep the break: it also decides which component the next round runs on,
+    // and river chains 64 words with it and 63 without.
     if (fragment && total - discards <= fragment.words) break;
     const y = Int32Array.from(base.y);
     if (s >= 0) walkBack(res, paths[t], y, s, t);
@@ -538,9 +530,9 @@ function held(x, s, start) {
   // The circuit, rotated to open where it was asked to.
   if (anchor < 0 && start >= 0) anchor = start;
   if (anchor < 0) {
-    // The circuit opens anywhere, so on its largest component, the lowest
-    // letter breaking a tie. Taking the lowest letter outright kept a lone loop
-    // on a over a circuit through b and c.
+    // The circuit opens on its largest component, the lowest letter breaking a
+    // tie. The lowest letter outright kept a lone loop on a over a circuit
+    // through b and c.
     const size = new Int32Array(LETTERS);
     for (let i = 0; i < CELLS; i++) if (x[i]) size[find((i / LETTERS) | 0)] += x[i];
     for (let v = 0; v < LETTERS; v++)
@@ -565,18 +557,13 @@ function held(x, s, start) {
 }
 
 /** Force discarded words that cross out of the held component back in, one at
-   a time, while that grows it.
-   A loop never enters the flow, so the flow keeps every loop whatever it
-   discards, and can strand one on a letter it cut off at no cost to itself.
-   fabric kept aba and alpaca on an a no other kept word reached, and the retry
-   on the letters reached dropped a for good: 61 words, where organza in and
-   acetate out make 62.
+   a time, while that grows it. A loop never enters the flow, so the flow can
+   strand one on a letter it cut off for free (fabric, in docs/notes.md).
    `x` is an optimal flow, so holding one more word of a pair costs exactly the
    cheapest residual cycle through that word's recovery, which one Dijkstra
    prices. A cycle costing as much as the stranded letters hold cannot grow the
-   component and is never walked. A fresh solve per word tried took a
-   constrained solve on language from 0.5 ms to 18 ms, on a loop it could never
-   afford to join.
+   component and is never walked. Do not go back to a fresh flow solve per word
+   tried: it took a constrained solve on language from 0.5 ms to 18 ms.
    @param {Int32Array} m @param {Int32Array} x @param {Held} hold
    @param {number} s @param {number} start
    @returns {{ x: Int32Array, hold: Held }} */
@@ -748,12 +735,9 @@ export function search(m, start, best) {
    full capacity rather than at what the fragment kept, which is what recovers
    the words the discarded components were holding hostage.
    `start` names the letter the chain has to open on, or -1 for any. A letter no
-   word leaves is short cut rather than solved. The general path answers the
-   same — a trail opening at f wants an arc leaving f, and balance then denies
-   every candidate — but it spends a flow solve and 26 Dijkstras to say so:
-   0.05 ms against 0.56 on animal, over the 11 of its 1,582 words that end on a
-   letter nothing starts with. Nothing downstream can tell the two apart, so
-   check_web.mjs cannot either.
+   word leaves is short cut, which saves a flow solve and 26 Dijkstras. The
+   general path gives the same empty answer, so check_web.mjs cannot tell the
+   two apart.
    @param {Int32Array} m @param {number} [start] @returns {{ letters: number[], bound: number }} */
 export function longest(m, start = -1) {
   if (start >= 0) {
@@ -877,8 +861,8 @@ export function chain(words, opening) {
    @property {boolean} settled
    @property {Augmentation[]} frames */
 
-/** The solve `chain` already does, with the working shown. Nothing here moves
-   an answer — the trace is read off the paths the flow takes anyway — so
+/** The solve `chain` already does, with the working shown. The trace is read
+   off the paths the flow takes anyway, so it moves no answer and
    tools/chains.json holds nothing about it.
    @param {Iterable<string>} words @returns {Trace} */
 export function trace(words) {

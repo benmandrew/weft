@@ -559,7 +559,7 @@
     },
     {
       "name": "whole-too-soon-loops",
-      "why": "opened on area, the heuristic keeps disc to close on c and stops at six; the search plays dune and ebb for seven",
+      "why": "opened on area, the heuristic keeps disc to end on c and stops at seven words; the search plays dune and ebb for eight",
       "words": [
         "cod",
         "dune",
@@ -876,7 +876,7 @@
     },
     {
       "name": "river",
-      "why": "a real category where stopping the candidate scan early hands the next round a smaller component and a longer chain, 64 words against 63: it is what holds both halves to the same early stop",
+      "why": "a real category where stopping the candidate scan early hands the next round a smaller component and a longer chain, 64 words against 63, so it holds the scan to its early stop",
       "words": [
         "red",
         "mobile",
@@ -1623,7 +1623,7 @@
     },
     {
       "name": "furniture-boxed",
-      "why": "an opening whose letter sits in a small component, so the constrained bound goes loose where the unconstrained one did not",
+      "why": "an opening whose letter sits in a small component, so the constrained bound is loose by three where the unconstrained one is loose by one",
       "like": "furniture",
       "opening": "bookcase",
       "chain": [

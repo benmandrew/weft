@@ -1,4 +1,4 @@
-"""Write each category's playable words as the JSON `<word-disc>` reads.
+"""Write each category's playable words as the JSON the word elements read.
 
 One file per category, `words-<category>.json`, holding
 
@@ -17,8 +17,8 @@ counts and their WordNet roots, which is what lets a page offer a picker
 without fetching all 37.
 
 The selection arguments are the command line's own, read through the same
-`[selection]` table, so what the element draws is what `build` would draw and
-what `categories` would count.
+`[selection]` table, so a file holds the list `build` draws from and
+`categories` counts.
 
     python tools/export_words.py                    # every category, into out/
     python tools/export_words.py --out DIR animal bird

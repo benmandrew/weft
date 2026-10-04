@@ -10,8 +10,8 @@
  * the name a second time.
  */
 
-// The default size ladder, weight and line count. <word-disc> hands in a larger
-// ladder of its own, its hub being the only thing in the middle of the disc.
+// The default size ladder, weight and line count. <word-disc> and <letter-disc>
+// hand in a larger ladder, their hub being the only thing in the middle.
 const SIZES = [12, 11, 10, 9, 8];
 const WEIGHT = 500;
 const MAX_LINES = 3;
@@ -123,20 +123,18 @@ export const HUB_REF = "Hd",
   HUB_DROP = 0.2;
 
 /* How far a hub's ground reaches past a letter, as a fraction of the type and
-   never less than HALO_MIN, and how many directions the ring holds. HALO is a
-   reach rather than a stroke width. The ground is copies of the same fillText
-   the ink uses, never a strokeText under it: a stroke is taken off the glyph
-   outline where a fill is a rasterised glyph, the two are positioned by
-   different code, and the halo then reads as a shadow off to one side of the
-   word. Eight directions leave a scallop 0.076 of the reach deep. */
+   never less than HALO_MIN, and how many directions the ring holds. The ground
+   is copies of the ink's own fillText, never a strokeText under it: the two
+   are positioned by different code, and a stroked halo reads as a shadow off
+   to one side of the word. Eight directions leave a scallop 0.076 of the reach
+   deep. */
 export const HALO = 0.08,
   HALO_MIN = 1,
   HALO_STEPS = 8;
 
-/* How far the face puts ink above the baseline, measured off HUB_REF rather
-   than off the name drawn: "iris" stops at the dot where "guppy" runs below the
-   baseline, so centring each word on its own ink moves the name as the pointer
-   crosses the disc. A caller caches it against `g.font`, the one key that can
+/* How far the face puts ink above the baseline, measured off HUB_REF, never
+   the name drawn: centring each word on its own ink moves the name as the
+   pointer crosses the disc. A caller caches it against `g.font`, the one key that can
    change it. */
 /** @param {Ctx} g @returns {number} */
 export function band(g) {
@@ -147,8 +145,8 @@ export function band(g) {
 }
 
 /* The first line's baseline for a block centred on `cy`, so a descender hangs
-   below that centre rather than dragging the line up to meet it. `lift` is the
-   room a hint below the name takes off the top. */
+   below that centre without moving the line. `lift` is the room a hint below
+   the name takes off the top. */
 /** @param {number} cy @param {number} bandPx @param {number} lines
    @param {number} lh @param {number} [lift] @returns {number} */
 export function baseline(cy, bandPx, lines, lh, lift = 0) {

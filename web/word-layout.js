@@ -5,9 +5,8 @@
  * has to be made on both; tools/check_web.mjs holds this to the Python's order.
  *
  * A word sits in the wedge of its first letter, so the successors of a word are
- * a whole wedge — every word starting with the letter it ends on — and never a
- * list stored per word. That is graph.py's claim: the game lives on 26 nodes
- * and the word graph is the line graph of that one.
+ * a whole wedge, every word starting with the letter it ends on, and never a
+ * list stored per word. That is graph.py's claim applied.
  *
  *   const L = layout(rank(words, zipf));
  *   L.byHead[L.tail[i]]   // everything that can follow word i
@@ -21,12 +20,9 @@ export const LETTERS = 26;
 export const GAP = (3.5 * Math.PI) / 180;
 
 /* Each word's place in alphabetical order, so a sort by spelling compares two
-   numbers rather than two strings. On entity's 40,117 words a sort comparing
-   strings in JavaScript took 11 ms, and three of them ran on every build. The
-   default sort compares UTF-16 code units, the order `<` gives, and runs
-   natively, so this is one of those sorts at 9 ms and every later one is
-   numeric. A word listed twice gets one place. word-source.js's table hands a
-   derived list its places already, taken from one sort of every word it holds. */
+   integers. The default sort compares UTF-16 code units natively, so this is
+   the one string sort and every later one is numeric. A word listed twice gets
+   one place. word-source.js's table hands a derived list its places already. */
 /** @param {ArrayLike<string>} words @returns {Int32Array} */
 export function spelling(words) {
   const sorted = Array.from(words).sort();
@@ -54,9 +50,8 @@ export function rank(words, zipf) {
 }
 
 /** The indices of a word set in alphabetical order, given each word's place
-   in it. Places are small integers, below the word table's 40,118 words, so
-   this is a counting sort: 0.2 ms for entity's 40,117 words, against 3.6 ms
-   for a typed sort of keys and 11 ms comparing the strings. Equal places,
+   in it. Places are small integers, so this is a counting sort: 0.2 ms for
+   entity's 40,117 words against 11 ms comparing the strings. Equal places,
    which are words spelt the same, keep their order.
    @param {ArrayLike<number>} spell @returns {Int32Array} */
 export function alphabetical(spell) {
@@ -168,12 +163,10 @@ export const MAX_LABEL_PX = 13,
 /* Room outside the labels for the wedge letter, and the margin outside that. */
 export const WEDGE_BAND = 24,
   PAD = 4;
-/* The hub, as a fraction of the dot ring: never below HUB_MIN, so a name always
-   has somewhere to be read, and never past HUB_MAX, so a small frame cannot
-   leave the hub swallowing the dots. It is one radius doing two jobs, what the
-   name has to fit inside and what a click in the middle undoes; keeping them as
-   one number is what stops the outer half of a name sitting somewhere a click
-   does nothing. */
+/* The hub, as a fraction of the dot ring, never below HUB_MIN pixels and never
+   past HUB_MAX of the ring, so a small frame cannot leave it swallowing the
+   dots. One radius is both what the name must fit and what a click undoes, so
+   no part of a name sits where a click does nothing. */
 export const HUB_SHARE = 0.45,
   HUB_MIN = 66,
   HUB_MAX = 0.55;
@@ -253,8 +246,8 @@ export function at(L, turn, t) {
   return -1;
 }
 
-/** How many chords the resting bundle holds, counted without building it: the
-   element draws the bundle only when this is small enough.
+/** How many chords the resting bundle stands for, counted without building
+   it. `thin` scales the bundle's alpha by it.
    @param {Layout} L
    @returns {number} */
 export function chords(L) {
@@ -271,15 +264,12 @@ export function chords(L) {
 /** The angle `th`, measured the way `ang` is, against the wedge a chord
    between `a` and `b` can reach, widened by `pad` radians.
 
-   Every point of the cubic lies in that wedge: all four control points sit on
-   the two rays out of the centre at `a` and `b`, and the cone between two rays
-   under half a turn is convex, so the hull the curve cannot leave is inside it.
-   It is a prune, the same job letter-graph.js's `near` does, so what it owes is
-   never refusing a point that is on the chord. `pad` is what pays the hit
-   tolerance, and the caller reads it off the pointer's own radius: a point `d`
-   off the cone is `r * sin(d)` from it and no nearer the chord, so a tolerance
-   of a few pixels is worth the whole turn at the centre and almost nothing at
-   the rim.
+   All four control points sit on the rays at `a` and `b`, and the cone between
+   two rays under half a turn is convex, so the curve never leaves it. It is a
+   prune, as letter-graph.js's `near` is, so it must never refuse a point on the
+   chord. `pad` pays the hit tolerance: a point at radius `r`, `d` off the cone,
+   is `r * sin(d)` from it and no nearer the chord, so the caller reads `pad`
+   off the pointer's own radius.
    @param {number} a @param {number} b @param {number} th @param {number} pad
    @returns {boolean} */
 export function spans(a, b, th, pad) {

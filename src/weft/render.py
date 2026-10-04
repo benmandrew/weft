@@ -429,8 +429,7 @@ def words_disc(
     """The word graph, laid out in wedges by first letter: a spring layout is a
     hairball here, and a bundle of curves between two wedges is one of the
     letter graph's ribbons, which is `graph.py`'s claim drawn."""
-    # A limit of 0 draws every word, since a count being lifted reads as "all
-    # of them" rather than as none; the slice would return an empty list.
+    # A limit of 0 draws every word, where the slice would return none.
     ranked = sorted(words, key=lambda w: (-w.zipf, w.text))
     shown = ranked[:limit] if limit else ranked
     grouped: dict[str, list[Word]] = defaultdict(list)
@@ -458,7 +457,7 @@ def words_disc(
     # Every length below reads the fitted type, not the configured one, so the
     # axis limit frames the labels actually drawn.
     fitted = replace(geometry, label_pt=_fitted_pt(span, geometry))
-    # `limit` is already the word count, so the axis half-width is `reach`.
+    # The axis half-width, named `reach` since `limit` is the word count.
     reach = _disc_limit(size, max(len(w.text) for w in shown), fitted)
     # Chrome hangs a title and a caption outside the axes, which a full-bleed
     # axes would clip, so that path keeps the margins and the tight crop.

@@ -324,13 +324,11 @@ export class Picker {
     this.#name();
   }
 
-  /* Follow once the page has painted. The disc redraws inside the handler
-     that fires disc-zoom, and three elements taking entity's 40,117 words in
-     that same task held its new picture back by 172 ms, or 552 ms at a
-     quarter of the CPU, so to the reader the disc froze. After the next frame
-     the disc shows first and the elements catch up behind it. Moves made
-     before the callback runs are one follow, of wherever the disc ended up.
-     A hidden page runs no frames, so there it waits for a task alone. */
+  /* Follow once the page has painted. Taking entity's words inside the
+     disc-zoom handler held the disc's redraw back by 172 ms, so the disc
+     froze. Moves made before the callback runs are one follow, of wherever
+     the disc ended up. A hidden page runs no frames, so there it waits for a
+     task alone. */
   #soon() {
     if (this.#queued) return;
     this.#queued = true;

@@ -32,11 +32,13 @@
  *             readout="off", search="off", hint="off", fit
  * Properties: data, words, chain, stats. Methods: play(i), undo(), rewind(k),
  *             clear(), repaint().
- * Events: word-hover {index,word,replies}, word-play {index,word,chain},
- *         word-chain {chain,words,stuck},
- *         word-render {words,chords,drawMs,bundle,bundlePx,thread}
+ * Events: word-hover {index,word,legal,played,replies},
+ *         word-play {index,word,chain}, word-chain {chain,words,stuck},
+ *         word-render (detail is `stats`: category,words,of,chords,bundle,
+ *         bundlePx,thread,labelPx,drawMs,chain)
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
- *          --disc-warn --disc-sat --disc-val --disc-font --disc-mono
+ *          --disc-warn --disc-edge --disc-sat --disc-val --disc-font
+ *          --disc-mono
  */
 import { hsv, TAU } from "./disc-colour.js";
 import { Picker } from "./disc-picker.js";
@@ -68,26 +70,19 @@ const SPELL_MAX = 1 << 20;
 // The hub's "back" hint: its size, and the room it takes from the name above.
 const HINT_PX = 11,
   HINT_H = 15;
-// The sizes the hub's name steps down through, and its weight. The ladder is
-// capped low deliberately: set larger the name reads as the figure rather than
-// as a label on it, over the middle where the long chords cross. It is the
-// weight that sets it apart, and the halo rather than the size that keeps it
-// legible over the bundle.
+// The sizes the hub's name steps down through, and its weight. Capped low,
+// since a larger name reads as the figure instead of a label on it; the weight
+// sets it apart and the halo keeps it legible over the bundle.
 const HUB_SIZES = [16, 14, 12, 10, 8],
   HUB_WEIGHT = 700;
-// The halo, the reference band and the baseline arithmetic are disc-label.js's,
-// shared by all three discs. The halo is what lets the name sit over the chords
-// that cross the hub: it clears its own letters and nothing more, where a panel
-// wide enough to hold the name would cover the middle of the figure.
 // The search column beside the disc, and the gutter to it. Same thresholds as
 // <hypernym-disc>, so the two elements break to landscape together.
 const ASIDE_MIN = 200,
   ASIDE_GAP = 18;
 const RESIZE_HOLD = 60;
 // How many rows the column puts in the DOM at a time, and how near the foot of
-// it a scroll has to come before the next lot follow. Nothing is capped, and
-// the page is large enough that no move set is ever paged and that one page
-// always overfills the column, so the scrollbar says at once there is more.
+// it a scroll has to come before the next lot follow. One page overfills the
+// column, so the scrollbar says at once there is more.
 const MOVES_PAGE = 200,
   MOVES_NEAR = 240;
 
@@ -96,11 +91,8 @@ const MOVES_PAGE = 200,
 const WEDGE_PX = 15;
 
 // How far under the widest estimate a word may fall and still be measured
-// whole in #measure. Over entity in Libertinus Serif a word runs from 6.3%
-// narrower than its characters' sum (the fl ligature) to 1.7% wider (rv
-// kerned), so the widest word is always among those measured once this is
-// past 1 - 0.983/1.063, or 7.5%. At 10% entity measures 1 word whole, and none
-// of the 37 categories or of every 25th node measures more than 11.
+// whole in #measure. It must stay above the kerning spread, about 7.5% in
+// Libertinus Serif, or the widest word can go unmeasured.
 const SLACK = 0.1;
 
 // How far off a chord the pointer may sit and still be on it. The fan is drawn
@@ -121,10 +113,9 @@ const PULL = 0.32,
 const EDGE_ALPHA = 0.2,
   BUNDLE_DIM = 0.22;
 
-// What the worker gets to answer in, timed from the first bundle the element
-// actually wants rather than from the worker's construction. It guards against
-// a worker that loads and never answers, which would otherwise leave the disc
-// without its picture for good.
+// What the worker gets to answer in, timed from the first bundle wanted (see
+// #armFloor). A worker that loads and never answers would otherwise leave the
+// disc without its bundle for good.
 const WORKER_FLOOR = 400;
 
 const TPL = document.createElement("template");
@@ -137,11 +128,9 @@ TPL.innerHTML = `
     --_sat:var(--disc-sat,.55); --_val:var(--disc-val,.88);
     --_font:var(--disc-font,system-ui,sans-serif);
     --_mono:var(--disc-mono,ui-monospace,Menlo,monospace);
-    /* 85% of the muted ink, as in <letter-disc> and <balance-flow>, so the four
-       elements on one page draw their edges alike. 80% is the least that clears
-       3:1 against both the ground and the panel in both palettes here and under
-       a host's warmer one (WCAG 1.4.11); 38% was 2:1. A host's own --disc-edge
-       wins. */
+    /* 85% of the muted ink, as in the other discs, so their edges match. 80%
+       is the least that clears 3:1 against the ground and the panel in both
+       palettes (WCAG 1.4.11). A host's own --disc-edge wins. */
     --_edge:var(--disc-edge,color-mix(in srgb,var(--_muted) 85%,transparent));
     /* The tint behind a highlighted row. 10% keeps muted, warn and accent text
        on it above 4.5:1; the accent rule beside it is what marks the row. */
@@ -157,8 +146,7 @@ TPL.innerHTML = `
   :host([fit]) .frame{display:flex;flex-direction:column;height:100%}
   :host([fit]) .stage{flex:1;min-height:0;width:auto;max-width:100%;align-self:center}
   /* Four rows, the first of them the picker's. There is no row-gap, so with
-     no index named that row measures nothing and every distance below is what
-     it was before the picker existed. */
+     no index named that row measures nothing. */
   :host([fit]) .frame.wide{display:grid;column-gap:18px;
     grid-template-columns:minmax(200px,280px) minmax(0,1fr);
     grid-template-rows:auto minmax(0,1fr) auto auto}
@@ -272,18 +260,15 @@ TPL.innerHTML = `
   /* The arrow is the resting state and #onMove lifts it to a pointer over
      what a click would actually take: a legal word, or the hub with a chain
      to wind back. A word already used looks like any other to the cursor.
-     pan-y so a finger dragged down the disc scrolls the page, which none
-     stopped on a phone; nothing here is a gesture, and a tap is a click. */
+     pan-y so a finger dragged down the disc scrolls the page; nothing here is
+     a gesture, and a tap is a click. */
   canvas.over{cursor:default;touch-action:pan-y}
   :host([readout="off"]) .gloss,:host([readout="off"]) .crumb{display:none}
-  /* Both are held to a height whatever they hold, which is what stops the disc
-     moving under the pointer: with the fit attribute set the frame is a flex
-     column and the stage takes what these two leave, so a block that grows by
-     a line takes a line off the disc's height and, the stage being square, as
-     much off its width. Both show blank rather than hiding while empty, for
-     the same reason. A host that wants neither has readout="off". What does
-     not fit scrolls rather than being cut off, and so does a line a reader's
-     own text spacing has pushed past the box (WCAG 1.4.12). */
+  /* Both are held to a fixed height, and show blank while empty, so the disc
+     never moves under the pointer: under fit the stage takes what these leave,
+     and a block grown by a line would shrink the square disc. A host that
+     wants neither has readout="off". What does not fit scrolls, including a
+     line a reader's own text spacing pushed past the box (WCAG 1.4.12). */
   .gloss{color:var(--_ink);font-size:14px;line-height:1.45;height:2.9em;
     margin-top:7px;overflow-y:auto;scrollbar-width:thin}
   .gloss:focus-visible{outline:2px solid var(--_accent);outline-offset:1px}
@@ -405,12 +390,12 @@ class WordDisc extends HTMLElement {
   #sug = [];
   #pick = -1;
   #hover = -1;
-  // Where the search left the highlight, and -1 when nothing holds it.
   // What perfect play still allows, held per word: a pointer crossing the
   // disc asks about the same word many times over, and the answer only moves
   // when the chain does. #bestRun is the same question of the whole word set.
   #reachOf = new Map();
   #bestRun = -1;
+  // Where the search left the highlight, and -1 when nothing holds it.
   #cursor = -1;
   #crumbSel = -2;
   #failed = false;
@@ -705,12 +690,9 @@ class WordDisc extends HTMLElement {
   }
 
   /* Every word the category has, unless the host names a count. Zero is no
-     limit rather than a blank disc, the way it reads in a head or a tail.
-
-     `build` draws 110 instead, and the two differ for a reason: the SVG grows
-     its canvas until the labels clear each other and shrinks the type when it
-     runs out, where the element has whatever frame the host gave it and drops
-     the labels instead, the hub then naming what the pointer is on. */
+     limit, the way it reads in a head or a tail. `build` draws 110 instead,
+     since the SVG can grow its canvas where the element has only the frame the
+     host gave it. */
   #limit() {
     const want = this.getAttribute("limit");
     if (want === null) return 0;
@@ -774,10 +756,9 @@ class WordDisc extends HTMLElement {
     }
   }
 
-  /* What the disc can do without for a frame, run once it has painted. For
-     entity's 40,117 words the column of moves took 16 ms and the longest
-     chain 7 ms, both in the task that drew the disc, which held the new
-     picture back by as much. A hidden page runs no frames, so there it waits
+  /* What the disc can do without for a frame, run once it has painted. On
+     entity the column of moves took 16 ms and the longest chain 7 ms of the
+     task that drew the disc. A hidden page runs no frames, so there it waits
      for a task alone. */
   #later() {
     const b = ++this.#builds;
@@ -847,14 +828,10 @@ class WordDisc extends HTMLElement {
      dropped before the first fit, so a disc that starts below the fold never
      allocates at all.
 
-     The resting bundle is kept. The canvases redraw in 5 ms, but entity's
-     bundle takes the worker 255 ms, and the disc wakes one screen ahead: a
-     scroll at 8,000 px/s reached it 116 ms after the wake, so a dropped bundle
-     showed the disc without its edges for 150 ms. Kept, it is blitted by the
-     first draw after the wake. It is 1,536 px square (9 MB) on a 1440 by 900
-     screen at a ratio of 2, and MAX_PX square (38 MB) at most. A bundle still
-     being built when the disc sleeps lands and is kept the same way, and a
-     change of words while asleep releases it as it does awake. */
+     The resting bundle is kept, since the canvases redraw in 5 ms but entity's
+     bundle takes the worker 255 ms, longer than a fast scroll takes to reach
+     the disc after its wake. A bundle landing while asleep is kept the same
+     way, and a change of words while asleep releases it as it does awake. */
   #sleep = () => {
     if (this.#asleep) return;
     this.#asleep = true;
@@ -907,11 +884,10 @@ class WordDisc extends HTMLElement {
   /* The widest word, in pixels per pixel of font size, the labels being set in
      the host's proportional face. Once per word set and per face.
 
-     Measuring every word cost 74 ms of a 181 ms switch to entity's 40,117, so
-     each word is first estimated as the sum of its characters' advances, each
-     character measured once. Kerning and ligatures move a word off that sum,
-     so the words within SLACK of the widest estimate are measured whole, and
-     the answer is the widest of those. */
+     Each word is estimated as the sum of its characters' advances, each
+     character measured once, and only the words within SLACK of the widest
+     estimate are measured whole. Measuring every word took 74 ms on entity and
+     filled Blink's shaped-text cache. */
   #measure() {
     if (this.#widest || !this.#words.length) return;
     const g = this.#over.getContext("2d");
@@ -1052,11 +1028,8 @@ class WordDisc extends HTMLElement {
     if (!this.#drawing) this.#draw();
   }
 
-  /* Where the bundle gets built. Nothing is handed over, unlike the nested
-     disc — the worker makes its own canvas and transfers a bitmap back — so
-     there is no canvas that can only be given away once. Opened when the
-     element connects rather than when a bundle is first wanted, so its module
-     fetch runs alongside the word file's rather than after it. */
+  /* Where the bundle gets built. Opened when the element connects, so the
+     worker's module fetch runs alongside the word file's. */
   #openBundler() {
     this.#route = "wait";
     this.#settle = here => {
@@ -1162,17 +1135,14 @@ class WordDisc extends HTMLElement {
     }
 
     // Four states, painted in the order they win: everything else, a move
-    // available, a word already used, the word play stands on. A dot per fill
-    // held entity's 40,117 words at 31 ms a draw, twice per category, so each
-    // opaque state is one path per colour, filled once. The dimmed dots keep a
-    // fill apiece: overlapping, each one darkens those beneath it, and one path
-    // would fill their union once at 0.3.
+    // available, a word already used, the word play stands on. Each opaque
+    // state is one path per colour, since a fill per dot was 31 ms of each
+    // entity draw. The dimmed dots keep a fill apiece, since overlapping they
+    // must darken each other and one path would fill their union once.
     //
-    // Every dot sits on the one ring, so entity puts 16 of them on each pixel
-    // of it, and adding the arcs to the paths still cost 11 ms. Walked in ring
-    // order, an opaque dot within a third of a pixel of the last one its path
-    // took is skipped, which moves the edge of the band they make by under a
-    // hundredth of a pixel.
+    // Walked in ring order, an opaque dot within a third of a pixel of the last
+    // one its path took is skipped: entity packs 16 dots on each pixel of the
+    // ring, and adding them all to the paths cost 11 ms.
     const hues = Array.from({ length: LETTERS }, (_, l) => this.#hue(l));
     const lit = hues.map(() => new Path2D()),
       used = new Path2D();
@@ -1420,8 +1390,7 @@ class WordDisc extends HTMLElement {
 
   /* Inside the dot ring, where a chord answers as the word it lands on. The
      anchor's fan alone is asked, since it is the one set of chords that is a
-     set of moves: the bundle under it is 96,470 chords on animal, each a pair
-     of words rather than a move, and no pointer rate hit-tests that.
+     set of moves; the bundle under it is pairs of words, 96,470 on animal.
 
      The hub is no bar. Nothing is drawn behind the name, so the middle is where
      the fan crosses and the way back is what answers where no chord does.
@@ -1437,11 +1406,8 @@ class WordDisc extends HTMLElement {
     const g = this.#over.getContext("2d");
     if (!g.isPointInStroke) return -1;
     const pull = this.#words.length > DENSE ? PULL_DENSE : PULL;
-    /* What HIT_PX is worth in angle here, which is the whole turn at the centre
-       and less the further out the pointer is. The chord lies in a cone out of
-       the centre, so a point `r` from it and `d` off the nearest edge of that
-       cone is `r * sin(d)` from the cone and no nearer the chord: the pad is
-       that read backwards, and it is a bound rather than a guess. */
+    // What HIT_PX is worth in angle at this radius; word-layout.js's `spans`
+    // says why it is a bound.
     const pad = r <= HIT_PX ? Math.PI : Math.asin(HIT_PX / r);
     g.save();
     g.setTransform(1, 0, 0, 1, 0, 0);

@@ -37,8 +37,8 @@ flag of 4 marks the synset whose label in `wordnet-names.txt` spells the word,
 which a page holding the disc has already fetched; `text` spells the rest, in
 id order. `tree` fingerprints the parent array the table was written against,
 which the page checks against the one it holds. `categories` places the 37
-named categories on the tree, for `tools/check_words.mjs`, which holds this file
-to theirs.
+named categories on the tree, with any `EXTRA_WORDS` the check must leave out,
+for `tools/check_words.mjs`, which holds this file to theirs.
 
     python tools/export_table.py                 # into out/
     python tools/export_table.py --out DIR --config weft.toml

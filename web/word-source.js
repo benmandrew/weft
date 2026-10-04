@@ -23,7 +23,7 @@ export const MEMBER = 1,
   LABEL = 4;
 const FORMAT = 1;
 // Answers kept per table. A reader zooming in and back out asks for the same
-// few nodes, and a list is at most 40,000 strings, so a handful is plenty.
+// few nodes, and a list can run to 40,000 strings, so a handful is plenty.
 const KEEP = 12;
 
 /** What export_table.py writes, as JSON.
@@ -230,8 +230,8 @@ export class WordTable {
     const matched = this.#matched;
     /** @type {number[]} */
     const touched = [];
-    // Per word: bit 1, a synset inside holds it; bit 2, one of its first
-    // senses is inside. Kept in `seen` above the bit that marks it touched.
+    // Per word: MEMBER, a synset inside holds it; EARLY, one of its first
+    // senses is inside. Kept in `seen` below the 8 that marks it touched.
     for (const i of nodes) {
       if (shallow.has(i)) continue;
       for (let p = this.#start[i]; p < this.#start[i + 1]; p++) {

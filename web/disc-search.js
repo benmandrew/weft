@@ -1,16 +1,14 @@
 /* Ranked name lookup for <hypernym-disc>.
  *
- * No DOM in here, so the element wires it to an input and tools/check_web.mjs
- * runs it on its own, the same split as disc-paint.js.
+ * No DOM in here, so tools/check_web.mjs runs it on its own.
  *
  * A query is one pass over every name, scoring each and keeping the best few,
  * behind a filter that skips most of them without touching the string. Every
  * band below, the subsequence one included, needs every character of the query
  * to appear somewhere in the name, so a bitmask of which characters a name
- * holds rules it out in one AND. That is the prune an ordering cannot give: a
- * sorted index answers a prefix in log time and still reads all 82,115 names
- * for a subsequence match, where the mask throws most of them out for any query
- * of two characters or more.
+ * holds rules it out in one AND. A sorted index cannot prune a subsequence
+ * match; the mask throws most names out for any query of two characters or
+ * more.
  *
  * The masks and the lowercased copy are built together on the first query, and
  * every query after that is the AND, then `score` on what survives.
@@ -56,8 +54,8 @@ function mask(s) {
   return m;
 }
 
-/** 0 for no match. Every branch stays under its band: the length penalty caps at
-   500 and the position penalty at 400, so the two together cannot reach 1,000.
+/** 0 for no match. Every branch stays under its band: one penalty caps at 500
+   and the other at 400, so the two together cannot reach 1,000.
    @param {string} s a lowercased name
    @param {string} q the lowercased query
    @returns {number} */
@@ -71,8 +69,8 @@ function score(s, q) {
     const band = s.charCodeAt(at - 1) === SPACE ? WORD : INSIDE;
     return band - Math.min(s.length, 500) - Math.min(at, 400);
   }
-  // Greedy from the first letter that matches, which is not the tightest run
-  // through the name but costs one pass rather than a search.
+  // Greedy from the first letter that matches: one pass, at the cost of not
+  // always finding the tightest run through the name.
   let k = 0,
     from = -1,
     j = 0;
@@ -116,8 +114,7 @@ export class Search {
   index(names) {
     this.#names = Array.from(names);
     this.#lower = this.#names.map(s => s.toLowerCase());
-    // A second pass, over strings the first has just left in cache, which is
-    // why it costs nothing measurable.
+    // A second pass, over strings the first has just left in cache.
     this.#mask = new Int32Array(this.#lower.length);
     for (let i = 0; i < this.#lower.length; i++) this.#mask[i] = mask(this.#lower[i]);
   }
@@ -154,9 +151,9 @@ export const PAGE_STEP = 10;
    none. Null for a key that moves nothing, so the caller leaves it alone. The
    first arrow press lands on the first row, whichever way it points, since a
    list just reached by the keyboard has no row to move from. It stops at the
-   ends rather than wrapping, since a column several hundred rows long that
-   wraps reads as one that started again. Shared by both elements' columns, so
-   they answer the same keys the same way.
+   ends, since a column several hundred rows long that wraps reads as one that
+   started again. <hypernym-disc> and <word-disc> share it, so their columns
+   answer the same keys the same way.
    @param {string} key
    @param {number} at
    @param {number} n

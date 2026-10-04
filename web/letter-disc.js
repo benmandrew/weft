@@ -25,9 +25,10 @@
  * Events: letter-hover {kind:"arc",from,to,words}
  *                  or {kind:"letter",letter,starts,ends,arcs},
  *         letter-pick {letter,arcs},
- *         letter-render {words,letters,pairs,loops,drawMs}
+ *         letter-render {category,words,letters,pairs,loops,labelPx,alpha,
+ *                        drawMs}
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
- *          --disc-sat --disc-val --disc-font --disc-mono
+ *          --disc-edge --disc-sat --disc-val --disc-font --disc-mono
  */
 import { hsv, TAU } from "./disc-colour.js";
 import { Picker } from "./disc-picker.js";
@@ -95,9 +96,8 @@ TPL.innerHTML = `
     --_sat:var(--disc-sat,.55); --_val:var(--disc-val,.88);
     --_font:var(--disc-font,system-ui,sans-serif);
     --_mono:var(--disc-mono,ui-monospace,Menlo,monospace);
-    /* 3:1 or better against both the ground and the panel, which is what a
-       control's edge needs (WCAG 1.4.11): 5.4 and 5.0 on the dark defaults,
-       3.6 and 3.9 on the light ones. 38% came out at 2.0 and 1.7. */
+    /* 3:1 or better against both the ground and the panel, which a control's
+       edge needs (WCAG 1.4.11): 3.6 at worst, on the light defaults. */
     --_edge:var(--disc-edge,color-mix(in srgb,var(--_muted) 85%,transparent));
     color:var(--_ink);font-family:var(--_font)}
   @media (prefers-color-scheme:light){
@@ -360,8 +360,8 @@ class LetterDisc extends HTMLElement {
   get data() {
     return { category: this.#category, words: this.#words };
   }
-  /* The letter a click has drilled into, and the arc the pointer is on, both
-     as the host would name them rather than as indices. */
+  /* The letter show() has drilled into, and the arc shown (hovered, else
+     held), both as the host would name them rather than as indices. */
   get letter() {
     return this.#letter < 0 ? "" : String.fromCharCode(65 + this.#letter);
   }
@@ -444,16 +444,12 @@ class LetterDisc extends HTMLElement {
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
   }
 
-  /* A disc more than a screen away gives its pixels back, which here is the two
-     canvases and nothing else: this one strokes its ribbons straight onto the
-     base, so there is no resting picture held beside them the way <word-disc>
-     holds its bundle. #pw going to 0 is what stops every draw path, since each
-     already refuses an unsized stage, and #asleep is what stops #fit sizing
-     them again under the resize observer, which goes on firing at an element
-     nobody can see.
-
-     Nothing is dropped before the first fit: a disc that starts below the fold
-     never allocates rather than allocating and giving back. */
+  /* A disc more than a screen away gives back its two canvases, which is all
+     it holds: the ribbons go straight onto the base, with no resting picture
+     kept beside them as <word-disc> keeps its bundle. #pw at 0 stops every draw
+     path, and #asleep stops #fit sizing them again while the resize observer
+     goes on firing. Nothing is dropped before the first fit, so a disc that
+     starts below the fold never allocates. */
   #sleep = () => {
     if (this.#asleep) return;
     this.#asleep = true;
@@ -825,8 +821,8 @@ class LetterDisc extends HTMLElement {
   }
 
   /* The letter select: one option a letter some word touches, after one for
-     the whole category. The letter alone, since the readout gives its counts. Rebuilt with the words, as is the arc select under
-     it. */
+     the whole category. The letter alone, since the readout gives its counts.
+     Rebuilt with the words, as is the arc select under it. */
   #tour() {
     const L = this.#L;
     if (!this.#letterEl || !L) return;

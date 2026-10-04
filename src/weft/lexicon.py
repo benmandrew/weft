@@ -13,8 +13,8 @@ from typing import Any, TypeAlias
 
 # Each category names the WordNet synsets whose hyponym closure defines it.
 # Several need more than one root because WordNet splits the sense along a line
-# players do not: fruit.n.01 is the botanical sense and misses most of what
-# somebody would actually say, so the edible sense joins it.
+# players do not: fruit.n.01 is the botanical sense and misses most of what a
+# player would say, so the edible sense joins it.
 CATEGORIES: dict[str, tuple[str, ...]] = {
     "animal": ("animal.n.01",),
     "bird": ("bird.n.01",),
@@ -96,13 +96,11 @@ _reader: Any = None
 
 
 def _wordnet() -> Any:
-    """A WordNet reader, built at the point of use and kept for the process, so
-    a cache hit never parses the database.
+    """A WordNet reader, built on first use so a cache hit never parses it.
 
-    `WordNetCorpusReader.__init__` ends by calling `map_wn()`, whose version
-    guard compares against the string "wordnet" and so never holds. It parses
-    index.sense twice to build a sense-key table for the multilingual API, which
-    nothing here calls; declining it leaves every word list identical.
+    `WordNetCorpusReader.__init__` ends by calling `map_wn()`, which parses
+    index.sense twice to build a sense-key table for the multilingual API. Nothing
+    here calls that API, and skipping it leaves every word list identical.
     """
     global _reader
     if _reader is None:
@@ -345,11 +343,9 @@ def members(
     """The words of a category, commonest first.
 
     min_zipf is on wordfreq's Zipf scale, where 2.0 is about one occurrence per
-    ten million words; the order rather than a cut is what `build --limit` uses,
-    so it stands at zero. A Zipf of exactly zero is dropped whatever the
-    threshold: that is the line between WordNet's vocabulary and its taxonomy.
-    The other filters are described on _in_category, _closure and _resolve, and
-    EXTRA_WORDS then adds words no filter above can drop.
+    ten million words. It defaults to zero, since `build --limit` draws by the
+    order. The other filters are described on _in_category, _closure and
+    _resolve, and EXTRA_WORDS then adds words no filter can drop.
 
     The result is cached on disk against the category, every argument above, the
     category's EXTRA_WORDS entry, and the WordNet build it came from.

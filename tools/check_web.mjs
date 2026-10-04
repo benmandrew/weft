@@ -1,7 +1,7 @@
-/* Holds web/ to what a browser will actually accept and run: every module is
- * loaded against a stubbed DOM and all three elements are built and driven, so
- * a fault that only shows when a class body is evaluated fails here rather than
- * leaving a blank page. The assertions are on the properties the code rests on
+/* Holds web/ to what a browser will accept and run: every module is loaded
+ * against a stubbed DOM and every element is built and driven, so a fault that
+ * only shows when a class body is evaluated fails here rather than leaving a
+ * blank page. The assertions are on the properties the code rests on
  * rather than on exact counts, which move whenever the geometry does.
  *
  *     node tools/check_web.mjs
@@ -14,7 +14,7 @@ const check = (ok, said) => {
 };
 
 /* Enough browser to load the modules and drive the elements. One markup
-   fragment serves all three templates. A canvas records what it was asked to
+   fragment serves every template. A canvas records what it was asked to
    draw and measures text off the font size it was set; nothing is rasterised,
    so what is asserted is counts and positions rather than pixels. */
 const drew = {
@@ -64,10 +64,9 @@ class El {
         held.filter(f => f !== fn),
       );
   }
-  /* Real delivery, where this used to answer true and drop the event: it is how
-     <word-run> hears the disc, and an element that binds by listening cannot be
-     driven at all against a stub that never calls back. Bubbling walks the
-     parents the append above recorded. */
+  /* Real delivery: it is how <word-run> hears the disc, and an element that
+     binds by listening cannot be driven against a stub that never calls back.
+     Bubbling walks the parents the append above recorded. */
   dispatchEvent(ev) {
     for (const fn of (this._on.get(ev.type) ?? []).slice()) fn(ev);
     if (ev.bubbles && this._parent) this._parent.dispatchEvent(ev);
@@ -185,7 +184,7 @@ class Canvas extends El {
       curve: 0,
       image: 0,
       // Whether the middle was asked at all. Both answer false below, so this
-      // is the only way to claim that the hub stopped swallowing the pointer.
+      // is the only way to claim that the hub does not swallow the pointer.
       inPath: 0,
       inStroke: 0,
     };
@@ -294,8 +293,7 @@ class Canvas extends El {
            could not tell the fix from the bug that moved the hub's name. */
         return {
           width: text.length * PX * px,
-          // The dot on an i counts as tall, since it is what the moving name
-          // was first noticed on.
+          // The dot on an i counts as tall, as it does in a real face.
           actualBoundingBoxAscent: px * (/[A-Zbdfhijklt]/.test(text) ? 0.72 : 0.52),
           actualBoundingBoxDescent: px * (/[gjpqy]/.test(text) ? 0.2 : 0),
         };
@@ -307,7 +305,7 @@ class Canvas extends El {
   }
 }
 
-/* The markup both templates hold. Written out rather than parsed, since the
+/* The markup every template holds. Written out rather than parsed, since the
    only thing the elements do with it is querySelector by class. */
 const fragment = () => {
   const frame = new El("div", "frame");
@@ -893,9 +891,9 @@ check(
   `alphabetical gave ${alphabetical([3, 0, 2, 0])}`,
 );
 
-/* render.py's key is (ord(head) - ord(tail) - 1) % 26, counted backwards from
-   the wedge's own letter so the bundle leaves as a fan rather than crossing
-   itself. S handing over to T is the far end of that count, not the near one. */
+/* render.py's `_fan_key` is (ord(head) - ord(tail) - 1) % 26, counted backwards
+   from the wedge's own letter so the bundle leaves as a fan rather than
+   crossing itself. S handing over to T is the far end of that count. */
 check(fanKey(18, 19) === 24, `fanKey(s, t) is ${fanKey(18, 19)}, not 24`);
 check(fanKey(19, 19) === 25, `a word ending on its own letter scored ${fanKey(19, 19)}`);
 check(fanKey(19, 17) === 1, `fanKey(t, r) is ${fanKey(19, 17)}, not 1`);
@@ -1048,8 +1046,8 @@ check(
   "clearing left a word unplayable",
 );
 
-/* The end of the round, which now has two shapes: a letter the category never
-   had a word for, and one whose words are all spent. */
+/* The end of the round has two shapes: a letter the category never had a word
+   for, and one whose words are all spent. */
 check(c.play(at("emu")) !== null && c.stuck(L.byHead), "emu is not a dead end");
 check(c.clear() === -1 && !c.stuck(L.byHead), "clearing left the chain stuck");
 
@@ -1335,8 +1333,8 @@ check(
   "a roomy disc did not take the hub's own share of the ring",
 );
 
-/* 110 words is what `build` draws and what the element opens on, and the
-   labels have to be solved there rather than capped or dropped. */
+/* 110 words is what `build` draws by default, and the labels have to be
+   solved there rather than capped or dropped. */
 const many = Array.from({ length: 110 }, (_, i) => `w${i}x`);
 const mid = solve(wordLayout(many).span, WIDE, SQUARE);
 check(
@@ -1438,11 +1436,10 @@ check(ratio(4, 716, 716) === 4, `a zoomed disc was held to ${ratio(4, 716, 716)}
 check(ratio(0, 700, 400) === 1, `a screen reporting no ratio came back at ${ratio(0, 700, 400)}`);
 
 /* The sleep a disc gives its pixels back on, held rather than taken the moment
-   the disc leaves the band. A fast scroll crosses the whole band in one
-   gesture, so a sleep taken there empties and refills a disc for a moment
-   nobody spent looking at it, which is the stutter. Driven here rather than
-   through an element, since the element draws the same either way and what has
-   to be asserted is the sleep that never ran. */
+   the disc leaves the band, since a fast scroll would empty and refill every
+   disc it crosses. Driven here rather than through an element, since the
+   element draws the same either way and what has to be asserted is the sleep
+   that never ran. */
 const idleAt = SEEN.length;
 let slept = 0,
   woke = 0;
@@ -1457,9 +1454,9 @@ inBand(true);
 await new Promise(r => setTimeout(r, HOLD + 40));
 check(slept === 0, `a disc scrolled past slept ${slept} times`);
 check(woke === 1, `a disc scrolled past woke ${woke} times`);
-/* And a disc left behind still gives them back, which the three elements below
-   each assert through `away`. Disconnecting is what a held sleep must not
-   outlive: an element taken out of the document is not one to empty. */
+/* And a disc left behind still gives them back, which each of the four
+   elements below asserts through `away`. Disconnecting is what a held sleep
+   must not outlive: an element taken out of the document is not one to empty. */
 inBand(false);
 idleWatch.disconnect();
 await new Promise(r => setTimeout(r, HOLD + 40));
@@ -1487,8 +1484,9 @@ check(
    bundle that is drawn and cannot be seen. */
 check(thinnest > 0.01, `the densest category draws at ${thinnest}, which is under the floor`);
 
-/* Every chord, stroked one at a time: batched into one path per letter the
-   alpha stops accumulating where curves overlap and the bundle reads flat. */
+/* A stroke per chord, since every word here has a bin of its own: batched into
+   one path per letter, the alpha stops accumulating where curves overlap and
+   the bundle reads flat. */
 const bundleCanvas = new Canvas();
 const strokes = strokeBundle(bundleCanvas.getContext("2d"), {
   px: 512,
@@ -1540,9 +1538,10 @@ check(
 
 /* And the worker, driven: a build snapshots after every band, and one the next
    message overtakes stops there and answers nothing. The snapshot resolves at
-   once here, so what spaces the bands out is the worker's own wait for a task,
-   counted through setTimeout; the check waits on setImmediate so its own
-   ticks are not counted. Imported afresh, so the onmessage it sets is its own. */
+   once here, so what spaces the bands out is the worker's own wait, whose GAP
+   timer is counted through setTimeout; the check waits on setImmediate so its
+   own ticks are not counted. Imported afresh, so the onmessage it sets is its
+   own. */
 {
   const tick = () => new Promise(r => setImmediate(r));
   const was = {
@@ -1789,8 +1788,8 @@ check(
   "the column or the longest chain was built in the task that drew the disc",
 );
 check(disc.words.join("|") === WORDS.join("|"), `the element drew ${disc.words}`);
-/* No attribute is every word the category has, not a cut at some count: `build`
-   draws 110 and the element does not, having only the frame it was given. */
+/* No attribute draws every word the category has: `build` cuts at 110, and the
+   element has only the frame it was given. */
 check(!disc.hasAttribute("limit"), "the driven element was given a limit");
 
 check(disc.stats.bundle, "8 words did not get a resting bundle");
@@ -1856,8 +1855,8 @@ check(
 );
 
 /* Nothing is painted behind the hub's name; it carries its own ground. With the
-   pointer off the disc and no chain the overlay owes an arc to nothing, and that
-   count is what says a panel disc has not come back. */
+   pointer off the disc and no chain the overlay owes an arc to nothing, so the
+   arc count says no panel disc is drawn behind the name. */
 over.drew.arc = 0;
 over.drew.strokeText = 0;
 over.drew.fillText = 0;
@@ -2154,8 +2153,7 @@ check(
 );
 check(!line.innerHTML.includes("warn"), "a step in the chain line was marked a repeat");
 
-/* The moves column. `byHead` holds a wedge commonest first, so the list comes
-   out in the order the disc drew it and no sort is needed. */
+/* The moves column, in alphabetical order whatever order the wedge holds. */
 const listed = () => [...list.children].map(li => li.textContent);
 disc.clear();
 check(
@@ -2316,8 +2314,7 @@ check(
   `900 words hold ${disc.stats.chords} chords and the bundle is ${disc.stats.bundle}`,
 );
 check(disc.stats.labelPx === 0, `900 words in a ${BOX}px square kept their labels`);
-/* And MERGED, 7,000 words and 1,884,616 chords, which the 200,000-chord cap
-   this replaced refused nine times over. */
+/* And MERGED, 7,000 words and 1,884,616 chords. */
 disc.data = { category: "merged", words: MERGED, zipf: MERGED.map(() => 1) };
 check(
   disc.stats.chords > 1000000 && disc.stats.bundle,
@@ -3020,8 +3017,7 @@ check(kidRows.children.length > 0, "the ring below did not come back when the fr
 /* <word-run>, which follows the disc rather than being driven by a host: the
    events <word-disc> emits bubble and cross the shadow boundary, so an id is
    the whole of the binding. What is asserted is that it hears them, and that
-   what it names is the run word-longest.js gives for the state the disc is in.
-   The stub's dispatchEvent had to become real for any of this to be reachable. */
+   what it names is the run word-longest.js gives for the state the disc is in. */
 const { elide, run: makeRun } = await import(mod("word-run.js"));
 const WordRun = REGISTRY.get("word-run");
 check(WordRun !== undefined, "word-run never reached the registry");
@@ -3084,7 +3080,7 @@ runEl.setAttribute("for", "the-word-disc");
 runEl.connectedCallback();
 const runLine = () => runEl._shadow.querySelector(".run");
 const runText = () => runLine().textContent;
-/* The words are nested inside the two ends now, so this counts through them
+/* The words are nested inside the two ends, so this counts through them
    rather than across the row. */
 const runDone = () => {
   let n = 0;
@@ -3128,9 +3124,9 @@ check(illaid() === null, `the unfolded run is laid out wrong: ${illaid()} — ${
 runEl.setAttribute("ends", "2");
 check(illaid() === null, `the folded run is laid out wrong: ${illaid()} — ${runParts()}`);
 /* Two words at each end is one chevron inside each of them and one on either
-   side of the elision. Counted rather than left to the rule above, since the
-   fault this replaced was chevrons missing from one end while the other kept
-   them, and a rule about neighbours cannot see that. */
+   side of the elision. Counted rather than left to the rule above, since a rule
+   about neighbours cannot see chevrons missing from one end while the other
+   keeps them. */
 const runSeps = () => runParts().filter(c => c === "sep").length;
 check(runSeps() === 4, `a run folded to two words each end drew ${runSeps()} chevrons, not 4`);
 check(runParts().filter(c => c === "gap").length === 1, "the folded run has no elision in it");
@@ -3461,8 +3457,8 @@ const lOver = lShadow.querySelector(".over");
 const lGloss = lShadow.querySelector(".gloss");
 /* This disc carries no search box, no list and no crumb line; its keyboard way
    in is two selects, tested below. Read off the module's own text rather than
-   the shadow root, because the stub builds one fragment for all three templates
-   and every element gets a search box in it whether its own markup names one or
+   the shadow root, because the stub builds one fragment for every template and
+   every element gets a search box in it whether its own markup names one or
    not. */
 {
   const tpl = readFileSync(new URL("../web/letter-disc.js", import.meta.url), "utf8");
@@ -3609,9 +3605,9 @@ lStage._rect = lWasStage;
 nearScreen(true);
 check(lBase.width === lBig, `coming back left the letter canvas at ${lBase.width} of ${lBig}`);
 
-/* This disc gives its pixels back the same way, and its base canvas may belong to
-   the painter: a dimension cannot be set on a transferred canvas, so the painter
-   is asked to empty it. Driven here the painter is on this thread. */
+/* <hypernym-disc> gives its pixels back the same way, and its base canvas may
+   belong to the painter: a dimension cannot be set on a transferred canvas, so
+   the painter is asked to empty it. Driven here the painter is on this thread. */
 nest._shadow.querySelector(".frame")._rect = { width: BOX + 300, height: BOX };
 resize();
 const nestBase = nest._shadow.querySelector(".base").width;
@@ -4063,8 +4059,7 @@ check(bf.step === 0, `seeking before the start left the element at ${bf.step}`);
 bf.seek(bf.frames + 5);
 check(bf.step === bf.frames, `seeking past the end left the element at ${bf.step}`);
 
-/* The keys, driven as a browser drives them: the rail is why the shared fragment
-   gained one. */
+/* The keys, driven as a browser drives them, off the shared fragment's rail. */
 const bKey = cls => fire(bShadow.querySelector(cls), "click", {});
 bKey(".first");
 check(bf.step === 0, `the first key left the element at ${bf.step}`);
@@ -4775,8 +4770,8 @@ check(
   "preload.json names a module web/ does not have",
 );
 
-/* It writes `src`, so both discs have to be watching that attribute or the
-   choice would load nothing. */
+/* The control writes `src`, so every element it reaches has to observe that
+   attribute or the choice would load nothing. */
 for (const tag of ["word-disc.js", "letter-disc.js", "balance-flow.js"]) {
   const text = readFileSync(new URL(`../web/${tag}`, import.meta.url), "utf8");
   check(
@@ -4911,8 +4906,8 @@ fire(wList, "pointermove", { target: wList.children[0] });
 check(wGloss.innerHTML !== atRest, "hovering a row left the readout at rest");
 pressEscape();
 check(wGloss.innerHTML === atRest, `Escape left the hover readout: ${wGloss.innerHTML}`);
-/* The host's pointerleave does the same, the canvas's no longer being the
-   edge a hover ends at. */
+/* The host's pointerleave does the same, since the host's edge is where a
+   hover ends. */
 fire(wList, "pointermove", { target: wList.children[0] });
 fire(a11yWord, "pointerleave", {});
 check(wGloss.innerHTML === atRest, `leaving the host left the readout: ${wGloss.innerHTML}`);

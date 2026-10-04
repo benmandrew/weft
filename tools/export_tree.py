@@ -41,8 +41,7 @@ def _parents(synsets: list[Synset]) -> dict[str, list[str]]:
 
     Sorted, since the first is the tree's parent: nltk 3.10 returns pointers in
     set order, which moves with the hash seed, so a synset with two parents
-    could take either one a run and `export_table.py`'s fingerprint stopped
-    matching the tree's.
+    could take either and the two exports would disagree.
     """
     return {
         synset.name(): sorted(

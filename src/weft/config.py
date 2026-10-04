@@ -69,8 +69,7 @@ class Selection:
     """
 
     # Words rarer than this on wordfreq's Zipf scale are dropped. Zero keeps
-    # every word wordfreq knows at all, which is the line WordNet's taxonomy
-    # sits below rather than a tuned threshold.
+    # every word wordfreq knows.
     min_zipf: float = 0.0
 
     # Where a word has sense-tagged counts, the share of its uses that must fall
@@ -110,7 +109,7 @@ class Config:
     theme: str | None = None
 
 
-# The file a `build` picks up on its own, from the directory it runs in.
+# The file every command picks up on its own, from the directory it runs in.
 FILENAME = "weft.toml"
 
 _GEOMETRY = "geometry"
@@ -118,8 +117,8 @@ _PALETTE = "palette"
 _SELECTION = "selection"
 _THEME = "theme"
 _TABLES = (_GEOMETRY, _PALETTE, _SELECTION)
-# `theme` names a ground rather than a group of distances, so it is a bare key
-# beside the two tables rather than a lone member of a third.
+# `theme` names a ground, so it is a bare key beside the three tables, never the
+# lone member of a fourth.
 _TOP = (_THEME, *_TABLES)
 
 # `hue_start` of 0 is the top of the circle and `equalise` of 0 is no
@@ -155,7 +154,7 @@ _MEMBERS_SKIP = frozenset({"limit"})
 
 def as_members(selection: Selection) -> dict[str, Any]:
     """`selection` as the keyword arguments `lexicon.members` takes. Every caller
-    goes through this, since spelling them out per call site drifted; a caller
+    goes through this, since spelling them out per call site drifts; a caller
     wanting different settings builds a different `Selection`."""
     return {
         _MEMBERS_RENAME.get(field.name, field.name): getattr(selection, field.name)
@@ -268,9 +267,9 @@ def _geometry(table: dict[str, object]) -> Geometry:
 def _wheel(table: dict[str, object]) -> Wheel:
     """A preset by name, or the numbers for one arc. Never both.
 
-    A preset can hold two arcs, as `duotone` does, and there is no honest way to
-    layer one arc's worth of keys over that — so naming a preset and tuning it
-    in the same table is refused rather than half-applied.
+    A preset can hold two arcs, as `duotone` does, so one arc's keys have
+    nothing to layer over; naming a preset and tuning it in one table is
+    refused.
     """
     valid = _names(Arc)
     keys = set(table)
@@ -346,7 +345,7 @@ def load(path: Path) -> Config:
 
 
 def resolve(explicit: str | None, root: Path | None = None) -> Config:
-    """The geometry and wheel a command should draw with.
+    """The settings a command should run with.
 
     A named file has to exist, because a `--config` that silently falls back to
     the defaults is a typo that costs a render to notice. The one found by

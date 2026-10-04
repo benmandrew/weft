@@ -2,8 +2,8 @@
 
 A cyclic ramp suits letters on a dial, but the packaged cyclic colormaps vary in
 lightness and their pale stretches disappear against the background. Fixing
-saturation and value keeps all 26 equally visible, and lets a dark theme lift
-the whole wheel by moving one number.
+saturation and value keeps all 26 visible, and lets a theme shift the whole
+wheel with two numbers.
 
 The wheel itself is a `Wheel` of one or more `Arc`s rather than a hardcoded full
 turn, so a category can be drawn on a quarter of the circle or on two arcs that
@@ -34,9 +34,9 @@ def _luma(colour: RGB) -> float:
 class Arc:
     """A stretch of hue the letters are spread along, at fixed saturation.
 
-    The defaults are the full turn the wheel has always been. A span of exactly
-    1.0 closes the circle, which puts the first and last letter one step apart
-    and makes them read as the same hue; a span a little under 1 separates them.
+    The defaults are the full turn. A span of exactly 1.0 closes the circle,
+    which puts the first and last letter one step apart and makes them read as
+    the same hue; a span a little under 1 separates them.
     """
 
     hue_start: float = 0.0
@@ -102,11 +102,11 @@ class Wheel:
 
 # Every preset is tuned against the dark ground, which is what `build` draws on
 # by default. The light theme takes the same wheel with more saturation and less
-# value, which is exactly what separates the two built-in wheels below.
+# value, which is what separates the two built-in themes below.
 LIGHT_SHIFT = (0.07, -0.28)
 
 PRESETS: dict[str, Wheel] = {
-    # The full turn the tool has always drawn.
+    # The full turn, which both built-in themes use.
     "spectrum": Wheel((Arc(),)),
     # The same turn with the luma spread cut from 1.86x to 1.38x, and the span
     # short of a full circle so A and Z stop matching.
@@ -134,7 +134,7 @@ class Theme:
     dead: str  # a letter no word starts with
     live: str  # words available from a letter
     wheel: Wheel
-    edge_alpha: float  # opacity floor for the densest word graphs
+    edge_alpha: float  # word-disc chord opacity, scaled down past 150 words
 
 
 LIGHT = Theme(

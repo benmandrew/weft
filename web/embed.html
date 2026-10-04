@@ -3,28 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>weft — embedding all three discs</title>
+<title>weft — embedding every element</title>
 <!--
-  What `make web-dist` stages beside the modules and the data. Not a layout: the
-  three elements sit in ordinary document flow, one after the other, each styled
-  and sized on its own, so any <section> below can be lifted out and dropped
-  anywhere on a host page without bringing the others with it. Nothing here
-  positions one relative to another, and none needs another to exist.
+  What `make web-dist` stages beside the modules and the data. The elements sit
+  in ordinary document flow, one after the other, each styled and sized on its
+  own, so any <section> below can be lifted out and dropped anywhere on a host
+  page without bringing the others with it. None needs another to exist.
 
-  It asks for its data beside itself rather than at /out/, because the dist
-  directory is flat and a host copies it whole and serves it from wherever it
-  likes. tools/serve.py falls back to out/ for exactly these names, so the page
-  runs unchanged under `make serve` too.
+  It asks for its data beside itself, because the dist directory is flat and a
+  host copies it whole and serves it from wherever it likes. tools/serve.py
+  falls back to out/ for these names, so the page runs unchanged under
+  `make serve` too.
 
   Each section lists every module its scripts import, directly or not, as a
   modulepreload. Without them the browser learns of a module only once its
-  importer has arrived, and word-disc.js is five levels deep. They sit in the
+  importer has arrived, and word-disc.js's imports run four deep. They sit in the
   section rather than the head so a section lifted out brings its own.
   tools/check_web.mjs holds each list to the import graph.
 -->
 <style>
-/* The page's own furniture. Nothing below this block is needed by either
-   element — the tokens each one reads are set on the element itself. */
+/* The page's own furniture. No element needs this block, since the tokens
+   each one reads are set on the element itself. */
 :root{
   --ground:#0c1112; --ink:#e7eded; --muted:#90a1a1;
   --rule:rgba(231,237,237,.11);
@@ -38,10 +37,9 @@
 *{box-sizing:border-box}
 body{background:var(--ground);color:var(--ink);font-family:var(--body);margin:0;
      font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
-/* Wide enough that the word disc is 218 px wider than tall, which is where it
-   moves its search box and its list of moves into a column beside the disc.
-   Narrower and it stacks them instead, which is correct but shows less of what
-   the element does. A host picks its own width; this one picks the telling one. */
+/* Wide enough that the word disc is 218 px wider than tall, where it moves its
+   search box and its list of moves into a column beside the disc. Narrower, it
+   stacks them. A host picks its own width. */
 .wrap{max-width:1100px;margin:0 auto;padding:20px}
 h1{font-family:var(--display);font-size:17px;font-weight:600;margin:0 0 4px}
 .note{color:var(--muted);font-size:12.5px;margin:0 0 24px}
@@ -49,8 +47,8 @@ section{border-top:1px solid var(--rule);padding-top:14px;margin-top:28px}
 h2{font-family:var(--body);font-size:12px;font-weight:600;margin:0 0 10px;
    color:var(--muted);letter-spacing:.04em}
 /* The page's one control. It belongs to no element and reads none of the disc
-   tokens: it writes `src` on the two discs below, which both watch that
-   attribute already, so the page needs no other way in to them. */
+   tokens: it writes `src` on the three elements below, which all watch that
+   attribute already. */
 .pick{display:flex;align-items:baseline;gap:10px;color:var(--muted);font-size:12.5px}
 .pick select{font:inherit;font-size:13px;color:var(--ink);background:transparent;
   border:1px solid var(--rule);border-radius:5px;padding:4px 8px}
@@ -58,9 +56,8 @@ h2{font-family:var(--body);font-size:12px;font-weight:600;margin:0 0 10px;
 
 /* Each element carries its own tokens and its own height, so a host lifting one
    section takes everything that section needs. `fit` makes an element fill the
-   box it is given, which is why each one is given a definite height here: a
-   page that guesses at its own chrome guesses wrong, so the number is the
-   host's to set. Drop `fit` instead and the element is a square of its own
+   box it is given, so each one is given a definite height here, and the number
+   is the host's to set. Drop `fit` and the element is a square of its own
    width, which is what to do where the height cannot be named. */
 hypernym-disc{
   display:block; width:100%; height:min(72vh,640px);
@@ -93,8 +90,8 @@ letter-disc{
   --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
   --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
 }
-/* Shorter than the discs: this one is a wide figure rather than a square, and
-   the rail and the readout take their height out of what is named here. */
+/* Shorter than the discs, since this is a wide figure, and the rail and the
+   readout take their height out of what is named here. */
 balance-flow{
   display:block; width:100%; height:min(58vh,500px);
   --disc-ground:#0c1112; --disc-panel:#141b1c; --disc-ink:#e7eded;
@@ -103,8 +100,8 @@ balance-flow{
   --disc-font:"Avenir Next",Avenir,system-ui,sans-serif;
   --disc-mono:Menlo,"SF Mono",ui-monospace,monospace;
 }
-/* Written out once per element rather than as one selector naming all three,
-   so a host lifting a section takes rules that mention only what it lifted. */
+/* Written out once per element, so a host lifting a section takes rules that
+   mention only what it lifted. */
 @media (prefers-color-scheme:light){
   hypernym-disc{
     --disc-ground:#eef1f0; --disc-panel:#fbfcfc; --disc-ink:#131a1b;
@@ -160,13 +157,11 @@ balance-flow{
                    glosses-src="wordnet-glosses.txt"></hypernym-disc>
   </section>
 
-  <!-- The category the three elements below read, as one control rather than
-       the picker each grows from an `index-src` of its own: three pickers for
-       one choice is the page saying the discs are unrelated when they are
-       reading the same file. Its own section all the same, and it writes to
-       whatever it finds rather than to anything it requires, so lifting it out
-       leaves the discs on the category they name themselves and lifting a disc
-       out leaves this driving whichever is left. -->
+  <!-- The category the three elements below read, as one control in place of
+       the picker each grows from an `index-src` of its own, since they read the
+       same file. It writes to whatever it finds, so lifting it out leaves each
+       element on the category its own `src` names, and lifting an element out
+       leaves this driving whichever is left. -->
   <section>
     <h2>category</h2>
     <label class="pick">words from
@@ -180,10 +175,10 @@ balance-flow{
       const INDEX = "words-index.json";
       const pick = document.getElementById("embed-category");
       /* Whatever of the three is still on the page. A section lifted out is one
-         fewer element to write to rather than an error. */
+         fewer element to write to, not an error. */
       const discs = () => document.querySelectorAll("word-disc, letter-disc, balance-flow");
-      /* This script runs where it sits, which is above both discs, so the
-         document has to finish before either can be found or read. */
+      /* This script runs where it sits, above the elements it writes to, so the
+         document has to finish before any can be found or read. */
       if (document.readyState === "loading")
         await new Promise(go => document.addEventListener("DOMContentLoaded", go, { once: true }));
       try {
@@ -209,10 +204,9 @@ balance-flow{
   </section>
 
   <!-- The word chain. animal with no limit, so all 1,582 words and 96,470
-       chords are drawn: the bundle this page is here to show being built on a
-       thread of its own. Name a `limit` to draw fewer. The readout under the
-       disc prices perfect play from the word it names, which no attribute here
-       asks for and `hint="off"` would drop along with the solve behind it. -->
+       chords are drawn, the bundle built on a thread of its own. Name a `limit`
+       to draw fewer. The readout under the disc prices perfect play by default;
+       `hint="off"` drops it along with the solve behind it. -->
   <section>
     <h2>word-disc</h2>
     <script type="module" src="word-disc.js"></script>
@@ -234,10 +228,9 @@ balance-flow{
     <word-run for="embed-word-disc"></word-run>
   </section>
 
-  <!-- The same category as the graph underneath the one above: 26 letters
-       rather than 1,582 words, with an arc for each of the 344 letter pairs
-       animal populates and its width the log of the words on it. The two read
-       the same file. -->
+  <!-- The same category as the letter graph under the word disc: 26 letters,
+       with an arc for each of the 344 letter pairs animal populates, its width
+       the log of the words on it. The two read the same file. -->
   <section>
     <h2>letter-disc</h2>
     <script type="module" src="letter-disc.js"></script>

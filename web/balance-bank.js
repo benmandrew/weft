@@ -10,9 +10,9 @@
  * the surpluses bank down one side at their excess, the deficits down the other
  * at theirs, and each augmenting path is a band as wide as the words it moves.
  *
- * The ring is no help here. A chord diagram says which letters a word runs
- * between; this says which letter's overflow paid for which letter's shortfall,
- * which is a different question and has two sides rather than one circle.
+ * A chord diagram says which letters a word runs between; this says which
+ * letter's overflow paid for which letter's shortfall, a question with two
+ * sides, so it is drawn as two columns and no ring.
  */
 import { LETTERS } from "./letter-graph.js";
 
@@ -110,10 +110,9 @@ export function bands(frames, bank, k) {
 
 /** The letters an augmentation walked, from the surplus it left to the deficit
    it reached. A step is signed: forward on a pair it discards one more word of,
-   and backwards on a pair it recovers a word from, which is what lets a later
-   path undo part of an earlier one for less than it would cost to start again.
-   So a forward step reads head to tail and a reverse step tail to head, and the
-   two ends of the walk are the augmentation's own `from` and `to`.
+   backwards on a pair it recovers a word from. So a forward step reads head to
+   tail and a reverse step tail to head, and the two ends of the walk are the
+   augmentation's own `from` and `to`.
    @param {number[]} steps @returns {number[]} */
 export function walk(steps) {
   /** @type {number[]} */
@@ -139,32 +138,21 @@ export function walk(steps) {
    @property {number} y
    @property {number} letter */
 
-/** The line one augmentation's path walks, rather than the sweep that hides it.
-   A band is otherwise drawn from the surplus it leaves straight to the deficit
-   it reaches, which says nothing about the arcs in between; this puts a point at
-   every letter on the way, placed across the span by how many arcs the path has
-   paid for by the time it gets there. A reverse step recovers a word an earlier
-   path discarded, so it takes that count back down and its leg runs right to
-   left, against every other stroke in the picture.
+/** The line one augmentation's path walks: a point at every letter on the way,
+   placed across the span by how many arcs the path has paid for by the time it
+   gets there. A reverse step recovers a word an earlier path discarded, so it
+   takes that count back down and its leg runs right to left. Direction is the
+   only mark a recovery gets, since it costs no ink and reversing paths are the
+   thin ones, about 0.96 px tall on animal.
 
-   Direction is the whole of how a recovery shows here, because it is the one
-   channel that costs no ink. A reversing path is a thin one — animal's 13 have a
-   median push of 2 against 3 across all 144, so they stand about 0.96 px tall on
-   a 426 px span — and anything drawn at weight on a band that thin would make
-   3.3% of the shipping the loudest thing on the picture.
-
-   The two ends stay exactly where `bands` put them, so a routed band still opens
-   and closes on its own slice and the tiling is untouched. An interior letter is
-   passed through rather than shipped from, so it takes no slice of its slot: the
-   line crosses the slot's middle and leaves the slot whole. A band can be taller
-   than a slot it passes through, since a path may push more than the letter
-   under it was ever owed, so the line is not held to the span: 5 interior points
-   over the 37 categories overhang it, the worst by 2.01 px of a 426 px span, and
-   they land in the margin the column headings sit in. Clamping would take the
-   line off the middle of the slot, which is the one thing it has to say.
-   A letter that banks nowhere, being balanced and so in neither column, is
-   dropped rather than given an invented height — 4% of food's interior letters
-   and none of animal's.
+   The two ends stay where `bands` put them, so the tiling is untouched. An
+   interior letter is passed through, so the line crosses its slot's middle and
+   takes no slice. A path may push more than a letter it passes was owed, so the
+   line is not held to the span: 5 points over the 37 categories overhang it,
+   the worst by 2.01 px of 426, into the margin the headings sit in. Clamping
+   would take the line off the slot's middle, which is what it has to say. A
+   letter that banks nowhere, being in neither column, is dropped rather than
+   given an invented height.
    @param {{steps: number[], cost: number}} frame @param {Band} band
    @param {Bank} bank @param {number} lx @param {number} rx @param {number} padY
    @returns {Point[]} */
@@ -182,9 +170,8 @@ export function route(frame, band, bank, lx, rx, padY) {
       paid += frame.steps[i] > 0 ? 1 : -1;
       const y = centre[seq[i + 1]];
       if (!Number.isFinite(y)) continue;
-      // Clamped because the picture has only the width between the two columns:
-      // no path over the 37 categories leaves [0, cost], all 2,645 of them, but
-      // one that did would otherwise be drawn off the side.
+      // No path over the 37 categories leaves [0, cost], but one that did would
+      // be drawn off the side.
       const t = Math.min(1, Math.max(0, paid / frame.cost));
       out.push({ x: lx + (rx - lx) * t, y: padY + y - band.h / 2, letter: seq[i + 1] });
     }
@@ -193,16 +180,11 @@ export function route(frame, band, bank, lx, rx, padY) {
   return out;
 }
 
-/** The steps the scrub wants marked: the ones whose path recovers a word an
-   earlier path discarded. A step is the count of augmentations run, so frame `i`
-   is the band lit at step `i + 1`, and that is where the mark belongs — on the
-   step that puts the reversing path under the reader rather than on the one
-   before it.
-
-   Worth marking because they are rare and worth finding: 204 of the 2,645
-   augmentations over the 37 categories carry a reverse step, 7.7%, and animal's
-   13 sit anywhere among its 144. Scrubbing for them is otherwise reading the
-   path line 144 times.
+/** The steps the scrub marks: those whose path recovers a word an earlier path
+   discarded. A step is the count of augmentations run, so frame `i` is the band
+   lit at step `i + 1`, the step that shows the reversing path. They are rare,
+   7.7% of augmentations over the 37 categories, so without a mark finding one
+   means reading the path line at every step.
    @param {{steps: number[]}[]} frames @returns {number[]} */
 export function reverses(frames) {
   /** @type {number[]} */
@@ -237,14 +219,11 @@ export function owing(excess, frames, k) {
 }
 
 /* What a stack of bands is drawn at. Ink accumulates where they cross, so a
-   category with four times the augmentations floods the middle of the picture;
-   this is letter-graph.js's `fade` in the same shape, over the bands rather than
-   over the pairs. animal's 144 augmentations come out at 0.26 against
-   furniture's 36 at the full 0.5.
+   category with four times the augmentations floods the middle of the picture.
+   This is letter-graph.js's `fade` over the bands, putting animal's 144 at 0.26.
 
    FALL is a guess, as `FALL` in word-bundle.js and `ALPHA_FALL` in
-   letter-graph.js are: there is no browser here to look in, and `make serve` is
-   where to find out. */
+   letter-graph.js are; `make serve` is where to find out. */
 export const ALPHA = 0.5,
   KNEE = 40,
   FALL = 0.5;

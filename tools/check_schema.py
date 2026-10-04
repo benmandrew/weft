@@ -101,9 +101,8 @@ def _selection(report: Report, table: Table) -> None:
     """The word filters, whose bounds `config.py` declares rather than spells out.
 
     `_SELECTION_BOUNDS` is what the validator enforces, so reading it here holds
-    the schema to the rule actually applied rather than to a second copy of it.
-    Every one of these allows its own minimum, so each carries `minimum` and
-    never `exclusiveMinimum`.
+    the schema to the rule applied. Every one of these allows its own minimum,
+    so each carries `minimum` and never `exclusiveMinimum`.
     """
     wanted = _defaults(Selection)
     props = _properties(report, "[selection]", table, set(wanted))
@@ -167,9 +166,7 @@ def _library(report: Report) -> None:
     """Hold `lexicon.members`'s defaults to the ones the file can move.
 
     `Selection` and `members` state the same numbers, one for the file and one
-    as the library's own signature; `members` cannot go through
-    `config.as_members`, since its arguments are its API. Two copies of a
-    number, one of them stale, is the failure this whole file exists for.
+    as the library's own signature, which stays explicit since it is its API.
     """
     signature = inspect.signature(members)
     for name, default in _defaults(Selection).items():

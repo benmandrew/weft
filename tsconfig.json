@@ -18,7 +18,7 @@
   // new module is typed by existing rather than by being added to a list.
   "include": ["web/*.js"],
   "exclude": [
-    // The three elements, ~660 errors between them: they are mostly DOM
+    // The three elements, ~700 errors between them: they are mostly DOM
     // lookups that come back nullable, which is a job of its own.
     "web/hypernym-disc.js",
     "web/word-disc.js",

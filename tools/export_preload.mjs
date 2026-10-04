@@ -1,7 +1,7 @@
 /* Writes, for each element's module, every module it imports directly or not,
  * as JSON on stdout. A host loading an element late, from a script it appends,
- * learns of each module only once its importer has arrived, and word-disc.js
- * is five levels deep. With this list it can name them all as modulepreloads
+ * learns of each module only once its importer has arrived, and word-disc.js's
+ * imports run four deep. With this list it can name them all as modulepreloads
  * up front. `make web-dist` stages the output as preload.json.
  *
  *     node tools/export_preload.mjs > preload.json

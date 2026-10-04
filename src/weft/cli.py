@@ -30,10 +30,10 @@ from .palette import DARK, THEMES, with_wheel
 _SELECTION_HELP: dict[str, tuple[str | None, str]] = {
     "min_zipf": (
         "Z",
-        "drop words rarer than this on wordfreq's Zipf scale; overrides "
-        "[selection] min_zipf, which is 0.0 unless a file says otherwise, and "
-        "keeps every word wordfreq knows at all (2.0 is about one occurrence "
-        "per ten million words); words wordfreq scores at zero are dropped "
+        "drop words rarer than this on wordfreq's Zipf scale, where 2.0 is "
+        "about one occurrence per ten million words; overrides [selection] "
+        "min_zipf, which is 0.0 unless a file says otherwise and keeps every "
+        "word wordfreq knows; words wordfreq scores at zero are dropped "
         "whatever this is set to",
     ),
     "min_dominance": (
@@ -65,7 +65,7 @@ _SELECTION_HELP: dict[str, tuple[str | None, str]] = {
         "Z",
         "never relax past this, however few words a category has; "
         "overrides [selection] zipf_floor, which is 0.0 unless a file says "
-        "otherwise, meaning any word wordfreq knows at all",
+        "otherwise, meaning any word wordfreq knows",
     ),
     "multiword": (
         None,
@@ -90,8 +90,7 @@ def _selection_args(
     """The category, every `[selection]` flag the command offers, and the two
     switches every command takes.
 
-    Driven off `Selection` rather than written out, so the flags cannot be a
-    setting short of the table a file can move.
+    Driven off `Selection`, so every setting a file can move has a flag.
     """
     if category:
         parser.add_argument("category", help="category name; see the `categories` command")
@@ -131,10 +130,8 @@ def _selection(args: argparse.Namespace) -> Selection:
     """What a command should select with: the flag, then the file, then the
     built-in default.
 
-    Every selection flag defaults to None rather than to its value, so a
-    `--target 60` typed out and no `--target` at all reach a file that sets it
-    differently as different things; an absent flag is the only one the file
-    fills in.
+    Every selection flag defaults to None, so a `--target 60` typed out beats a
+    file that sets another target, and only an absent flag takes the file's.
     """
     config: Config = args.settings
     given: dict[str, Any] = {}
@@ -275,7 +272,7 @@ def main(argv: list[str] | None = None) -> None:
     _selection_args(listing)
     listing.set_defaults(func=_cmd_words)
 
-    build = sub.add_parser("build", help="render the word graph")
+    build = sub.add_parser("build", help="render the word disc to a file")
     _selection_args(build, draws=True)
     build.add_argument("--out", default="out", metavar="DIR", help="output directory (default out)")
     build.add_argument(

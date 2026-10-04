@@ -1,11 +1,10 @@
 /* A text file's lines, kept as the text and where each line starts. Splitting
- * on the newline buys 82,115 string headers and frees nothing, since every
- * substring holds the whole text alive anyway. Names are deliberately not held
- * this way — the search reads every one of them on every query.
+ * on the newline costs a string header per line and frees nothing, since every
+ * substring keeps the whole text alive. The names are not held this way, since
+ * the search reads every one of them on every query.
  *
- * A module rather than a method because an offset table out by one returns the
- * tail of the line above, which reads as a definition and is nobody's, and
- * tools/check_web.mjs can say so where a browser cannot.
+ * Its own module so tools/check_web.mjs can test it: an offset out by one
+ * returns the tail of the line above, which reads as a plausible gloss.
  */
 export class Lines {
   /** @type {string} */
@@ -13,9 +12,8 @@ export class Lines {
   /** @type {Int32Array} */
   #off = new Int32Array(1);
 
-  /** From the text, or from anything else a host hands the element, which is
-     joined back up rather than kept as an array, so there is one shape
-     downstream.
+  /** From the text, or from lines a host hands the element, joined back up so
+     there is one shape downstream.
      @param {string | Iterable<string>} v */
   constructor(v = "") {
     this.#t = typeof v === "string" ? v : Array.from(v).join("\n");

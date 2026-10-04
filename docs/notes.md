@@ -50,11 +50,11 @@ Certification is rarer under a constraint. Across 2,189 constrained solves over 
 
 A missing certificate is a loose bound, which the search proves for every uncertified opening. Over every word of every category under 300 words, 69% certify. mineral is the worst, certifying on 1% of its openings, against tree and river at 3% and fabric at 8%. Before the join, the solver missed one of 60 sampled mineral openings: *sienna* chained 13 against a true optimum of 14 and a bound of 15, its first round stranding loops on *h* and *r*. A readout showing the bound would read as far less certain than the solver is, which is why `<word-disc>` prints the count alone.
 
-The five constrained fixture cases each hold something the free ones cannot. `circuit-opened` holds the rotation, `furniture-opened` an opening that costs nothing, `furniture-stranded` a dead end certified at one word, `furniture-boxed` the constrained bound going loose where the free one did not, and `bird-opened` an opening at scale, 116 words certified.
+The five constrained fixture cases each hold something the free ones cannot. `circuit-opened` holds the rotation, `furniture-opened` an opening that costs nothing, `furniture-stranded` a dead end certified at one word, `furniture-boxed` the constrained bound going loose by three where the free one is loose by one, and `bird-opened` an opening at scale, 116 words certified.
 
 ### Checks and speed
 
-The solver was written twice until October 2026, once in Python for `weft stats` and once in JavaScript for the browser, held together word for word by the same frozen cases. Only `web-dist` ships, so the Python half and the `stats` line it printed were removed, and `web/word-longest.js` is now the one solver. The `oracle` in `tools/chains.json` holds it to exhaustive search on 4,000 drawn chains on every `make check`, once through the heuristic and once through the search alone, from nothing to beat, since behind the heuristic the search runs too rarely for a missing branch to show. The short cut for an opening letter no word leaves runs in 0.05 ms against 0.56 ms on animal, where 11 of the 1,582 words end on a letter nothing starts with.
+A Python copy of the solver fed `weft stats` until October 2026, held to the JavaScript word for word by the same frozen cases, and was removed since only `web-dist` ships. The `oracle` in `tools/chains.json` holds it to exhaustive search on 4,000 drawn chains on every `make check`, once through the heuristic and once through the search alone, from nothing to beat, since behind the heuristic the search runs too rarely for a missing branch to show. The short cut for an opening letter no word leaves runs in 0.05 ms against 0.56 ms on animal, where 11 of the 1,582 words end on a letter nothing starts with.
 
 ## The word disc
 
@@ -65,6 +65,14 @@ The *fan*, the chords from one word to every word that may follow it, runs from 
 Labels below 5.5 px are dropped and the hub names what the pointer is on instead. The element draws every word a category has unless the host sets `limit`, where `build` draws 110, because the SVG (Scalable Vector Graphics) figure can grow its canvas and shrink its type while the element has only the frame the page gives it.
 
 The resting bundle is every chord the printed figure draws, dimmed to 0.22 once a chain is being played. At a typical disc size it is a 12.3 MB `ImageBitmap`, held outside the JavaScript heap where the collector sees a small object under no pressure, which is why it is closed by hand. `thin` exists because ink accumulates: at a fixed alpha, a category with eight times the chords floods the middle. The bundle's worker opens when the element connects, so its module fetch runs alongside the word file's rather than after it.
+
+### Speed paths
+
+The bundle worker draws in bands and snapshots the canvas with `createImageBitmap` after each, so each band reaches the GPU (graphics processing unit) process as its own task. Drawn in one batch, entity arrived there as three tasks of about 45 ms on the thread every browser frame is drawn on, and frames ran late for a quarter of a second. Both halves are needed: the snapshot alone left frames late until 205 ms after a switch, and with the task until 55 ms, which is the main thread's own share. `getImageData` in place of the snapshot doubles the GPU work, and `willReadFrequently` moves the canvas to software, where plant took 1.2 s. The wait between bands is a `MessageChannel` task and then 2 ms: `setTimeout(0)` nests inside the snapshot's task and is clamped to 4 ms, which was 290 ms of entity's 390 ms build, and bands sent back to back put GPU tasks of up to 48 ms on the frame thread, with one frame in three traces of a 1440-wide window running 32 to 48 ms late. A 2 ms wait left no frame late in three traces, kept every GPU task under 10.3 ms and built entity in 255 ms. A 1 ms wait built it in 180 ms, but its GPU tasks reached 16 ms, a whole frame at 60 Hz.
+
+A fill per dot was 31 ms of each entity draw, so the opaque dots go into one `Path2D` per colour. A single path anti-aliases its edge once, so a packed ring comes out about a device pixel thinner than the stacked fills made it.
+
+Sorting by integer spelling places rather than strings took `layout` on entity from 8.4 ms to 1.3 ms with the same output. Shipping the places in `wordnet-words.json` would add 99 KiB gzipped to a 279 KiB file to save 9 ms once per page, since words are numbered commonest first and the places do not compress. Deferring the moves column and the longest-chain sentence to `#later` took 16 ms and 7 ms off the task that draws entity's disc.
 
 In the moves column, a pointer is over no row at every seam between rows, so a `pointermove` that lands on no row holds the hover rather than clearing it. The crumb line's root is the category, drawn as a label rather than a step since it is where the words came from.
 
@@ -90,7 +98,7 @@ The tree holds 82,115 synsets and lays out in one frame, because the parent-befo
 
 Holding children as two typed arrays takes 657 KB against 4.8 MB for a list per node, and builds in 1.6 ms against 5.3 ms. Splitting the glosses into strings would cost 82,115 string headers and 3.13 MB, so they are held as the text and an `Int32Array` of line starts. Search scores every name in one pass rather than holding an index, since the weakest band is a subsequence match and no ordering prunes one; a bitmask of the characters each name holds prunes containment instead.
 
-The draw path is measured. Interning colours per theme and root removed a fifth of the frame. The default density merge takes 82,115 arcs to about 8,500, and the density ramp encodes 1 to 64 wedges a pixel. Only 14 rings are drawn by default, since WordNet's outer rings are nearly empty and dividing the radius among every depth left a quarter of the frame blank. Batching the draw into one path per colour, 145 fills against 82,115, is eight times slower, because each colour's path scatters across the whole disc and the rasteriser covers its bounding box.
+The draw path is measured. Interning colours per theme and root removed a fifth of the frame. The default density merge takes 82,115 arcs to about 8,500, and the density ramp encodes 1 to 64 wedges a pixel. Only 14 rings are drawn by default, since WordNet's outer rings are nearly empty and dividing the radius among every depth left a quarter of the frame blank. Batching the draw into one path per colour, 145 fills against 82,115, is eight times slower, because each colour's path scatters across the whole disc and the rasteriser covers its bounding box. A merged piece takes the circular mean of its members' hues, since matching on exact colour leaves nothing to merge above `hue-depth` 2.
 
 ## Canvas memory
 
@@ -130,7 +138,7 @@ Finding a reversing step by stepping through means reading the path line 144 tim
 
 ## Derived categories
 
-The category picker can follow `<hypernym-disc>`, handing `<word-disc>`, `<letter-disc>` and `<balance-flow>` the words below whatever node the disc is on. A file per node was ruled out: 12,224 nodes have a playable word below them, and their lists would come to about 4.9 MB of JSON. So `tools/export_table.py` ships the facts every one of those lists is computed from, once, and `web/word-source.js` does the sums in the page.
+The category picker can follow `<hypernym-disc>`, handing `<word-disc>`, `<letter-disc>` and `<balance-flow>` the words below whatever node the disc is on. A file per node was ruled out: 12,224 nodes have a playable word below them, and their lists would come to about 4.9 MB of JSON (JavaScript Object Notation). So `tools/export_table.py` ships the facts every one of those lists is computed from, once, and `web/word-source.js` does the sums in the page.
 
 The *word table* holds 40,118 words, 65,938 (word, synset) pairs and 2,313 `extra` edges for the hypernyms the tree dropped. It is 987 KB raw, 279 KiB with gzip and 246 KiB with brotli. It is JSON because the live site serves JSON gzipped. A `LABEL` flag spells 30,508 of the 40,118 words from the synset labels in `wordnet-names.txt`, which a page holding the disc has already fetched, so only the other 9,610 travel as text.
 
@@ -156,6 +164,6 @@ The stroke count then follows the bins rather than the words. On a 1,536 px squa
 
 ## Corpus and data
 
-The 37 categories hold 13,212 words, 197 KB of JSON (JavaScript Object Notation) across the per-category files. A top-of-file import of nltk, wordfreq, networkx or matplotlib costs 100–300 ms on every invocation that does not use it, and nltk's multilingual sense-key mapping is two thirds of the corpus load. The exports come to 7.1 MB uncompressed, which is why the development server compresses them to match a deployed copy.
+The 37 categories hold 13,212 words, 197 KB of JSON across the per-category files. A top-of-file import of nltk, wordfreq, networkx or matplotlib costs 100–300 ms on every invocation that does not use it, and nltk's multilingual sense-key mapping is two thirds of the corpus load. The exports come to 7.1 MB uncompressed, which is why the development server compresses them to match a deployed copy.
 
 Every number above describes WordNet 3.0 as filtered on one day. The rules in `CLAUDE.md` are the part meant to survive a change to the corpus, and these figures are the evidence for why each rule was written.

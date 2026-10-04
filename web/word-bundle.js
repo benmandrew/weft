@@ -26,9 +26,8 @@ export const RING = 0.496;
 export const STEP = 256,
   MAX_PX = Math.ceil(Math.sqrt(MAX_AREA) / STEP) * STEP;
 
-/* The square a ring of this radius wants, in device pixels. Here rather than in
-   the element so tools/check_web.mjs can hold it: an undersized square draws a
-   blurred bundle and nothing downstream can tell. */
+/* The square a ring of this radius wants, in device pixels. Here so
+   tools/check_web.mjs can hold it, since an undersized square blurs unseen. */
 /** @param {number} r @param {number} dpr @returns {number} */
 export function square(r, dpr) {
   const want = (r * dpr) / RING;
@@ -36,12 +35,10 @@ export function square(r, dpr) {
 }
 
 /* Let a bundle's pixels go. An ImageBitmap's buffer sits outside the JS heap,
-   so a replaced one reads to the collector as a small object under no pressure
-   and is never reclaimed. A canvas, which is what the main-thread fallback's
-   bundle is, carries no close and answers to its dimensions instead. */
-/** Duck-typed rather than a union of ImageBitmap and the two canvases, since
-   what it needs is the close or the dimensions and nothing else.
-   @param {{close?: () => void, width?: number, height?: number} | null | undefined} pic */
+   so the collector sees a small object under no pressure and never reclaims
+   it. The main-thread fallback's bundle is a canvas, which has no close and
+   is emptied by its dimensions instead. */
+/** @param {{close?: () => void, width?: number, height?: number} | null | undefined} pic */
 export function release(pic) {
   if (!pic) return;
   if (pic.close) pic.close();
@@ -63,9 +60,9 @@ export function curve(g, cx, cy, x0, y0, x1, y1, pull) {
 /* Chords past which the stroke is thinned, and how sharply. The alpha
    accumulates where curves overlap, so a dense category lays that much more ink
    into the same disc and the middle, where every long chord is bowed through,
-   floods. FALL sits between two wrong answers: holding ink per pixel level
-   wants 1/chords, which rubs the picture out, and leaving it flat is what
-   floods. It is the knob to turn if the fringe reads thick or thin. */
+   floods. FALL sits between 1, which holds ink per pixel and rubs the picture
+   out, and 0, which floods. It is the knob to turn if the fringe reads thick or
+   thin. */
 export const KNEE = 12000,
   FALL = 0.7;
 
@@ -92,12 +89,10 @@ export const BANDS = 64;
    all of them reach the whole of that letter's wedge, so the merge loses
    nothing but where, inside a bin, a chord ends.
 
-   The count is angular rather than per pixel, so the picture is the same at
-   every square. 2,400 is about two device pixels of rim on a 1,536 square, and
-   bounds the strokes whatever the word count: entity's 40,117 words and 74
-   million chords draw as 192,843. Every one of the 37 categories, animal's
-   1,582 words included, puts each word in a bin of its own, so they draw
-   stroke for stroke as they did before the merge. */
+   The bins are angular, so the picture is the same at every square. 2,400 is
+   about two device pixels of rim on a 1,536 square, and bounds the strokes
+   whatever the word count: entity's 74 million chords draw as 192,843. No
+   shipped category puts two words in one bin. */
 export const BINS = 2400;
 
 /** The words of one wedge in one bin. A source point also shares a last
@@ -152,11 +147,10 @@ export function weight(L, s, t) {
   return s.n * t.n - (s.tail === L && s.bin === t.bin ? s.n : 0);
 }
 
-/* Every merged chord, stroke by stroke. A stroke apiece rather than one path
-   per letter, since the alpha has to accumulate where curves overlap; batched
-   into one path a bundle composites once and reads flat. A stroke standing for
-   `w` chords is laid at the alpha `w` strokes on top of each other would
-   reach, which is also what keeps a dense disc visible at all: entity's chord
+/* Every merged chord, stroke by stroke, since the alpha has to accumulate
+   where curves overlap and one path per letter composites once and reads flat.
+   A stroke standing for `w` chords is laid at the alpha `w` stacked strokes
+   would reach, which is what keeps a dense disc visible at all: entity's chord
    alpha is a ninth of one 8-bit level, which a canvas rounds to nothing.
 
    Each letter is cut into BANDS slices sized to its own share, drawn
@@ -193,13 +187,11 @@ export function bundle(g, spec) {
 }
 
 /* The same draw, handing control back after each band. On an accelerated
-   canvas the strokes are only recorded here and painted on the GPU process's
-   main thread, the one every frame of the browser is drawn on, and Chrome sends
-   them over in a few large batches: entity's 192,843 strokes arrived as three
-   of about 45 ms, and for a quarter of a second after a switch frames were
-   dropped or shown up to 124 ms late. word-bundle-worker.js snapshots the
-   canvas and waits for a task at each yield, which sends the band on its own,
-   so the GPU's work comes in 64 pieces with frames drawn between them. */
+   canvas the strokes are recorded here and painted on the GPU process's main
+   thread, which draws every browser frame, and Chrome batches them: entity's
+   arrived as three tasks of about 45 ms. word-bundle-worker.js snapshots the
+   canvas and waits for a task at each yield, so the GPU work comes in BANDS
+   pieces with frames drawn between them. */
 /** @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D} g
    @param {Spec} spec
    @returns {Generator<number, number, void>} yields the band just drawn,

@@ -1,9 +1,8 @@
 /* Where <letter-disc> puts a letter and an arc, with no DOM in it: 26 nodes
  * and one arc per letter pair some word bridges. Nothing is bundled, since
  * every arc is a thing to point at and read a count off. Sizing and ordering
- * live here rather than in the element, for the reason word-layout.js's
- * `solve` does — an arc back at a negative width draws nothing and the element
- * cannot tell, where tools/check_web.mjs can.
+ * live here so tools/check_web.mjs can assert on them: an arc at a negative
+ * width draws nothing, and the element cannot tell.
  *
  *   const m = matrix(["cat", "toad"]);
  *   const L = layout(m);
@@ -35,9 +34,9 @@ export const weight = n => Math.log1p(n);
    @property {number} pairs
    @property {number} loops */
 
-/** The 26 by 26 count, and the two margins of it. Indexed [head * 26 + tail],
-   which is letter_matrix in graph.py written a second time. `starts[L]` is the
-   words leaving L and `ends[L]` the words arriving at it.
+/** The 26 by 26 count and its two margins, graph.py's letter_matrix written a
+   second time. `starts[L]` is the words leaving L and `ends[L]` the words
+   arriving at it.
    @param {Iterable<string>} words
    @returns {Matrix} */
 export function matrix(words) {
@@ -70,7 +69,7 @@ export function matrix(words) {
 }
 
 /* How far round the alphabet one letter reaches to another, counted backwards
-   from its own — word-layout.js's `_fan_key`. Ordering a letter's arcs by
+   from its own: word-layout.js's `fanKey`. Ordering a letter's arcs by
    destination alone starts every one at A and sends the fan across itself. */
 /** @param {number} from @param {number} to @returns {number} */
 export function fanKey(from, to) {
@@ -168,7 +167,6 @@ export function layout(m) {
         a1: 0,
         b0: 0,
         b1: 0,
-        // The wedge the arc is confined to, filled in below.
         t0: 0,
         t1: 0,
         wide: true,
@@ -250,15 +248,13 @@ export function layout(m) {
      every arc leaving Z over every arc leaving A. */
   const order = edges.map((_, k) => k).sort((x, y) => edges[x].w - edges[y].w);
 
-  /* The wedge each arc is confined to, so a point inside the ring can be
-     refused without asking the path about it. Every point of a ribbon lies in
-     the convex hull of its four ring points and their control points, which
-     sit on the rays to those points, so the hull is inside the wedge the four
-     turns span — as long as that wedge is under half a turn, past which the
-     hull reaches the centre and the wedge says nothing; those arcs are `wide`
-     and nothing is pruned for them. The wedge is the complement of the largest
-     gap between the four, not the span from lowest to highest: that is what
-     finds it when an arc straddles the top of the ring and its wedge wraps. */
+  /* The wedge each arc is confined to, so `near` can refuse a point without
+     building the path. A ribbon lies in the convex hull of its four ring
+     points and their control points, which sit on the rays to them, so it
+     stays inside the wedge the four turns span while that wedge is under half
+     a turn. Past that the hull reaches the centre, and the arc is `wide` and
+     never pruned. The wedge is the complement of the largest gap between the
+     four, which still finds it when it wraps past the top of the ring. */
   for (const e of edges) {
     const ts = [e.a0, e.a1, e.b0, e.b1].map(x => (((Math.PI / 2 - x) % TAU) + TAU) % TAU).sort();
     let gap = ts[0] + TAU - ts[3],
@@ -336,9 +332,9 @@ export const HUB_SHARE = 0.45,
    ring, and `outer` lands on the square's half-width either way.
    @typedef {{r: number, band: number, labelPx: number, hub: number, outer: number}} Fit */
 
-/** Everything the disc measures, off the square the host left it. What it owes
-   is a disc that stays inside its own square and comes back positive at any
-   size, which is the part nothing downstream tests for.
+/** Everything the disc measures, off the square the host left it. The disc
+   must stay inside its square and come back positive at any size, which the
+   element cannot see and tools/check_web.mjs asserts.
    @param {number} size
    @returns {Fit} */
 export function solve(size) {
@@ -377,9 +373,8 @@ export const PULL_FAR = 0.14,
 /* The resting fill, and the pair count past which it is thinned: a ribbon is
    filled rather than stroked, so the alpha accumulates wherever two overlap
    and a dense category floods where a sparse one reads. ALPHA_FALL is a guess
-   nobody has checked in a browser; `make serve` is where to. Here rather than
-   in the element for the reason `solve` is — an alpha back at zero draws
-   nothing and the element could not tell. */
+   unchecked in a browser; `make serve` is where to look. It lives here so
+   tools/check_web.mjs can catch an alpha at zero, which draws nothing. */
 export const ALPHA = 0.5,
   ALPHA_KNEE = 120,
   ALPHA_FALL = 0.5;
@@ -451,9 +446,9 @@ export function at(L, t) {
 
 /* Whether `t` turns clockwise from the top could be on arc `e` at all: the
  * cheap half of the interior hit test, refusing most arcs for two comparisons
- * before a path is built. It is a prune rather than an answer, and it owes
- * never refusing a point that is on the arc — what tools/check_web.mjs holds
- * it to by walking each ribbon's own boundary. */
+ * before a path is built. Being a prune, it must never refuse a point on the
+ * arc, which tools/check_web.mjs holds it to by walking each ribbon's
+ * boundary. */
 /** @param {Edge} e @param {number} t @returns {boolean} */
 export function near(e, t) {
   if (e.wide) return true;

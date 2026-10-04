@@ -70,17 +70,11 @@ TPL.innerHTML = `
     --_font:var(--disc-font,system-ui,sans-serif);
     --_mono:var(--disc-mono,ui-monospace,monospace);
     color:var(--_ink);background:var(--_ground)}
-  /* One line that scrolls rather than wrapping: a run folded to its ends is
-     already the short form, and a second line would take height off whatever
-     sits above it.
-
-     Every word and every chevron is an item of the row, and space-between
-     splits whatever the line has spare between each pair. Grouping the ends
-     into two items instead put all of it in the middle, and left the groups
-     shrinkable: a flex item shrinks below its content before its parent
-     scrolls, so the words overran the chevrons between them and the left end
-     read as a chain with no chevrons at all. Nothing here may shrink, which is
-     what the rule below says and what makes the overflow above a scroll.
+  /* One line that scrolls, since a second line would take height off whatever
+     sits above it. Every word and chevron is an item of the row, so
+     space-between spreads the spare width between every pair. Nothing may
+     shrink: a flex item shrinks below its content before its parent scrolls,
+     and the words overran the chevrons between them.
      (No backticks in here: this is inside a template literal.) */
   .run{display:flex;align-items:baseline;justify-content:space-between;gap:7px;
     font-family:var(--_mono);font-size:15px;line-height:1.7;min-height:1.7em;
@@ -234,13 +228,9 @@ class WordRun extends HTMLElement {
     if (cut.hidden) {
       const gap = document.createElement("span");
       gap.className = "gap";
-      // No ellipses: the chevrons on either side are what say the chain runs
-      // on through it, and an ellipsis inside them says it twice.
+      // No ellipsis: the chevrons either side already say the chain runs on
+      // through the fold, which without them reads as a break in the chain.
       gap.textContent = `${cut.hidden} more`;
-      // A chevron on either side of the elision: the words it stands for are
-      // steps like any other, so the chain has to hand over into it and out of
-      // it the way it does everywhere else. Without them the fold reads as a
-      // break in the chain rather than as part of it.
       this.#line.append(this.#sep(), gap, this.#sep());
       this.#steps(this.#run.length - cut.tail, this.#run.length, played);
     }

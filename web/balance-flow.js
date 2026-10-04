@@ -15,20 +15,18 @@
  * way to that by successive shortest paths, and each of those paths is a band
  * here, as wide as the words it discards.
  *
- * The balancing solve is the one `chain` already does — `trace` reads the paths
- * off it rather than running a second solve — so nothing drawn here is a
- * different answer from the one the disc prices play with. It is 0.46 ms on
- * animal against `chain`'s own 0.64, which is why there is no worker; and the
- * 144 augmentations it comes back with are laid out and drawn in one pass, so a
- * scrub is a redraw rather than a solve.
+ * `trace` reads the paths off the balancing solve `chain` already does, so
+ * nothing drawn here differs from the answer the disc prices play with. It
+ * takes 0.46 ms on animal, so there is no worker, and every augmentation comes
+ * back at once, so a scrub is a redraw with no second solve.
  *
  * Attributes: src, index-src (words-index.json, which turns the picker on),
  *             tree (the id of a <hypernym-disc>, whose node the picker then
  *             offers as a category; see disc-picker.js),
  *             group (hosts sharing it take the reader's category together),
  *             readout="off", fit
- * Properties: data, stats, step, frames. Methods: seek(k), play(), pause(),
- *             repaint().
+ * Properties: data, stats, step, frames, playing. Methods: seek(k), play(),
+ *             pause(), repaint().
  * Text: the picture is a role="img" with the run's figures, and a visually
  *       hidden list under it says what each letter still owes at the step
  *       shown. A step chosen with the keys, and the end of a run, are
@@ -38,7 +36,7 @@
  *                         settled, solveMs, drawMs}, after every draw and
  *                         after a solve with no pixels to draw into (drawMs 0)
  * Styling: --disc-ground --disc-panel --disc-ink --disc-muted --disc-accent
- *          --disc-sat --disc-val --disc-font --disc-mono
+ *          --disc-edge --disc-sat --disc-val --disc-font --disc-mono
  */
 import {
   ALPHA,
@@ -81,26 +79,18 @@ const SLOT_GAP = 0.012,
 const BANK_ALPHA = 0.22;
 // The band the readout names, against the ones already laid.
 const LIT = 0.95;
-/* And an edge around it, since an alpha has nothing to raise on a band that is
-   not a pixel tall. The element opens at the balanced step, and successive
-   shortest paths leave the smallest pushes for last, so the band lit on arrival
-   is the thinnest there is: 0.96 px on animal and 0.56 px on food against a
-   426 px span. The fill was never the trouble — the ink under it comes to 0.26
-   on animal and 0.38 on furniture, so 0.95 is three times its own ground, with
-   half a pixel to say it in. So the lit band's outline is stroked once the fill
-   is down, in the band's own ink at the alpha it was filled at, the last 5%
-   being worth less than a line of its own. In pixels rather than in units,
-   because what it carries is which band the readout means rather than how much
-   that band shipped, and the fill keeps every bit of that. */
+/* And an edge around it, since an alpha has nothing to raise on a band under a
+   pixel tall. The element opens at the balanced step, and successive shortest
+   paths leave the smallest pushes for last, so the band lit on arrival is the
+   thinnest there is (0.96 px on animal). The outline is stroked in the band's
+   own ink at its fill alpha. In pixels, since it marks which band the readout
+   means and the fill already says how much that band shipped. */
 const LIT_EDGE = 1.5;
 
-/* And the letters that band turns on, which `route` already puts a point at.
-   The bend is drawn; without a name beside it the reader can see the line double
-   back and has to count arcs along the readout's path line to say which letter
-   it turned on. At this share of the column labels' type, since a turn annotates
-   one step where a column label names a bank for the whole run and at one size
-   the two read as a third column. The gap is above the band's top edge, in units
-   of that type. */
+/* And the letters that band turns on, at the points `route` puts there, so the
+   reader need not count arcs along the readout's path line to name a bend. At
+   this share of the column labels' type, since at one size the two read as a
+   third column. The gap is above the band's top edge, in units of that type. */
 const TURN_PT = 0.8,
   TURN_GAP = 0.35;
 
@@ -116,9 +106,8 @@ function labelPx(w) {
    points sit on that leg's own midline. Two points is the plain sweep every band
    but the lit one draws; more than two is `route`'s line through the letters the
    path walked, where a leg running right to left is a step that recovered a
-   word. An `edge` strokes that outline once the fill is down, in the band's own
-   ink at the alpha it was filled at, which is the whole of how the lit band is
-   lit at the heights these bands come out at. */
+   word. An `edge` strokes that outline in the band's own ink once the fill is
+   down. */
 /** @param {CanvasRenderingContext2D} g
    @param {import("./balance-bank.js").Point[]} pts @param {number} h
    @param {number} [edge]
@@ -156,8 +145,8 @@ const RUN_MS = 9000,
   STEP_MAX = 160;
 /* Under prefers-reduced-motion, one fixed pace and a slow one, whatever the
    category: the picture changes at every step, and at 60 ms that is sixteen
-   changes a second across the whole figure. There is no tween to drop — each
-   step is drawn whole — so the pace is the motion. */
+   changes a second across the whole figure. Each step is drawn whole with no
+   tween to drop, so the pace is the motion. */
 const STEP_CALM = 500;
 
 const RESIZE_HOLD = 60;
@@ -172,9 +161,8 @@ TPL.innerHTML = `
     --_sat:var(--disc-sat,.55); --_val:var(--disc-val,.88);
     --_font:var(--disc-font,system-ui,sans-serif);
     --_mono:var(--disc-mono,ui-monospace,Menlo,monospace);
-    /* 3:1 or better against both the ground and the panel (WCAG 1.4.11): 5.4
-       and 5.0 on the dark defaults, 3.6 and 3.9 on the light ones. 38% came
-       out at 2.0 and 1.7, which left the scrub's track barely there. */
+    /* 3:1 or better against both the ground and the panel (WCAG 1.4.11): 3.6
+       at worst, on the light defaults. */
     --_edge:var(--disc-edge,color-mix(in srgb,var(--_muted) 85%,transparent));
     color:var(--_ink);font-family:var(--_font)}
   @media (prefers-color-scheme:light){
@@ -231,12 +219,11 @@ TPL.innerHTML = `
   .scrub:disabled::-webkit-slider-thumb{background:var(--_muted)}
   .scrub:disabled::-moz-range-thumb{background:var(--_muted)}
   .scrub:focus-visible{outline:2px solid var(--_accent);outline-offset:2px}
-  /* One tick a step whose path recovers a word. They come in runs rather than
-     singly — animal's 13 are 88 to 98 and 143 to 144 — and at 144 steps on a
-     500 px track a run is ticks 3.38 px apart, so it reads as a band, which is
-     what it is. In the ink colour rather than the muted one the readout draws
-     a reverse arrow in: the arrow is a reading of the path and these are a map
-     of where to look. */
+  /* One tick a step whose path recovers a word. They come in runs (animal's 13
+     are steps 88 to 98 and 143 to 144), ticks 3.38 px apart on a 500 px track,
+     so a run reads as a band, which is what it is. In the ink colour where the
+     readout's reverse arrow is muted: the arrow reads the path, and these map
+     where to look. */
   .marks{position:absolute;inset:0;pointer-events:none}
   .marks span{position:absolute;top:50%;width:2px;height:10px;margin-top:-5px;
     border-radius:1px;background:var(--_ink);transform:translateX(-50%)}
@@ -576,13 +563,11 @@ class BalanceFlow extends HTMLElement {
     this.#fitTimer = setTimeout(this.#resize, RESIZE_HOLD);
   }
 
-  /* More than a screen away, the canvas goes back. Nothing is held beside it —
-     the bands are drawn straight onto it and cost a fraction of a millisecond —
-     so this is the one canvas and nothing else. Playing stops with it, since a
-     run nobody can see is a timer spending frames on nothing.
-
-     Nothing is dropped before the first fit: an element that starts below the
-     fold never allocates rather than allocating and giving back. */
+  /* More than a screen away, the canvas goes back, and it is all there is to
+     give: the bands are drawn straight onto it. Playing stops with it, since a
+     run nobody can see is a timer spending frames on nothing. Nothing is
+     dropped before the first fit, so an element that starts below the fold
+     never allocates. */
   #sleep = () => {
     if (this.#asleep) return;
     this.#asleep = true;
@@ -655,9 +640,9 @@ class BalanceFlow extends HTMLElement {
     else this.play();
   };
 
-  /* A run stopping is said once, where it stopped. Not said where the stop is
-     on the way to something the reader will hear instead — a key's own step,
-     the scrub's value — or is not the reader's doing at all. */
+  /* A run stopping is said once, where it stopped. It is not said where the
+     reader hears something else instead (a key's own step, the scrub's value),
+     or where the stop is not the reader's doing. */
   /** @param {boolean} say @returns {void} */
   #halt(say) {
     if (!this.#timer) return;
@@ -758,12 +743,10 @@ class BalanceFlow extends HTMLElement {
 
     const drawn = bands(this.#frames, bank, this.#step);
     /* Only the band the readout names is routed through the letters its path
-       walked. 57 of animal's 144 paths take more than one arc, and zigzagging
-       all of them would put three crossings in the middle where there is now
-       one; the readout already speaks for the step it stands at alone, so the
-       working shows exactly where the line is pointing. The rest are the plain
-       sweep, and their two points are written in place rather than allocated
-       144 times a redraw. */
+       walked: 57 of animal's 144 paths take more than one arc, and routing all
+       of them would put three crossings in the middle where there is one. The
+       rest are the plain sweep, whose two points are rewritten in place rather
+       than allocated per band. */
     const plain = [
       { x: lx, y: 0, letter: 0 },
       { x: rx, y: 0, letter: 0 },
@@ -845,22 +828,14 @@ class BalanceFlow extends HTMLElement {
   }
 
   /* The letters the lit band's path turns on, named where it turns. Only the
-     interior points: the two ends open on their own slice of a slot rather than
-     at its centre, and the columns name them already.
-
-     Above the band rather than on the outside of each bend, so a glyph never
-     changes side and the rule is read once. There is room for it: adjacent turns
-     stand at least 59 px apart on the 355 px between the columns at a 682 px
-     width, and 118 px on animal and food, so a single glyph never meets its
-     neighbour however the line doubles back. In the band's own ink where the
-     columns are muted, so colour says which marks belong to the step the readout
-     names, over a halo in the ground, since the line crosses whatever bands the
-     picture already holds.
-
-     A letter that banks nowhere has no point on the line, so the picture can name
-     one letter fewer than the readout's path line does: 87 of the 1,504 interior
-     letters over the 37 categories, and none of animal's. Naming it would mean
-     inventing a height for a letter that owes nothing. */
+     interior points: the two ends open on their own slice of a slot, and the
+     columns name them already. Above the band rather than outside each bend, so
+     a glyph never changes side; adjacent turns stand at least 59 px apart at a
+     682 px width, so a glyph never meets its neighbour. In the band's own ink,
+     so colour ties the marks to the step the readout names, over a halo in the
+     ground, since the line crosses other bands. A letter that banks nowhere has
+     no point on the line, so the picture can name one letter fewer than the
+     readout's path line. */
   /** @param {CanvasRenderingContext2D} g
      @param {import("./balance-bank.js").Point[]} pts @param {number} px
      @param {string} ink @returns {void} */
@@ -1069,8 +1044,7 @@ class BalanceFlow extends HTMLElement {
 
   /** The letters the step walked, with the arcs between them: a forward arc
      discards one more word of its pair and a reverse one recovers a word an
-     earlier step had discarded, which is what lets a later path undo part of an
-     earlier one at no more than it costs.
+     earlier step had discarded.
      @param {import("./word-longest.js").Augmentation} f @returns {string} */
   #path(f) {
     const seq = walk(f.steps);

@@ -36,8 +36,8 @@ header .live::before{content:"";width:7px;height:7px;border-radius:50%;
   background:var(--faint);transition:background .2s}
 header .live.on::before{background:var(--live)}
 
-/* A column, so the run sits under the disc and takes its height off it rather
-   than out of the page: the disc is what has to stay square. */
+/* A column, so the run sits under the disc and takes its height off the
+   disc's box, and the page still never scrolls. */
 main{flex:1;min-height:0;display:flex;flex-direction:column}
 word-disc{
   width:100%;flex:1;min-height:0;
@@ -46,8 +46,8 @@ word-disc{
   --disc-sat:var(--sat); --disc-val:var(--val);
   --disc-font:var(--body); --disc-mono:var(--data);
 }
-/* Its own tokens, the way each element on embed.html carries its own: a host
-   lifting the pair out takes two rules rather than one and a dependency. */
+/* Its own tokens, as each element on embed.html carries its own, so a host
+   lifting the pair out takes two rules with no dependency between them. */
 word-run{
   width:100%;padding-top:8px;
   --disc-ground:var(--ground); --disc-ink:var(--ink); --disc-muted:var(--muted);
@@ -74,12 +74,11 @@ word-run{
 <script type="module">
 // The picker is the element's, which is what index-src turns on: it reads the
 // 37 categories out of the index and finds each one's words beside it. A page
-// embedding a single category names src alone and gets no picker, which is
-// what embed.html does, and a page that would rather own the control can still
-// leave index-src off and write src itself.
+// that would own the control leaves index-src off and writes src itself, as
+// embed.html does.
 import "/word-disc.js";
-// The run follows the disc off the events it already emits, so the two need
-// nothing here between them beyond both being loaded.
+// The run follows the disc off the events it already emits, so the page wires
+// nothing between them.
 import "/word-run.js";
 </script>
 </body>

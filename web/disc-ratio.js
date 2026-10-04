@@ -1,13 +1,11 @@
 /* The backing-store ratio a canvas of a given CSS box is drawn at.
  *
- * No DOM here — the ratio is passed in — so tools/check_web.mjs can hold this
- * to the rule rather than to whatever screen it happens to run on.
+ * No DOM here: the ratio is passed in, so tools/check_web.mjs can test the rule
+ * on any screen.
  *
- * The budget bounds area rather than fixing a factor. Browser zoom multiplies
- * devicePixelRatio, so a fixed cap drew the disc at a fraction of the
- * resolution the screen was showing it at; bounding area costs zoom almost
- * nothing, since a page laid out in CSS pixels gets proportionally fewer of
- * them as the ratio rises and the two changes nearly cancel.
+ * The budget caps area, never the ratio. Browser zoom multiplies
+ * devicePixelRatio, so a capped ratio drew a zoomed disc blurred; a zoomed page
+ * also has proportionally fewer CSS pixels, so an area cap costs zoom little.
  */
 
 /* Device pixels one canvas may hold. Half the 16,777,216 Safari has held a

@@ -17,14 +17,14 @@
       "x-taplo": {
         "docs": {
           "enumValues": [
-            "4856 faint curves read as light against a dark ground, which is why it is the default.",
+            "Thousands of faint curves read best as light on a dark ground, which is why it is the default.",
             "The same figure on a pale ground, with the letter wheel's saturation up 0.07 and its value down 0.28."
           ]
         }
       }
     },
     "geometry": {
-      "description": "Where the disc puts things. The good value for each depends on the category: 895 animals and 60 flowers do not want the same label size or the same curve pull.",
+      "description": "Where the disc puts things. The good value for each depends on the category: 1,582 animals and 83 flowers do not want the same label size or the same curve pull.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -47,13 +47,13 @@
           "exclusiveMinimum": 0
         },
         "label_pt": {
-          "description": "Label size in points. It also sets the canvas, because a label's length is fixed in inches by the font and only a wider figure buys it room along the ring, so raising this grows the figure rather than crowding it.",
+          "description": "Label size in points. It also sets the canvas, because a label's length is fixed in inches by the font and only a wider figure buys it room along the ring, so raising this grows the figure. Past the 30-inch cap the type shrinks instead.",
           "type": "number",
           "default": 6.8,
           "exclusiveMinimum": 0
         },
         "leading": {
-          "description": "Clear space each label demands along the ring, in multiples of its own size. It decides when two neighbours count as touching, to the same effect.",
+          "description": "Clear space each label demands along the ring, in multiples of its own size. It decides when two neighbours count as touching, so raising it also grows the figure.",
           "type": "number",
           "default": 1.22,
           "exclusiveMinimum": 0
@@ -79,51 +79,51 @@
       }
     },
     "selection": {
-      "description": "Which words a category yields, and how many of them the disc draws. Every command reads this table, not just build, so the count categories prints is the list stats analyses and build draws from. Each setting has a flag that overrides it for one run.",
+      "description": "Which words a category yields, and how many of them the disc draws. Every command reads this table, so the count categories prints is the list stats analyses and build draws from. Each setting has a flag that overrides it for one run.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "min_zipf": {
-          "description": "Words rarer than this on wordfreq's Zipf scale are dropped, where 2.0 is about one occurrence per ten million words. Zero, the default, keeps every word wordfreq knows at all. A word wordfreq scores at exactly zero is dropped whatever this says, as the line between WordNet's vocabulary and its taxonomy. `build --min-zipf` overrides this.",
+          "description": "Words rarer than this on wordfreq's Zipf scale are dropped, where 2.0 is about one occurrence per ten million words. Zero, the default, keeps every word wordfreq knows. A word wordfreq scores at exactly zero is dropped whatever this says, as the line between WordNet's vocabulary and its taxonomy. `--min-zipf` overrides this.",
           "type": "number",
           "default": 0.0,
           "minimum": 0,
           "maximum": 8
         },
         "min_dominance": {
-          "description": "For a word WordNet has sense-tagged counts for, the share of its noun uses that must fall inside the category. It is what keeps a sense of \"world\" out of the animals. Raise it to tighten a category, rather than adding a stop-list. `build --min-dominance` overrides this.",
+          "description": "For a word WordNet has sense-tagged counts for, the share of its noun uses that must fall inside the category. It is what keeps a sense of \"world\" out of the animals. Raise it to tighten a category; there is no stop-list. `--min-dominance` overrides this.",
           "type": "number",
           "default": 0.2,
           "minimum": 0,
           "maximum": 1
         },
         "max_rank": {
-          "description": "For a word with no sense-tagged counts, how far down WordNet's sense list the category may sit. WordNet lists senses commonest first, so a category sense buried at position seven is not the everyday meaning. `build --max-rank` overrides this.",
+          "description": "For a word with no sense-tagged counts, how far down WordNet's sense list the category may sit. WordNet lists senses commonest first, so a category sense buried at position seven is not the everyday meaning. `--max-rank` overrides this.",
           "type": "integer",
           "default": 2,
           "minimum": 0
         },
         "min_depth": {
-          "description": "Hops below the category root a word must sit. One, the default, drops the root's own lemmas, which are the category's name: \"animal\" is not a playable answer in a game of animals. `build --min-depth` overrides this.",
+          "description": "Hops below the category root a word must sit. One, the default, drops the root's own lemmas, which are the category's name: \"animal\" is not a playable answer in a game of animals. `--min-depth` overrides this.",
           "type": "integer",
           "default": 1,
           "minimum": 0
         },
         "target": {
-          "description": "A category yielding fewer than this many words relaxes min_zipf down its own frequency order until it has them, stopping at zipf_floor. It is inert at the default min_zipf, which has nothing below it to relax to, and it is what stops a raised min_zipf gutting the rare categories. `build --target` overrides this.",
+          "description": "A category yielding fewer than this many words relaxes min_zipf down its own frequency order until it has them, stopping at zipf_floor. It is inert at the default min_zipf, which has nothing below it to relax to, and it is what stops a raised min_zipf gutting the rare categories. `--target` overrides this.",
           "type": "integer",
           "default": 60,
           "minimum": 0
         },
         "zipf_floor": {
-          "description": "However few words a category has, the sliding relaxation never goes below this. Zero, the default, means any word wordfreq knows at all. `build --zipf-floor` overrides this.",
+          "description": "However few words a category has, the sliding relaxation never goes below this. Zero, the default, means any word wordfreq knows. `--zipf-floor` overrides this.",
           "type": "number",
           "default": 0.0,
           "minimum": 0,
           "maximum": 8
         },
         "multiword": {
-          "description": "Whether an entry like \"polar bear\" counts as a word, chained on its outer letters. Plant names are longer than animal names as a class, so this decides far more for some categories than for others. `build --multiword` and `--no-multiword` override this.",
+          "description": "Whether an entry like \"polar bear\" counts as a word, chained on its outer letters. Plant names are longer than animal names as a class, so this decides far more for some categories than for others. `--multiword` and `--no-multiword` override this.",
           "type": "boolean",
           "default": false
         },
@@ -136,7 +136,7 @@
       }
     },
     "palette": {
-      "description": "The wheel that maps 26 letters to 26 hues. Leave the whole table out and the theme keeps its own. Name a preset, or give the numbers for a single arc, and never both: a preset can hold two arcs, as duotone does, so there is no honest way to layer one arc's worth of keys over it.",
+      "description": "The wheel that maps 26 letters to 26 hues. Leave the whole table out and the theme keeps its own. Name a preset, or give the numbers for a single arc, never both: a preset can hold two arcs, as duotone does, so one arc's keys have nothing to layer over.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -156,14 +156,14 @@
                 "Two short arcs, warm for A-M and cool for N-Z, so every curve crossing between the halves of the alphabet reads as a crossing.",
                 "A quarter turn through the reds and oranges.",
                 "The full turn with A and Z separated, and the luma spread cut from 1.86x to 1.38x.",
-                "The full turn the tool has always drawn.",
+                "The full turn, which both themes use by default.",
                 "A quarter turn through the greens and blues."
               ]
             }
           }
         },
         "hue_start": {
-          "description": "Where the letters start on the colour circle. Zero is meaningful here: it is the top of the circle, which is where the wheel has always started.",
+          "description": "Where the letters start on the colour circle. Zero is meaningful here: it is the top of the circle.",
           "type": "number",
           "default": 0.0,
           "minimum": 0,
@@ -177,7 +177,7 @@
           "maximum": 1
         },
         "saturation": {
-          "description": "Fixed across the wheel, so all 26 letters stay equally visible against the ground.",
+          "description": "Fixed across the wheel, so no stretch of letters fades into the ground.",
           "type": "number",
           "default": 0.55,
           "exclusiveMinimum": 0,

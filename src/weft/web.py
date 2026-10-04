@@ -1,8 +1,7 @@
 """Interactive pages, built with pyvis over vis.js.
 
 The static figures answer "what shape is this category". These answer "what can
-I play next", which needs a pointer: hovering a node lights its edges, and that
-is the question the game actually asks.
+I play next", which needs a pointer: hovering a node lights its edges.
 """
 
 from __future__ import annotations

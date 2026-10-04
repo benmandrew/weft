@@ -1,7 +1,8 @@
 """Serve `web/` with a file watcher that reloads the browser on save.
 
 `/` is the nested-arc harness, `/words.html` the word chain one,
-`/letters.html` the letter graph and `/balance.html` the balancing flow.
+`/letters.html` the letter graph, `/balance.html` the balancing flow and
+`/embed.html` all four.
 
 `web/` is served at `/` and `out/` at `/out/`, so a page reaches the exported
 tree at `/out/wordnet-tree.json` and a category at `/out/words-animal.json`
@@ -90,9 +91,9 @@ CLIENT = """
 class Watcher:
     """Modification times, polled.
 
-    Polling rather than an OS watch API: the tree is a few dozen files, a scan
-    costs under a millisecond, and it needs no dependency outside the standard
-    library, which is the whole reason this is a script and not a package.
+    Polling, since the tree is a few dozen files, a scan costs under a
+    millisecond, and an OS watch API would need a dependency outside the
+    standard library.
     """
 
     def __init__(self, roots: list[Path], interval: float) -> None:
@@ -273,11 +274,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 class Server(http.server.ThreadingHTTPServer):
     """Quiet about a browser hanging up, loud about everything else.
 
-    A reload closes every socket the old page held, and a keep-alive one is
-    usually mid-read when that happens. The reset surfaces in
-    `handle_one_request`, outside any handler code here, so socketserver would
-    print a whole traceback for the normal end of a connection, into the one
-    terminal a real error has to be legible in.
+    A reload closes every socket the old page held, often mid-read. The reset
+    surfaces in `handle_one_request`, outside any handler code here, so
+    socketserver would print a traceback for the normal end of a connection.
     """
 
     def handle_error(self, request: Any, client_address: Any) -> None:

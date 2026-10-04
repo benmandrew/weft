@@ -16,7 +16,7 @@
  * same hues, runs and ramp: `tints`, then `merge`, then `ramp` and `rampStep`
  * for each piece's value.
  */
-// TAU is re-exported so this module's import sites stay as they were.
+// TAU is re-exported for callers that import it from here.
 import { hsv, TAU } from "./disc-colour.js";
 export { TAU };
 // Below one pixel at its outer edge a wedge cannot be told from its neighbour.
@@ -30,8 +30,8 @@ const RAMP_FLOOR = 0.62;
 // down both its edges would cover most of it.
 const HAIR_RAD = 0.012;
 
-/** Each node's hue, as a turn and as a unit vector. Above hue-depth a node
-   takes its own angle; below it inherits, so each branch reads as one colour
+/** Each node's hue, as a turn and as a unit vector. Down to hue-depth a node
+   takes its own angle; deeper it inherits, so each branch reads as one colour
    family. Merged pieces average their members' hues, and hue is an angle, so
    the vectors are what get summed. Radius plays no part, so these survive a
    resize and a zoom.
@@ -82,12 +82,12 @@ export function rampStep(count, peak) {
 
 /** Adjacent wedges thinner than a pixel are one shape to the rasteriser,
    which below about 0.1 px draws them as nothing at all, so they are drawn as
-   one and take the mean of their hues. Blending rather than matching on
-   colour is what lets a run merge above hue-depth 2, where every node takes
-   its own angle. A gap between subtrees breaks every run, which keeps the
-   fringe reading as many nodes. `dense` then cuts a run at pixel boundaries
-   and each piece keeps its own count and its own blend. Runs are found off
-   `byDepth`, already sorted by start angle.
+   one and take the mean of their hues. Matching on colour instead would merge
+   nothing above hue-depth 2, where every node takes its own angle. A gap
+   between subtrees breaks every run, which keeps the fringe reading as many
+   nodes. `dense` then cuts a run at pixel boundaries and each piece keeps its
+   own count and its own blend. Runs are found off `byDepth`, already sorted by
+   start angle.
 
    `hueQ` is how many slices the hue is rounded to, and `hair` whether a whole
    wedge gets a hairline, given its angle in the view and its outer radius; by
@@ -189,8 +189,8 @@ export function merge(t, tn, o) {
 }
 
 /** The tree, flat. Every parent's index is below all of its children's, which
-   is what lets `#retint` and `#remerge` be forward loops rather than
-   traversals. `byDepth[d]` is that ring sorted by start angle.
+   is what lets `tints` be one forward loop. `byDepth[d]` is that ring sorted
+   by start angle.
    @typedef {object} Tree
    @property {Int32Array} par
    @property {Int16Array} depth
@@ -338,10 +338,9 @@ export class Painter {
     this.#tintKey++;
   }
 
-  /* Hues are rounded to a slice one pixel wide at the fringe. That is the same
-     threshold that decides two wedges cannot be told apart: neighbouring slices
-     differ by 0.16°, and a wedge wide enough to read as its own arc cannot
-     collide with its neighbour at that step. */
+  /* Hues are rounded to a slice one pixel wide at the fringe, the same
+     threshold that decides two wedges cannot be told apart, so a wedge wide
+     enough to read as its own arc cannot share a slice with its neighbour. */
   /** @param {number} i @returns {number} */
   #hue(i) {
     return quantise(this.#tint[i], this.#hueQ);
@@ -443,7 +442,7 @@ export class Painter {
       this.#a1[i] <= this.#a1[this.#root] + 1e-9
     );
   }
-  /* Zooming is a change of angular scale, not a re-layout: node k's span is
+  /* Zooming is a change of angular scale with no re-layout: the root's span is
      stretched to a full turn and its depth becomes ring zero. */
   /** @param {number} i @returns {[number, number, number, number]} start and
      end angles, then the inner and outer radius */

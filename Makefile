@@ -7,8 +7,8 @@
 
 OUT ?= out
 
-# The config file build reads; CONFIG= names another. It is both the --config
-# argument and a prerequisite, so editing the file redraws.
+# The config file the builds and exports read; CONFIG= names another. It is
+# both the --config argument and a prerequisite, so editing the file redraws.
 CONFIG ?= $(wildcard weft.toml)
 BUILD ?= python -m weft build $(if $(CONFIG),--config $(CONFIG))
 
@@ -24,8 +24,8 @@ SOURCES := $(wildcard src/weft/*.py) $(CONFIG)
 # The three files <hypernym-disc> reads. Nothing in `all` depends on any of it.
 DATA := $(addprefix $(OUT)/,wordnet-tree.json wordnet-names.txt wordnet-glosses.txt)
 
-# One file per category for <word-disc>, plus the index a page picks from. Flat
-# names rather than a directory, since web-dist stages everything side by side.
+# One file per category for the word elements, plus the index a page picks
+# from. Flat names, since web-dist stages everything side by side.
 WORDS := $(patsubst %,$(OUT)/words-%.json,$(CATEGORIES)) $(OUT)/words-index.json
 
 # The table word-source.js derives any synset's words from, for a page whose

@@ -1,9 +1,8 @@
 /* The turn, HSV as canvas wants a colour, and the chord cubic.
  *
- * What the discs share rather than what any one of them owns. All three read
- * the same letter wheel — 26 hues over the circle at the saturation and value
- * the host hands in as --disc-sat and --disc-val — so the conversion sits here
- * rather than in any one pipeline.
+ * Shared by every disc. The elements colour from hues at the saturation and
+ * value the host hands in as --disc-sat and --disc-val, so the conversion sits
+ * here.
  */
 export const TAU = Math.PI * 2;
 
@@ -27,8 +26,7 @@ export function bow(g, cx, cy, x0, y0, x1, y1, pull) {
   );
 }
 
-/** HSV as three bytes, which is what a file wanting some other notation than
-   the canvas's formats from.
+/** HSV as three bytes, for a caller that formats a colour its own way.
    @type {(h: number, s: number, v: number) => [number, number, number]} */
 export const hsvBytes = (h, s, v) => {
   const i = Math.floor(h * 6) % 6,
