@@ -162,9 +162,10 @@ def summary(words: list[Word], opening: str | None = None) -> dict[str, Any]:
 #
 # The relaxation says nothing about whether the arcs it keeps form one connected
 # run, so it answers with an upper bound. Where the arcs do come back connected
-# the bound is attained and the chain is provably the longest there is; where
-# they do not, the largest component is kept and the rest re-solved, and the gap
-# stays reported rather than hidden.
+# the bound is attained and the chain is provably the longest there is. Where
+# they do not, words crossing to the stranded letters are forced back one at a
+# time while that grows the component, then the largest component is kept and
+# the rest re-solved, and the gap stays reported rather than hidden.
 #
 # web/word-longest.js is this written a second time, so the browser and the
 # report agree on how long a category runs. A change here has to be made there
@@ -499,6 +500,7 @@ def _solve_on(m: list[int], start: int) -> _Run | None:
     bound = total - candidates[0][0]
 
     fragment: _Run | None = None
+    split: list[tuple[int, int, list[int], _Held]] = []
     for discards, s, t in candidates:
         # Sorted by discards, so no later candidate can keep more than this
         # one. It also decides which component the next round runs on, and a
@@ -512,32 +514,123 @@ def _solve_on(m: list[int], start: int) -> _Run | None:
             _walk_back(res, paths[t], y, s, t)
         x = [m[i] - y[i] for i in range(_CELLS)]
 
-        find, touched = _components(x)
-        if s >= 0:
-            anchor = s
-        elif start >= 0:
-            anchor = start  # the circuit, rotated to open where it was asked to
-        else:
-            anchor = next((v for v in range(26) if touched[v]), -1)
-        if anchor < 0 or not touched[anchor]:
+        held = _held(x, s, start)
+        if held is None:
             continue
-        root = find(anchor)
-        keep = [touched[v] and find(v) == root for v in range(26)]
-        if all(keep[v] for v in range(26) if touched[v]):
-            return _Run(x, anchor, total - discards, bound, True, keep)
+        if held.whole:
+            return _Run(x, held.anchor, held.kept, bound, True, held.keep)
+        split.append((discards, s, x, held))
+        if fragment is None or held.kept > fragment.words:
+            fragment = _fragment(x, held, bound)
 
-        kept_x = [0] * _CELLS
-        kept = 0
-        for u in range(26):
-            if not keep[u]:
-                continue
-            for v in range(26):
-                if keep[v]:
-                    kept_x[u * 26 + v] = x[u * 26 + v]
-                    kept += x[u * 26 + v]
-        if fragment is None or kept > fragment.words:
-            fragment = _Run(kept_x, anchor, kept, bound, False, keep)
+    # Joining only once the scan has found nothing whole, so a candidate that
+    # is whole as it stands ends the scan before any join is spent.
+    for discards, s, x, held in split:
+        if fragment is not None and total - discards <= fragment.words:
+            break
+        x, held = _join(m, x, held, s, start)
+        # A join can cost words, so only one that kept everything the candidate
+        # priced has reached the bound.
+        if held.whole and held.kept == total - discards:
+            return _Run(x, held.anchor, held.kept, bound, True, held.keep)
+        if fragment is None or held.kept > fragment.words:
+            fragment = _fragment(x, held, bound)
     return fragment
+
+
+def _fragment(x: list[int], held: _Held, bound: int) -> _Run:
+    kept_x = [x[i] if held.keep[i // 26] and held.keep[i % 26] else 0 for i in range(_CELLS)]
+    return _Run(kept_x, held.anchor, held.kept, bound, False, held.keep)
+
+
+@dataclass(frozen=True)
+class _Held:
+    """The component a trail over `x` can walk: the letter it opens on, the
+    letters in it, the words among them, whether it is all of `x`, and the
+    letters `x` keeps words on outside it."""
+
+    anchor: int
+    keep: list[bool]
+    kept: int
+    whole: bool
+    stranded: list[bool]
+
+
+def _held(x: list[int], s: int, start: int) -> _Held | None:
+    find, touched = _components(x)
+    if s >= 0:
+        anchor = s
+    elif start >= 0:
+        anchor = start  # the circuit, rotated to open where it was asked to
+    else:
+        # The circuit opens anywhere, so on its largest component, the lowest
+        # letter breaking a tie. Taking the lowest letter outright kept a lone
+        # loop on a over a circuit through b and c.
+        size = [0] * 26
+        for i in range(_CELLS):
+            if x[i]:
+                size[find(i // 26)] += x[i]
+        anchor = -1
+        for v in range(26):
+            if touched[v] and (anchor < 0 or size[find(v)] > size[find(anchor)]):
+                anchor = v
+    if anchor < 0 or not touched[anchor]:
+        return None
+    root = find(anchor)
+    keep = [touched[v] and find(v) == root for v in range(26)]
+    kept = sum(x[i] for i in range(_CELLS) if keep[i // 26] and keep[i % 26])
+    whole = all(keep[v] for v in range(26) if touched[v])
+    stranded = [touched[v] and not keep[v] for v in range(26)]
+    return _Held(anchor, keep, kept, whole, stranded)
+
+
+def _join(m: list[int], x: list[int], held: _Held, s: int, start: int) -> tuple[list[int], _Held]:
+    """Force discarded words that cross out of the held component back in, one
+    at a time, while that grows it.
+
+    A loop never enters the flow, so the flow keeps every loop whatever it
+    discards, and can strand one on a letter it cut off at no cost to itself.
+    fabric kept aba and alpaca on an a no other kept word reached, and the
+    retry on the letters reached dropped a for good: 61 words, where organza in
+    and acetate out make 62.
+
+    `x` is an optimal flow, so holding one more word of a pair costs exactly the
+    cheapest residual cycle through that word's recovery, which one Dijkstra
+    prices. A cycle costing as much as the stranded letters hold cannot grow the
+    component and is never walked. A fresh solve per word tried took a
+    constrained solve on language from 0.5 ms to 18 ms in the browser, on a
+    loop it could never afford to join.
+    """
+    cap = list(m)
+    y = [m[i] - x[i] for i in range(_CELLS)]
+    while not held.whole:
+        res = _residual(cap, y)
+        pi = _potentials(res)
+        room = sum(x) - held.kept  # what the stranded letters hold
+        trees: dict[int, tuple[list[int], list[int]]] = {}
+        best: tuple[list[int], _Held, list[int], int] | None = None
+        for cell in range(_CELLS):
+            u, v = divmod(cell, 26)
+            crosses = (held.keep[u] and held.stranded[v]) or (held.stranded[u] and held.keep[v])
+            if not y[cell] or not crosses:
+                continue
+            if u not in trees:
+                trees[u] = _dijkstra(res, pi, u)
+            dist, parent = trees[u]
+            if dist[v] >= _INF or dist[v] - pi[u] + pi[v] - 1 >= room:
+                continue
+            ty = list(y)
+            ty[cell] -= 1
+            _walk_back(res, parent, ty, v, u)
+            tx = [m[i] - ty[i] for i in range(_CELLS)]
+            th = _held(tx, s, start)
+            if th is not None and th.kept > (held if best is None else best[1]).kept:
+                best = (tx, th, ty, cell)
+        if best is None:
+            break
+        x, held, y, cell = best
+        cap[cell] -= 1
+    return x, held
 
 
 def _solve_matrix(m: list[int], start: int = -1) -> tuple[list[int], int]:

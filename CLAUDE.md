@@ -414,14 +414,26 @@ Of the disc rules, `ratio`, the sleep, `fit`, the fonts refit and
 
 - `graph.longest_chain` and `web/word-longest.js`'s `chain` are one algorithm
   written twice, so a change to either is a change to both.
-  `tools/chains.json` holds them together: 17 frozen cases, each with the chain
+  `tools/chains.json` holds them together: 22 frozen cases, each with the chain
   it must produce word for word, its bound and whether it certified, plus an
   optional `opening` and `like`. `tools/check_chain.py` runs the Python half and
   `check_web.mjs` the JavaScript. The word lists are a snapshot; do not
   regenerate them on a corpus change.
+- A frozen case records what the solver answered, so it cannot catch a short
+  chain. The file's `oracle` can: both halves draw the same small lists from
+  one seed and one 31-bit generator and hold each chain to exhaustive search.
+  It was added after the solver had been short on fabric and 237 openings
+  unseen. Keep the two generators identical, and keep the loop bias, since a
+  loop is what the flow strands.
 - The model is in docs/notes.md: a min-cost transshipment on 26 letters, one
   arc per letter pair, Dijkstra pricing every opening and ending, union-find
   certifying the answer or reporting the gap.
+- A loop never enters the flow, so the flow can strand one on a letter it cut
+  off for free. `_join` / `join` forces crossing words back, priced as residual
+  cycles off the candidate's own optimal flow. Do not go back to a fresh flow
+  solve per word tried: it took language's constrained solve from 0.5 ms to
+  18 ms. Joins run only after the scan found nothing whole, and a join that
+  loses a word is a fragment, never a certificate.
 - The candidate scan's early break is load-bearing: it decides which component
   the next round runs on, and removing it changes answers. Both halves stop on
   the same test. Candidates sort on the whole tuple, since neither language
@@ -590,7 +602,7 @@ CLI is not in the flake.
     tools/check_web.mjs            loads and drives web/ as a browser does
     tools/check_words.mjs          holds the table to the 37 category files
     tools/check_chain.py           the Python half of the chain cross-check
-    tools/chains.json              the 17 frozen cases both halves answer
+    tools/chains.json              the 22 frozen cases and the oracle's draw
 
 ## Style
 

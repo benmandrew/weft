@@ -10,9 +10,10 @@
  *
  * The relaxation says nothing about whether the arcs it keeps form one connected
  * run, so it answers with an upper bound. Where they do come back connected the
- * bound is attained and the chain is provably the longest there is; where they
- * do not, the largest component is kept and the rest solved again, and the gap
- * is reported rather than hidden.
+ * bound is attained and the chain is provably the longest there is. Where they
+ * do not, words crossing to the stranded letters are forced back one at a time
+ * while that grows the component, then the largest component is kept and the
+ * rest solved again, and the gap is reported rather than hidden.
  *
  * graph.py's `longest_chain` is this written a second time, so the browser and
  * the report agree on how far a category runs. A change here has to be made
@@ -463,6 +464,8 @@ function solveOn(m, start) {
 
   /** @type {Run | null} */
   let fragment = null;
+  /** @type {{ discards: number, s: number, x: Int32Array, hold: Held }[]} */
+  const split = [];
   for (const [discards, s, t] of candidates) {
     // Sorted by discards, so no later candidate can keep more than this one.
     // It also decides which component tier 2 runs on, and a smaller fragment
@@ -474,36 +477,147 @@ function solveOn(m, start) {
     const x = new Int32Array(CELLS);
     for (let i = 0; i < CELLS; i++) x[i] = m[i] - y[i];
 
-    const { find, touched } = components(x);
-    let anchor = s;
-    // The circuit, rotated to open where it was asked to.
-    if (anchor < 0 && start >= 0) anchor = start;
-    if (anchor < 0) for (let v = 0; v < LETTERS && anchor < 0; v++) if (touched[v]) anchor = v;
-    if (anchor < 0 || !touched[anchor]) continue;
-    const root = find(anchor);
-    const keep = new Uint8Array(LETTERS);
-    let split = false;
-    for (let v = 0; v < LETTERS; v++) {
-      if (!touched[v]) continue;
-      if (find(v) === root) keep[v] = 1;
-      else split = true;
-    }
-    if (!split) return { x, start: anchor, words: total - discards, bound, certified: true, keep };
+    const hold = held(x, s, start);
+    if (!hold) continue;
+    if (hold.whole)
+      return { x, start: hold.anchor, words: hold.kept, bound, certified: true, keep: hold.keep };
+    split.push({ discards, s, x, hold });
+    if (!fragment || hold.kept > fragment.words) fragment = piece(x, hold, bound);
+  }
 
-    const kept = new Int32Array(CELLS);
-    let held = 0;
-    for (let u = 0; u < LETTERS; u++) {
-      if (!keep[u]) continue;
-      for (let v = 0; v < LETTERS; v++)
-        if (keep[v]) {
-          kept[u * LETTERS + v] = x[u * LETTERS + v];
-          held += x[u * LETTERS + v];
-        }
-    }
-    if (!fragment || held > fragment.words)
-      fragment = { x: kept, start: anchor, words: held, bound, certified: false, keep };
+  // Joining only once the scan has found nothing whole, so a candidate that is
+  // whole as it stands ends the scan before any join is spent.
+  for (const { discards, s, x, hold } of split) {
+    if (fragment && total - discards <= fragment.words) break;
+    const joined = join(m, x, hold, s, start);
+    // A join can cost words, so only one that kept everything the candidate
+    // priced has reached the bound.
+    if (joined.hold.whole && joined.hold.kept === total - discards)
+      return {
+        x: joined.x,
+        start: joined.hold.anchor,
+        words: joined.hold.kept,
+        bound,
+        certified: true,
+        keep: joined.hold.keep,
+      };
+    if (!fragment || joined.hold.kept > fragment.words)
+      fragment = piece(joined.x, joined.hold, bound);
   }
   return fragment;
+}
+
+/** The held component of `x` alone, as a run that did not reach its bound.
+   @param {Int32Array} x @param {Held} hold @param {number} bound @returns {Run} */
+function piece(x, hold, bound) {
+  const within = new Int32Array(CELLS);
+  for (let i = 0; i < CELLS; i++)
+    if (hold.keep[(i / LETTERS) | 0] && hold.keep[i % LETTERS]) within[i] = x[i];
+  return {
+    x: within,
+    start: hold.anchor,
+    words: hold.kept,
+    bound,
+    certified: false,
+    keep: hold.keep,
+  };
+}
+
+/** The component a trail over `x` can walk: the letter it opens on, the letters
+   in it, the words among them, whether it is all of `x`, and the letters `x`
+   keeps words on outside it.
+   @typedef {object} Held
+   @property {number} anchor
+   @property {Uint8Array} keep
+   @property {number} kept
+   @property {boolean} whole
+   @property {Uint8Array} stranded */
+
+/** @param {Int32Array} x @param {number} s @param {number} start
+   @returns {Held | null} */
+function held(x, s, start) {
+  const { find, touched } = components(x);
+  let anchor = s;
+  // The circuit, rotated to open where it was asked to.
+  if (anchor < 0 && start >= 0) anchor = start;
+  if (anchor < 0) {
+    // The circuit opens anywhere, so on its largest component, the lowest
+    // letter breaking a tie. Taking the lowest letter outright kept a lone loop
+    // on a over a circuit through b and c.
+    const size = new Int32Array(LETTERS);
+    for (let i = 0; i < CELLS; i++) if (x[i]) size[find((i / LETTERS) | 0)] += x[i];
+    for (let v = 0; v < LETTERS; v++)
+      if (touched[v] && (anchor < 0 || size[find(v)] > size[find(anchor)])) anchor = v;
+  }
+  if (anchor < 0 || !touched[anchor]) return null;
+  const root = find(anchor);
+  const keep = new Uint8Array(LETTERS),
+    stranded = new Uint8Array(LETTERS);
+  let whole = true;
+  for (let v = 0; v < LETTERS; v++) {
+    if (!touched[v]) continue;
+    if (find(v) === root) keep[v] = 1;
+    else {
+      stranded[v] = 1;
+      whole = false;
+    }
+  }
+  let kept = 0;
+  for (let i = 0; i < CELLS; i++) if (keep[(i / LETTERS) | 0] && keep[i % LETTERS]) kept += x[i];
+  return { anchor, keep, kept, whole, stranded };
+}
+
+/** Force discarded words that cross out of the held component back in, one at
+   a time, while that grows it.
+   A loop never enters the flow, so the flow keeps every loop whatever it
+   discards, and can strand one on a letter it cut off at no cost to itself.
+   fabric kept aba and alpaca on an a no other kept word reached, and the retry
+   on the letters reached dropped a for good: 61 words, where organza in and
+   acetate out make 62.
+   `x` is an optimal flow, so holding one more word of a pair costs exactly the
+   cheapest residual cycle through that word's recovery, which one Dijkstra
+   prices. A cycle costing as much as the stranded letters hold cannot grow the
+   component and is never walked. A fresh solve per word tried took a
+   constrained solve on language from 0.5 ms to 18 ms, on a loop it could never
+   afford to join.
+   @param {Int32Array} m @param {Int32Array} x @param {Held} hold
+   @param {number} s @param {number} start
+   @returns {{ x: Int32Array, hold: Held }} */
+function join(m, x, hold, s, start) {
+  const cap = Int32Array.from(m);
+  /** @type {Int32Array} */
+  let y = new Int32Array(CELLS);
+  for (let i = 0; i < CELLS; i++) y[i] = m[i] - x[i];
+  while (!hold.whole) {
+    const res = residual(cap, y);
+    const pi = potentials(res);
+    let room = -hold.kept; // what the stranded letters hold
+    for (let i = 0; i < CELLS; i++) room += x[i];
+    /** @type {({ dist: Int32Array, parent: Int32Array } | undefined)[]} */
+    const trees = [];
+    /** @type {{ x: Int32Array, hold: Held, y: Int32Array, cell: number } | null} */
+    let best = null;
+    for (let cell = 0; cell < CELLS; cell++) {
+      const u = (cell / LETTERS) | 0,
+        v = cell % LETTERS;
+      if (!y[cell] || !((hold.keep[u] && hold.stranded[v]) || (hold.stranded[u] && hold.keep[v])))
+        continue;
+      if (!trees[u]) trees[u] = dijkstra(res, pi, u);
+      const tree = trees[u];
+      if (tree.dist[v] >= INF || tree.dist[v] - pi[u] + pi[v] - 1 >= room) continue;
+      const ty = Int32Array.from(y);
+      ty[cell]--;
+      walkBack(res, tree.parent, ty, v, u);
+      const tx = new Int32Array(CELLS);
+      for (let i = 0; i < CELLS; i++) tx[i] = m[i] - ty[i];
+      const th = held(tx, s, start);
+      if (th && th.kept > (best ? best.hold : hold).kept) best = { x: tx, hold: th, y: ty, cell };
+    }
+    if (!best) break;
+    ({ x, hold, y } = best);
+    cap[best.cell]--;
+  }
+  return { x, hold };
 }
 
 /** The letter sequence of the longest chain found, and the upper bound.

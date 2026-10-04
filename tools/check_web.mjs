@@ -1224,6 +1224,64 @@ for (let trial = 0; trial < 200; trial++) {
   }
 }
 
+/* A frozen case holds whatever the solver answered when it was frozen, so it
+   cannot tell a short chain from the longest. The oracle in chains.json can: it
+   draws lists small enough to try every chain and holds the solver to the
+   longest, free and under an opening word. check_chain.py draws the same lists
+   from the same seed, with the same 31-bit linear congruential step. */
+const ORACLE = CHAINS.oracle;
+let oracleState = ORACLE.seed;
+/** @param {number} n */
+const draw = n => {
+  oracleState = (Math.imul(oracleState, 1103515245) + 12345) & 0x7fffffff;
+  return oracleState % n;
+};
+/** The longest chain by trying every one, which only a list this small allows. */
+const longestByHand = (words, opening) => {
+  const leaving = new Map();
+  words.forEach((word, i) => {
+    if (!leaving.has(word[0])) leaving.set(word[0], []);
+    leaving.get(word[0]).push(i);
+  });
+  const played = new Uint8Array(words.length);
+  const on = i => {
+    played[i] = 1;
+    let best = 0;
+    for (const j of leaving.get(words[i].slice(-1)) ?? [])
+      if (!played[j]) best = Math.max(best, on(j));
+    played[i] = 0;
+    return best + 1;
+  };
+  const firsts = opening === undefined ? words.map((_, i) => i) : [words.indexOf(opening)];
+  return firsts.reduce((best, i) => Math.max(best, on(i)), 0);
+};
+let oracled = 0;
+for (let list = 0; list < ORACLE.lists; list++) {
+  const alphabet = "abcdefgh".slice(0, 2 + draw(ORACLE.letters - 1));
+  const count = 1 + draw(ORACLE.words);
+  const words = [];
+  for (let i = 0; i < count; i++) {
+    // One word in `loops` is a loop, far more than chance would draw, since a
+    // loop is what the flow can strand.
+    const head = alphabet[draw(alphabet.length)];
+    words.push(head + i + (draw(ORACLE.loops) === 0 ? head : alphabet[draw(alphabet.length)]));
+  }
+  const opener = words[draw(count)];
+  for (const opening of [undefined, opener]) {
+    const got = longestChain(words, opening);
+    const best = longestByHand(words, opening);
+    oracled++;
+    const label = `${words}${opening === undefined ? "" : ` opening on ${opening}`}`;
+    const broken = unplayable(got.words, words, opening);
+    check(broken === null, `oracle: ${label} chained something unplayable — ${broken}`);
+    check(
+      got.words.length === best,
+      `oracle: ${label} chained ${got.words.length} where ${best} exist`,
+    );
+    check(got.bound >= best, `oracle: ${label} bound ${got.bound} under a chain of ${best}`);
+  }
+}
+
 /* The sizing, one equation with the label size on both sides. What is asserted
    is that it stays inside its square at every count, down to a frame too small
    to draw in. */
@@ -4890,5 +4948,6 @@ console.log(
     ` merge to ${dense.drawn.toLocaleString("en-GB")} arcs,` +
     ` ${WORDS.length} words lay out in ${L.live.length} wedges and play,` +
     ` ${LWORDS.length} words make ${LL.pairs} letter arcs,` +
-    ` ${CHAINS.cases.length} chains match graph.py and ${chained} more come off random lists`,
+    ` ${CHAINS.cases.length} chains match graph.py, ${chained} more come off random lists` +
+    ` and ${oracled} are the longest there is`,
 );
