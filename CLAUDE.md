@@ -453,13 +453,17 @@ Of the disc rules, `ratio`, the sleep, `fit`, the fonts refit and
   exports, the 38 word files and the word table flat, so a consuming site copies
   the directory instead of keeping a filename list in step. `web/.` is a
   prerequisite, since a directory's timestamp is all that catches a deleted
-  module.
+  module. `tools/export_preload.mjs` adds `preload.json`, each element's module
+  mapped to every module it reaches, for a host that appends its scripts late
+  and so cannot rely on the preload scanner.
 - `embed.html` is the one page that ships: a `<section>` per element, each with
   its own script, data attributes, height and custom properties, so any one
   lifts out alone. It asks for data beside itself, which is why
   `tools/serve.py` falls back to `out/` for a top-level name not in `web/`. Its
   one category `<select>` writes `src` to whatever elements it finds, requiring
-  none.
+  none. Each section preloads every module its scripts reach (`modulepreload`),
+  in the section so it lifts out with it; `check_web.mjs` holds each list to the
+  import graph, workers excluded.
 - `tools/serve.py` gzips textual types, since a deployed copy is served
   compressed, and does its own `If-Modified-Since`, `send_head` having no way to
   the 304 without the uncompressed body. It swallows `BrokenPipeError` and
@@ -581,6 +585,7 @@ CLI is not in the flake.
     tools/export_tree.py           writes the tree, its names and its glosses
     tools/export_words.py          writes a file per category and the index
     tools/export_table.py          writes the table any synset's words come from
+    tools/export_preload.mjs       writes each element's import closure
     tools/serve.py                 serves web/ and reloads it on save
     tools/check_web.mjs            loads and drives web/ as a browser does
     tools/check_words.mjs          holds the table to the 37 category files

@@ -121,10 +121,11 @@ web-dist: $(DIST)
 # does not sit in there for good. web/. is a prerequisite because a directory's
 # timestamp moves when a file enters or leaves it, which is the only thing that
 # catches a deletion; the dot is what stops make reading the phony web above.
-$(DIST): $(MODULES) $(EMBED) $(DATA) $(WORDS) $(TABLE) web/.
+$(DIST): $(MODULES) $(EMBED) $(DATA) $(WORDS) $(TABLE) tools/export_preload.mjs web/.
 	@rm -rf $@
 	@mkdir -p $@
 	@cp $(MODULES) $(EMBED) $(DATA) $(WORDS) $(TABLE) $@
+	@node tools/export_preload.mjs > $@/preload.json
 
 list:
 	@printf '%s\n' $(CATEGORIES)

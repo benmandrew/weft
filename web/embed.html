@@ -15,6 +15,12 @@
   directory is flat and a host copies it whole and serves it from wherever it
   likes. tools/serve.py falls back to out/ for exactly these names, so the page
   runs unchanged under `make serve` too.
+
+  Each section lists every module its scripts import, directly or not, as a
+  modulepreload. Without them the browser learns of a module only once its
+  importer has arrived, and word-disc.js is five levels deep. They sit in the
+  section rather than the head so a section lifted out brings its own.
+  tools/check_web.mjs holds each list to the import graph.
 -->
 <style>
 /* The page's own furniture. Nothing below this block is needed by either
@@ -140,6 +146,14 @@ balance-flow{
   <section>
     <h2>hypernym-disc</h2>
     <script type="module" src="hypernym-disc.js"></script>
+    <link rel="modulepreload" href="disc-colour.js">
+    <link rel="modulepreload" href="disc-idle.js">
+    <link rel="modulepreload" href="disc-label.js">
+    <link rel="modulepreload" href="disc-layout.js">
+    <link rel="modulepreload" href="disc-lines.js">
+    <link rel="modulepreload" href="disc-paint.js">
+    <link rel="modulepreload" href="disc-ratio.js">
+    <link rel="modulepreload" href="disc-search.js">
     <hypernym-disc fit
                    src="wordnet-tree.json"
                    names-src="wordnet-names.txt"
@@ -160,6 +174,7 @@ balance-flow{
         <option>loading…</option>
       </select>
     </label>
+    <link rel="modulepreload" href="disc-index.js">
     <script type="module">
       import { href, label } from "./disc-index.js";
       const INDEX = "words-index.json";
@@ -202,6 +217,19 @@ balance-flow{
     <h2>word-disc</h2>
     <script type="module" src="word-disc.js"></script>
     <script type="module" src="word-run.js"></script>
+    <link rel="modulepreload" href="disc-colour.js">
+    <link rel="modulepreload" href="disc-idle.js">
+    <link rel="modulepreload" href="disc-index.js">
+    <link rel="modulepreload" href="disc-label.js">
+    <link rel="modulepreload" href="disc-picker.js">
+    <link rel="modulepreload" href="disc-ratio.js">
+    <link rel="modulepreload" href="disc-search.js">
+    <link rel="modulepreload" href="letter-graph.js">
+    <link rel="modulepreload" href="word-bundle.js">
+    <link rel="modulepreload" href="word-chain.js">
+    <link rel="modulepreload" href="word-layout.js">
+    <link rel="modulepreload" href="word-longest.js">
+    <link rel="modulepreload" href="word-source.js">
     <word-disc id="embed-word-disc" fit src="words-animal.json"></word-disc>
     <word-run for="embed-word-disc"></word-run>
   </section>
@@ -213,6 +241,15 @@ balance-flow{
   <section>
     <h2>letter-disc</h2>
     <script type="module" src="letter-disc.js"></script>
+    <link rel="modulepreload" href="disc-colour.js">
+    <link rel="modulepreload" href="disc-idle.js">
+    <link rel="modulepreload" href="disc-index.js">
+    <link rel="modulepreload" href="disc-label.js">
+    <link rel="modulepreload" href="disc-picker.js">
+    <link rel="modulepreload" href="disc-ratio.js">
+    <link rel="modulepreload" href="letter-graph.js">
+    <link rel="modulepreload" href="word-layout.js">
+    <link rel="modulepreload" href="word-source.js">
     <letter-disc fit src="words-animal.json"></letter-disc>
   </section>
 
@@ -224,6 +261,17 @@ balance-flow{
   <section>
     <h2>balance-flow</h2>
     <script type="module" src="balance-flow.js"></script>
+    <link rel="modulepreload" href="balance-bank.js">
+    <link rel="modulepreload" href="disc-colour.js">
+    <link rel="modulepreload" href="disc-idle.js">
+    <link rel="modulepreload" href="disc-index.js">
+    <link rel="modulepreload" href="disc-label.js">
+    <link rel="modulepreload" href="disc-picker.js">
+    <link rel="modulepreload" href="disc-ratio.js">
+    <link rel="modulepreload" href="letter-graph.js">
+    <link rel="modulepreload" href="word-layout.js">
+    <link rel="modulepreload" href="word-longest.js">
+    <link rel="modulepreload" href="word-source.js">
     <balance-flow fit src="words-animal.json"></balance-flow>
   </section>
 </div>

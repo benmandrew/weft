@@ -4643,6 +4643,45 @@ for (const mod of brought)
     existsSync(new URL(`../web/${mod}`, import.meta.url)),
     `embed.html imports ${mod}, which web/ does not have`,
   );
+/* Each section preloads exactly the modules its scripts reach, less the ones a
+   script tag already names. A missing link puts a round trip back, and a stale
+   one fetches a module nothing runs. Per section, since a section lifted out
+   has to bring its own list. Workers have a module map of their own, which a
+   document's preload does not fill, so their graphs are left out. */
+const { preloads, reach } = await import("./export_preload.mjs");
+for (const [, body] of page.matchAll(/<section>([\s\S]*?)<\/section>/g)) {
+  const named = [...body.matchAll(/<script type="module" src="([\w.-]+\.js)"/g)].map(m => m[1]);
+  const inline = [...body.matchAll(/^\s*import\s[^;]*?\sfrom\s+"\.\/([\w.-]+\.js)"/gm)].map(
+    m => m[1],
+  );
+  const reached = new Set([...reach([...named, ...inline]), ...inline]);
+  for (const name of named) reached.delete(name);
+  const preloaded = [...body.matchAll(/<link rel="modulepreload" href="([^"]+)">/g)].map(m => m[1]);
+  const where = named[0] ?? "inline script's";
+  for (const name of reached)
+    check(preloaded.includes(name), `embed.html's ${where} section does not preload ${name}`);
+  for (const name of preloaded)
+    check(
+      reached.has(name),
+      `embed.html's ${where} section preloads ${name}, which it never imports`,
+    );
+  check(
+    new Set(preloaded).size === preloaded.length,
+    `embed.html's ${where} section preloads a module twice`,
+  );
+}
+
+/* preload.json is how a host that appends its scripts late gets the same lists,
+   so every module the page loads by a script tag has to be a key in it, and
+   finding elements by their define call has to find these. */
+const manifest = preloads();
+for (const [, src] of page.matchAll(/<script type="module" src="([\w.-]+\.js)"/g))
+  check(src in manifest, `preload.json has no entry for ${src}, which embed.html loads`);
+check(
+  Object.values(manifest).every(mods => mods.every(name => existsSync(mod(name)))),
+  "preload.json names a module web/ does not have",
+);
+
 /* It writes `src`, so both discs have to be watching that attribute or the
    choice would load nothing. */
 for (const tag of ["word-disc.js", "letter-disc.js", "balance-flow.js"]) {

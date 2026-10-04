@@ -38,7 +38,7 @@ Every command loads `./weft.toml` when it exists, or the file `--config` names, 
 - `make -j` renders every category, one SVG each. `OUT=` moves the output directory, `CONFIG=` names a config file, and `make clean` removes the output.
 - `make words` writes one JavaScript Object Notation (JSON) file per category for the browser elements.
 - `make serve` serves the harnesses and reloads on save. `/` is the nested-arc view, `/words.html` the word chain, `/letters.html` the letter graph, `/balance.html` the balancing flow, and `/embed.html` all four.
-- `make web-dist` gathers the modules, the exported WordNet tree, the category files and `embed.html` into one flat directory, `out/web-dist` unless `DIST=` names another, which can be copied whole and served from anywhere.
+- `make web-dist` gathers the modules, the exported WordNet tree, the category files, `embed.html` and a `preload.json` listing the modules each element imports into one flat directory, `out/web-dist` unless `DIST=` names another, which can be copied whole and served from anywhere.
 
 ## Browser elements
 
